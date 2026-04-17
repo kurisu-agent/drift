@@ -1,0 +1,23 @@
+[Unit]
+Description=drift kart %i (autostart via lakitu)
+# Network-online ensures docker's bridge is up and remote git refs reachable
+# by the time devpod up resolves clones on first start. Loose dep so a kart
+# doesn't block the user session from reaching graphical.target.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# lakitu start <kart> is idempotent; devpod up is a no-op on an already-up
+# workspace, so a restart of this unit is safe even if the container is
+# running. RemainAfterExit makes systemctl status reflect the last successful
+# bring-up rather than flickering back to inactive.
+ExecStart=lakitu start %i
+RemainAfterExit=yes
+# Fail fast on transient subprocess issues; persistent failures are handled
+# by the user re-running `drift enable` or inspecting `lakitu logs`.
+Restart=no
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

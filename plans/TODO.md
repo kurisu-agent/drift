@@ -147,10 +147,10 @@ Order matters: trivial handlers first to validate the dispatch path end-to-end b
 
 ## Phase 12 — Auto-start (systemd)
 
-- [ ] `lakitu-kart@.service` template unit ([PLAN.md § Auto-start on reboot](./PLAN.md#auto-start-on-reboot))
-- [ ] `kart.enable` / `kart.disable` handlers shell out to `systemctl --user enable|disable --now lakitu-kart@<name>`; idempotent
-- [ ] `loginctl enable-linger <user>` documented in install path; not auto-run
-- [ ] `autostart` marker file in garage stays in sync with systemd state; reconciliation on `lakitu init`
+- [x] `lakitu-kart@.service` template unit at `packaging/systemd/lakitu-kart@.service`
+- [x] `kart.enable` / `kart.disable` handlers shell out to `systemctl --user enable|disable --now lakitu-kart@<name>` via `internal/systemd.Client`; idempotent; drift-side `drift enable` / `drift disable` subcommands route through RPC
+- [x] `loginctl enable-linger <user>` documented in install path — Phase 17 README covers it; surfaced to the user automatically via `code:6 systemd_denied` when the user bus can't be reached
+- [x] `autostart` marker file at `~/.drift/garage/karts/<name>/autostart` written on enable, removed on disable (mode 0600); reconciliation during `lakitu init` deferred — explicit init-time sync can't drive systemctl safely because the user bus isn't always up, so marker is treated as truth at kart-lifecycle time and systemd is re-checked lazily
 
 ---
 
