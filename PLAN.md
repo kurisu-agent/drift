@@ -67,6 +67,20 @@ Client and server versions are matched via **semver**. See [Version compatibilit
 
 ---
 
+## Transport and authentication
+
+All client ↔ server communication runs over **plain SSH**. There is no custom wire protocol, no drift daemon listening on a TCP port, and no bespoke auth layer:
+
+- Every non-local `drift` subcommand resolves to `ssh <circuit-host> lakitu <subcommand> [args...]`. Stdout, stderr, and exit codes flow back through the SSH pipe.
+- Secret values on `drift chest set` are streamed over the SSH pipe's stdin, never via argv.
+- `drift connect` adds a second leg: `mosh <circuit>` (or `ssh -t`) to land on the circuit, then `devpod ssh <kart>` to enter the container.
+
+**Authentication and authorization are out of scope for drift.** Whatever makes `ssh <user>@<circuit-host>` succeed on the user's workstation — OpenSSH keys in `~/.ssh/`, an SSH agent, a YubiKey, certificates, an SSH CA, a jumphost, Tailscale SSH, a corporate bastion, `Match` rules in `sshd_config`, etc. — is what drift uses. drift never asks for a password, never manages keys, and never touches `~/.ssh/config`. If the user can SSH to the circuit, they can use drift; if they can't, drift shows them the OpenSSH error as-is and exits.
+
+The circuit's existing Unix user/group permissions on `~/.drift/garage/` are the only authorization model — if SSH lets you in as user `X`, you have full access to X's karts, characters, and chest entries.
+
+---
+
 ## Naming
 
 ### Binaries
@@ -300,6 +314,92 @@ On each `drift` invocation that contacts a circuit, drift calls `ssh <circuit> l
 `--skip-version-check` bypasses the check entirely (needed during upgrades and local testing).
 
 The `lakitu info` JSON schema is versioned by the lakitu semver — additive-only changes within a major.
+
+---
+
+## Error handling
+
+All non-success exits from `lakitu` emit a structured JSON payload on stderr, preceded by a one-line human summary. drift parses the JSON and re-renders with client-side formatting; humans running `lakitu` directly read the summary line and can ignore the JSON.
+
+We adopt the **[JSON-RPC 2.0 error object](https://www.jsonrpc.org/specification#error_object)** shape (`code` / `message` / `data`) as the payload format. We do **not** implement JSON-RPC as a transport — it's just a well-known, minimal envelope for structured errors that we reuse.
+
+### Error envelope
+
+```json
+{
+  "code": 3,
+  "message": "kart 'myproject' not found",
+  "data": {
+    "type": "kart_not_found",
+    "kart": "myproject",
+    "circuit": "my-server"
+  }
+}
+```
+
+- `code` (int) — matches the process exit code (see below). One number, both on the wire and on the exit status.
+- `message` (string) — stable human summary; echoed as the first stderr line.
+- `data.type` (string) — stable snake_case identifier for programmatic branching (e.g. `kart_not_found`, `name_collision`, `devpod_up_failed`). Preferred over integer codes in client code paths.
+- `data.*` — arbitrary extension fields carrying context (kart name, tune name, underlying devpod exit code, `suggestion` strings, etc.).
+
+### Exit codes
+
+Small, stable set. drift maps them to typed Go errors via a shared `wire/errors.go` package imported by both binaries.
+
+| exit | category       | typical `data.type` values                                           |
+|------|----------------|----------------------------------------------------------------------|
+| 0    | success        | —                                                                    |
+| 1    | unspecified    | `internal_error`                                                     |
+| 2    | user error     | `invalid_name`, `invalid_flag`, `mutually_exclusive_flags`           |
+| 3    | not found      | `kart_not_found`, `character_not_found`, `chest_entry_not_found`     |
+| 4    | conflict       | `name_collision`, `stale_kart`, `already_enabled`                    |
+| 5    | devpod error   | `devpod_up_failed`, `devpod_ssh_failed`, `devpod_unreachable`        |
+| 6    | auth/perms     | `chest_backend_denied`, `garage_write_denied`, `systemd_denied`      |
+
+SSH's own exit **255** is never emitted by lakitu. When drift observes 255, it treats the failure as a *transport* error and passes OpenSSH's stderr through verbatim (`ssh: Could not resolve hostname ...`) — no JSON wrapping, no fake error envelope.
+
+### stderr format
+
+```
+error: kart 'myproject' not found
+{"code":3,"message":"kart 'myproject' not found","data":{"type":"kart_not_found","kart":"myproject"}}
+```
+
+Line 1: `error: ` + `message`. Line 2: the JSON object on a single line. **stdout is reserved for structured command output** (`lakitu info`, `lakitu list`, etc.) and never carries error payloads.
+
+### Idempotency
+
+Lifecycle verbs are idempotent — retries are safe, scripts don't have to branch on current state:
+
+- `drift stop <running>` → 0. `drift stop <stopped>` → 0.
+- `drift start <stopped>` → 0. `drift start <running>` → 0.
+- `drift restart` → 0 regardless of starting state.
+- `drift enable` when already enabled → 0. `drift disable` when already disabled → 0.
+- `drift delete <missing>` → 3 (`kart_not_found`). Delete is the one verb that errors on missing, since silently succeeding would hide typos.
+
+### Stale karts
+
+If `lakitu` finds `garage/karts/<name>/` but `devpod list` doesn't know the workspace (crash mid-`drift new`, manual `devpod delete`), it emits:
+
+```json
+{
+  "code": 4,
+  "message": "kart 'myproject' is stale (garage state without devpod workspace)",
+  "data": {
+    "type": "stale_kart",
+    "kart": "myproject",
+    "suggestion": "drift delete myproject to clean up, then drift new myproject"
+  }
+}
+```
+
+### Interrupts
+
+Client Ctrl-C closes the SSH channel; sshd sends SIGHUP to lakitu. lakitu's signal handler:
+
+1. Cancels the in-flight devpod subprocess (SIGTERM, then SIGKILL after a short grace).
+2. Removes kart-scoped tmpdirs (starter clones, layer-1 dotfiles scratch).
+3. If the interrupted command was `lakitu new` and the kart dir was already written, writes a `status: error` marker so the next `drift new <same-name>` returns `stale_kart` (exit 4) rather than silently colliding on a corpse.
 
 ---
 
