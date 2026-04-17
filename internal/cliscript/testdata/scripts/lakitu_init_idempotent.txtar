@@ -21,4 +21,4 @@ default_tune: python
 default_character: kurisu
 nix_cache_url: ""
 chest:
-    backend: envfile
+    backend: yamlfile

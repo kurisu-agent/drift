@@ -125,7 +125,7 @@ func TestServer_Validate(t *testing.T) {
 		t.Error("expected error for unknown backend")
 	}
 
-	s.Chest.Backend = config.ChestBackendEnvfile
+	s.Chest.Backend = config.ChestBackendYAMLFile
 	s.DefaultTune = ""
 	if err := s.Validate(); err == nil {
 		t.Error("expected error for empty default_tune")
@@ -149,7 +149,7 @@ func TestLoadServer_RejectsUnknownKeys(t *testing.T) {
 default_character: ""
 nix_cache_url: ""
 chest:
-  backend: envfile
+  backend: yamlfile
 surprise: 1
 `
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
@@ -170,7 +170,7 @@ func TestSaveServer_RoundTrip(t *testing.T) {
 		DefaultTune:      "node",
 		DefaultCharacter: "kurisu",
 		NixCacheURL:      "https://cache.example.com",
-		Chest:            config.ChestConfig{Backend: config.ChestBackendEnvfile},
+		Chest:            config.ChestConfig{Backend: config.ChestBackendYAMLFile},
 	}
 	if err := config.SaveServer(path, want); err != nil {
 		t.Fatalf("SaveServer: %v", err)
@@ -307,7 +307,7 @@ func TestInitGarage_FreshAndIdempotent(t *testing.T) {
 		t.Error("first init should report created entries")
 	}
 
-	// Chest directory must be 0700 — it holds the envfile secret store.
+	// Chest directory must be 0700 — it holds the yamlfile secret store.
 	chestInfo, err := os.Stat(filepath.Join(root, "chest"))
 	if err != nil {
 		t.Fatal(err)
@@ -344,7 +344,7 @@ func TestInitGarage_PreservesUserEdits(t *testing.T) {
 	edited := &config.Server{
 		DefaultTune:      "python",
 		DefaultCharacter: "kurisu",
-		Chest:            config.ChestConfig{Backend: config.ChestBackendEnvfile},
+		Chest:            config.ChestConfig{Backend: config.ChestBackendYAMLFile},
 	}
 	if err := config.SaveServer(cfgPath, edited); err != nil {
 		t.Fatal(err)

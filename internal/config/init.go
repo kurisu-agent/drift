@@ -32,7 +32,7 @@ type InitResult struct {
 // file layout from plans/PLAN.md § Server state layout exists. It is
 // idempotent: re-running reports no new Created entries.
 //
-// The chest directory is created with mode 0700 because the MVP envfile
+// The chest directory is created with mode 0700 because the MVP yamlfile
 // backend keeps plain-text secrets under it. Other directories use 0755.
 func InitGarage(root string) (*InitResult, error) {
 	res := &InitResult{GarageDir: root}

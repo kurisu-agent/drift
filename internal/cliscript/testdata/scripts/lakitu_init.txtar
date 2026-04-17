@@ -23,4 +23,4 @@ exists $HOME/.drift/garage/config.yaml
 
 # Config should carry the documented defaults.
 grep 'default_tune: default' $HOME/.drift/garage/config.yaml
-grep 'backend: envfile' $HOME/.drift/garage/config.yaml
+grep 'backend: yamlfile' $HOME/.drift/garage/config.yaml

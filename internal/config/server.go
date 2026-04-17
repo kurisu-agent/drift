@@ -13,20 +13,23 @@ type Server struct {
 }
 
 // ChestConfig selects the active chest backend and holds any backend-
-// specific knobs. MVP ships only the envfile backend.
+// specific knobs. MVP ships only the yamlfile backend.
 type ChestConfig struct {
 	Backend string `yaml:"backend"`
 }
 
-// ChestBackendEnvfile is the MVP backend name. Other backends (age,
-// 1password, vault) are reserved for post-MVP work.
-const ChestBackendEnvfile = "envfile"
+// ChestBackendYAMLFile is the MVP backend name. The YAML format replaces
+// the earlier shell-quoted envfile so multi-line secrets (SSH keys,
+// PEM-encoded PATs) round-trip via YAML's block scalars without custom
+// escaping. Other backends (age, 1password, vault) are reserved for
+// post-MVP work.
+const ChestBackendYAMLFile = "yamlfile"
 
 // validChestBackends is the exhaustive set of acceptable backend values.
 // Validation rejects anything outside this list so typos surface during
 // `lakitu init` instead of at `chest.set` time.
 var validChestBackends = map[string]struct{}{
-	ChestBackendEnvfile: {},
+	ChestBackendYAMLFile: {},
 }
 
 // DefaultServer is the config that `lakitu init` writes on a fresh garage.
@@ -37,7 +40,7 @@ func DefaultServer() *Server {
 	return &Server{
 		DefaultTune: "default",
 		Chest: ChestConfig{
-			Backend: ChestBackendEnvfile,
+			Backend: ChestBackendYAMLFile,
 		},
 	}
 }

@@ -1,0 +1,23 @@
+# `lakitu config show` / `config set` exercises the server-config RPC path.
+# See plans/PLAN.md § Server state layout.
+
+lakitu init
+! stderr .
+
+# show — default values written by `lakitu init`.
+lakitu config show
+stdout '"default_tune": "default"'
+stdout '"backend": "yamlfile"'
+
+# set a known key — the response echoes the updated payload.
+lakitu config set default_character kurisu
+stdout '"default_character": "kurisu"'
+
+# show confirms the write is persistent.
+lakitu config show
+stdout '"default_character": "kurisu"'
+
+# Unknown key rejected with code:2 invalid_flag.
+! lakitu config set bogus_key value
+stderr 'invalid_flag'
+stderr 'unknown key'

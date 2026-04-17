@@ -247,7 +247,7 @@ devpod list --output json
 
 **Server handlers:**
 - Dispatch to the configured backend (`config.yaml` → `chest.backend`).
-- MVP backend `envfile`: reads/writes `garage/chest/secrets.env` (0600), one `KEY=value` per line, shell-quoted values.
+- MVP backend `yamlfile`: reads/writes `garage/chest/secrets.yaml` (0600), top-level `name: value` map, multi-line values via YAML block scalars.
 
 **Devpod calls:** none. (Secrets are resolved and injected into layer-1 dotfiles at `drift new` time.)
 

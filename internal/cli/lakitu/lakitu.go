@@ -26,9 +26,13 @@ import (
 type CLI struct {
 	Debug bool `help:"Verbose output." env:"LAKITU_DEBUG"`
 
-	Version versionCmd `cmd:"" help:"Print lakitu version."`
-	Init    initCmd    `cmd:"" help:"Bootstrap the garage at ~/.drift/garage (idempotent)."`
-	RPC     rpcCmd     `cmd:"" name:"rpc" help:"Read one JSON-RPC 2.0 request from stdin and write a response to stdout."`
+	Version   versionCmd   `cmd:"" help:"Print lakitu version."`
+	Init      initCmd      `cmd:"" help:"Bootstrap the garage at ~/.drift/garage (idempotent)."`
+	RPC       rpcCmd       `cmd:"" name:"rpc" help:"Read one JSON-RPC 2.0 request from stdin and write a response to stdout."`
+	Config    configCmd    `cmd:"" help:"Manage server-level config."`
+	Character characterCmd `cmd:"" help:"Manage character (git/GitHub identity) profiles."`
+	Tune      tuneCmd      `cmd:"" help:"Manage tune profiles."`
+	Chest     chestCmd     `cmd:"" help:"Manage secrets in the chest backend."`
 }
 
 type versionCmd struct {
@@ -71,6 +75,34 @@ func Run(ctx context.Context, argv []string, io IO) int {
 		return runInit(io)
 	case "rpc":
 		return runRPC(ctx, io, Registry())
+	case "config show":
+		return runConfigShow(ctx, io)
+	case "config set <key> <value>":
+		return runConfigSet(ctx, io, cli.Config.Set)
+	case "character add <name>":
+		return runCharacterAdd(ctx, io, cli.Character.Add)
+	case "character list":
+		return runCharacterList(ctx, io)
+	case "character show <name>":
+		return runCharacterShow(ctx, io, cli.Character.Show)
+	case "character rm <name>":
+		return runCharacterRemove(ctx, io, cli.Character.Remove)
+	case "tune list":
+		return runTuneList(ctx, io)
+	case "tune show <name>":
+		return runTuneShow(ctx, io, cli.Tune.Show)
+	case "tune set <name>":
+		return runTuneSet(ctx, io, cli.Tune.Set)
+	case "tune rm <name>":
+		return runTuneRemove(ctx, io, cli.Tune.Remove)
+	case "chest set <name>":
+		return runChestSet(ctx, io, cli.Chest.Set)
+	case "chest get <name>":
+		return runChestGet(ctx, io, cli.Chest.Get)
+	case "chest list":
+		return runChestList(ctx, io)
+	case "chest rm <name>":
+		return runChestRemove(ctx, io, cli.Chest.Remove)
 	default:
 		fmt.Fprintf(io.Stderr, "lakitu: unknown command %q\n", kctx.Command())
 		return 2
@@ -99,6 +131,7 @@ func runVersion(io IO, cmd versionCmd) int {
 func Registry() *rpc.Registry {
 	reg := rpc.NewRegistry()
 	reg.Register(wire.MethodServerInit, serverInitHandler)
+	server.RegisterServer(reg, &server.Deps{})
 	garage, err := config.GarageDir()
 	if err == nil {
 		server.RegisterKart(reg, server.KartDeps{

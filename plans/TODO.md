@@ -85,13 +85,13 @@ Legend: `[x]` done · `[ ]` open · `[~]` partial.
 
 Order matters: trivial handlers first to validate the dispatch path end-to-end before the devpod integration lands.
 
-- [ ] `server.version` / `lakitu version` — already handler-ready; wire through dispatcher and add semver compat check on the drift side ([PLAN.md § Version compatibility](./PLAN.md#version-compatibility))
-- [ ] `server.init` / `lakitu init`
-- [ ] `config.show` / `config.set` — server-level config get/set with key validation
-- [ ] `character.add|list|show|remove` — file-backed under `~/.drift/garage/characters/<name>.yaml`; `pat_secret` must be `chest:<name>` form, literals rejected ([PLAN.md § Character file](./PLAN.md#character-file-charactersnameyaml))
-- [ ] `tune.list|show|set|remove` — file-backed under `~/.drift/garage/tunes/<name>.yaml`; reject removal if any kart references the tune
-- [ ] `chest.set|get|list|rm` — `ChestBackend` interface + `envfile` backend writing `~/.drift/garage/chest/secrets.env` (mode 0600); set value piped via stdin
-- [ ] Semver compat check in drift: cache `server.version` per process; major→error, minor→warn, patch→silent; `--skip-version-check` bypass
+- [x] `server.version` / `lakitu version` — wired through dispatcher; semver compat helper in `internal/rpc/client` ([PLAN.md § Version compatibility](./PLAN.md#version-compatibility))
+- [x] `server.init` / `lakitu init` (Phase 2 — verified registered)
+- [x] `config.show` / `config.set` — server-level config get/set with key validation
+- [x] `character.add|list|show|remove` — file-backed under `~/.drift/garage/characters/<name>.yaml`; `pat_secret` must be `chest:<name>` form, literals rejected ([PLAN.md § Character file](./PLAN.md#character-file-charactersnameyaml))
+- [x] `tune.list|show|set|remove` — file-backed under `~/.drift/garage/tunes/<name>.yaml`; reject removal if any kart references the tune
+- [x] `chest.set|get|list|rm` — `ChestBackend` interface + `yamlfile` backend writing `~/.drift/garage/chest/secrets.yaml` (mode 0600, top-level `name: value` map with block scalars for multi-line values); set value piped via stdin
+- [x] Semver compat check in drift: `internal/rpc/client.CompatChecker` caches `server.version` per circuit; major→error, minor→warn, patch→silent; `--skip-version-check` bypasses (wiring into remote subcommands lands with Phase 9+)
 
 ---
 
@@ -205,7 +205,7 @@ Tracked here for "no, that's later" answers. See [PLAN.md § Future](./PLAN.md#f
 - Ports management (`drift ports`, conflict detection, per-workstation remap persistence)
 - `lakitu serve` long-lived stdin/stdout RPC with batching/streaming notifications
 - Cross-circuit sync of characters/tunes/chest
-- Chest backends beyond `envfile` (age, 1Password, Vault, SOPS)
+- Chest backends beyond `yamlfile` (age, 1Password, Vault, SOPS)
 - IDE integration via devpod's `--ide`
 - Auto port detection
 - NixOS module for packaged install

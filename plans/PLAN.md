@@ -510,7 +510,7 @@ Removes the circuit from `~/.config/drift/config.yaml` and deletes its `Host dri
 
 #### `drift chest`
 
-Pluggable secret store on the circuit. **MVP backend is a plain `.env` file** (no encryption) — the goal is to ship the interface and iterate on backends (age, 1Password, Vault, etc.) later without breaking the CLI surface.
+Pluggable secret store on the circuit. **MVP backend is a plain YAML file** (no encryption) — the goal is to ship the interface and iterate on backends (age, 1Password, Vault, etc.) later without breaking the CLI surface. YAML was chosen over `.env` because secrets frequently span multiple lines (SSH keys, PEM-encoded PATs piped through helpers) and `.env` quoting rules are an ongoing footgun.
 
 ```
 drift chest set  <name>         — prompt for value (never passed as a flag)
@@ -538,7 +538,7 @@ type ChestBackend interface {
 }
 ```
 
-The active backend is selected in the server's `config.yaml` under the `chest:` key. MVP implements `envfile` (reads/writes `~/.drift/garage/chest/secrets.env`, mode 0600).
+The active backend is selected in the server's `config.yaml` under the `chest:` key. MVP implements `yamlfile` (reads/writes `~/.drift/garage/chest/secrets.yaml`, mode 0600; top-level map of `name: value`, multi-line values via block scalars).
 
 #### `drift character add` flags
 
@@ -827,7 +827,7 @@ The user's dotfiles repo from the active tune (`dotfiles_repo`) or `--dotfiles <
   characters/
     <name>.yaml                 git_name, git_email, github_user, ssh_key_path, pat_secret
   chest/
-    secrets.env                 MVP backend — plain key=value lines, mode 0600
+    secrets.yaml                MVP backend — top-level name:value map, mode 0600
   karts/
     <name>/
       config.yaml               repo, tune, character, source_mode, user, shell
@@ -842,11 +842,11 @@ default_character: ""
 nix_cache_url: ""
 
 chest:
-  backend: envfile      # envfile (MVP) | age | onepassword | vault (future)
+  backend: yamlfile     # yamlfile (MVP) | age | onepassword | vault (future)
   # backend-specific config lives under this key
 ```
 
-Settable via `lakitu config set` (and the `config.set` RPC): `default_tune`, `default_character`, `nix_cache_url`, `chest.backend`. Backend-specific subkeys under `chest.*` are set the same way (e.g. `lakitu config set chest.envfile.path ...` once non-envfile backends land). Unknown keys are rejected with `code: 2` (`invalid_flag`).
+Settable via `lakitu config set` (and the `config.set` RPC): `default_tune`, `default_character`, `nix_cache_url`, `chest.backend`. Backend-specific subkeys under `chest.*` are set the same way (e.g. `lakitu config set chest.yamlfile.path ...` for the MVP backend). Unknown keys are rejected with `code: 2` (`invalid_flag`).
 
 ### Character file (`characters/<name>.yaml`)
 
