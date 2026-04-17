@@ -52,13 +52,13 @@ Legend: `[x]` done · `[ ]` open · `[~]` partial.
 
 ## Phase 3 — SSH config management
 
-- [ ] `internal/sshconf` — parser/writer for `~/.config/drift/ssh_config` blocks
-- [ ] `internal/sshconf` — idempotent insert of `Include ~/.config/drift/ssh_config` at top of `~/.ssh/config` (creates 0600 if absent, never edits other lines)
-- [ ] Per-circuit block writer with full ControlMaster stanza ([PLAN.md § Generated Host blocks](./PLAN.md#generated-host-blocks))
-- [ ] Per-kart wildcard block (`Host drift.*.*`) — appended once at end of managed file
-- [ ] `~/.config/drift/sockets/` directory created with mode 0700
-- [ ] `manage_ssh_config: false` short-circuits all writes
-- [ ] Testscript: add → re-add → rm sequence is fully idempotent and leaves `~/.ssh/config` unchanged after rm
+- [x] `internal/sshconf` — parser/writer for `~/.config/drift/ssh_config` blocks
+- [x] `internal/sshconf` — idempotent insert of `Include ~/.config/drift/ssh_config` at top of `~/.ssh/config` (creates 0600 if absent, never edits other lines)
+- [x] Per-circuit block writer with full ControlMaster stanza ([PLAN.md § Generated Host blocks](./PLAN.md#generated-host-blocks))
+- [x] Per-kart wildcard block (`Host drift.*.*`) — appended once at end of managed file
+- [x] `~/.config/drift/sockets/` directory created with mode 0700
+- [x] `manage_ssh_config: false` short-circuits all writes
+- [x] Testscript: add → re-add → rm sequence is fully idempotent and leaves `~/.ssh/config` unchanged after rm (covered by `TestAddThenRmRestoresUserSSHConfigByteIdentical` — a tempdir-based Go test; no txtar driver since Phase 3 is library-only and cliscript.go is out of scope)
 
 ---
 
