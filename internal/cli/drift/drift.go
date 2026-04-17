@@ -20,6 +20,12 @@ type CLI struct {
 
 	Version versionCmd `cmd:"" help:"Print drift version."`
 	Circuit_ circuitCmd `cmd:"" name:"circuit" help:"Manage circuits (client-side config + SSH config)."`
+
+	Start   startCmd   `cmd:"" help:"Start a kart (idempotent)."`
+	Stop    stopCmd    `cmd:"" help:"Stop a kart (idempotent)."`
+	Restart restartCmd `cmd:"" help:"Restart a kart."`
+	Delete  deleteCmd  `cmd:"" help:"Delete a kart (errors if missing)."`
+	Logs    logsCmd    `cmd:"" help:"Fetch a chunk of kart logs."`
 }
 
 type versionCmd struct{}
@@ -65,6 +71,16 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runCircuitRm(io, &cli, cli.Circuit_.Rm, deps)
 	case "circuit list":
 		return runCircuitList(io, &cli, deps)
+	case "start <name>":
+		return runKartStart(ctx, io, &cli, cli.Start, deps)
+	case "stop <name>":
+		return runKartStop(ctx, io, &cli, cli.Stop, deps)
+	case "restart <name>":
+		return runKartRestart(ctx, io, &cli, cli.Restart, deps)
+	case "delete <name>":
+		return runKartDelete(ctx, io, &cli, cli.Delete, deps)
+	case "logs <name>":
+		return runKartLogs(ctx, io, &cli, cli.Logs, deps)
 	default:
 		fmt.Fprintf(io.Stderr, "drift: unknown command %q\n", kctx.Command())
 		return 2

@@ -1,0 +1,21 @@
+# kart.delete on a kart that exists in neither devpod nor the garage is the
+# one lifecycle verb that errors on missing (plans/PLAN.md § Idempotency):
+# code:3 kart_not_found. This test proves:
+#   - kart.delete is registered (no method_not_found)
+#   - param binding works (name required)
+#   - the not_found path fires when both sides are empty
+#
+# The test assumes devpod, if present on PATH, reports an empty workspace
+# list for a fresh $HOME — true in CI and in the devcontainer sandbox.
+
+stdin delete.json
+lakitu rpc
+! stderr .
+stdout '"error":'
+! stdout 'method_not_found'
+stdout '"code":3'
+stdout '"type":"kart_not_found"'
+stdout '"kart":"ghost"'
+
+-- delete.json --
+{"jsonrpc":"2.0","method":"kart.delete","params":{"name":"ghost"},"id":1}
