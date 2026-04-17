@@ -21,6 +21,13 @@ test:
 test-race:
 	$(GO) test -race ./...
 
+# Integration tests. Build-tag-gated so `make test` stays fast. Requires
+# docker (devcontainer provides it); builds a throwaway circuit image and
+# exercises drift over a real SSH transport. See integration/harness.go.
+.PHONY: integration
+integration:
+	$(GO) test -tags=integration -count=1 ./integration/...
+
 .PHONY: fuzz-wire
 fuzz-wire:
 	$(GO) test -run=^$$ -fuzz=FuzzDecodeRequest -fuzztime=30s ./internal/wire

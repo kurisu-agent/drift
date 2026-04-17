@@ -173,11 +173,11 @@ Order matters: trivial handlers first to validate the dispatch path end-to-end b
 
 ## Phase 15 — Integration harness (tier-2 tests)
 
-- [ ] Dockerfile for a "circuit" image: Debian + sshd + docker (DinD-compatible) + lakitu binary + devpod
-- [ ] Test driver: spins up the container inside the devcontainer's outer docker, generates an ephemeral SSH keypair, configures `~/.ssh/config` for the test, exercises drift over real SSH
-- [ ] Build-tag-gated (`//go:build integration`) so unit `go test ./...` stays fast
-- [ ] Cover: warmup probe, kart.new with `--clone`, connect via ssh fallback (no mosh in container), kart.delete, character add+list, chest set+get
-- [ ] CI job target in `Makefile`: `make integration`
+- [x] Dockerfile for a "circuit" image at `integration/Dockerfile.circuit`: Debian-slim + sshd + devpod + lakitu (docker access is delegated to the devcontainer's outer daemon via socket bind, matching plans/PLAN.md § "Integration harness")
+- [x] Test driver at `integration/harness.go`: builds the image, spins a per-test container on an ephemeral port, generates an ed25519 keypair, writes a per-test ssh config, and exposes `Circuit.Drift(ctx, args...)` so tests drive the real `drift` binary over real SSH
+- [x] Build-tag-gated (`//go:build integration`) so unit `go test ./...` stays fast
+- [~] Cover: warmup probe, kart.new with `--clone`, connect via ssh fallback, kart.delete, character add+list, chest set+get — scaffolding landed with one end-to-end smoke (`TestDriftInitAndServerVersion`); remaining coverage is a follow-up iteration on top of the harness
+- [x] CI job target in `Makefile`: `make integration`
 
 ---
 

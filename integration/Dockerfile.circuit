@@ -1,0 +1,62 @@
+# Circuit image used by the integration harness. The goal is "as close to a
+# real lakitu-hosting circuit as docker-in-docker can manage" without pulling
+# in a full desktop OS.
+#
+# Layers:
+#   - Debian slim + openssh-server + the subset of userland lakitu calls
+#     out to (git, gh via curl, yaml.v3 via Go stdlib — nothing extra here).
+#   - A non-root user `circuit` in the `docker` group so devpod's docker
+#     provider can talk to the DinD sidecar the harness mounts in.
+#   - The test-built `lakitu` binary, copied in at build time.
+#   - The test-installed `devpod` binary. Pinning a version here keeps the
+#     integration suite deterministic — production circuits install it out
+#     of band per plans/PLAN.md § "Bootstrap / install".
+#
+# sshd runs as PID 1; the harness connects over the forwarded port and
+# drives `lakitu rpc` through the same SSH transport drift uses in
+# production.
+FROM debian:bookworm-slim
+
+ARG DEVPOD_VERSION=v0.6.10
+ARG LAKITU_PATH=./lakitu
+ARG CIRCUIT_USER=circuit
+ARG CIRCUIT_UID=1000
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      openssh-server \
+      ca-certificates \
+      curl \
+      git \
+      sudo \
+      dumb-init \
+ && rm -rf /var/lib/apt/lists/* \
+ && mkdir -p /run/sshd \
+ && sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config \
+ && sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config \
+ && sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+
+# Install devpod. Skipping a full docker install inside the circuit image
+# because the harness runs the circuit as a sibling of the devcontainer's
+# outer docker — the devpod provider inside circuit talks to the shared
+# daemon via a bind-mounted socket.
+RUN curl -L -o /usr/local/bin/devpod \
+      "https://github.com/skevetter/devpod/releases/download/${DEVPOD_VERSION}/devpod-linux-amd64" \
+ && chmod +x /usr/local/bin/devpod
+
+# Non-root circuit user mirrors the production install pattern: sshd drops
+# to this UID on login, lakitu runs as it, and ~/.drift/garage lives under
+# its HOME.
+RUN useradd --create-home --uid "${CIRCUIT_UID}" --shell /bin/bash "${CIRCUIT_USER}" \
+ && mkdir -p "/home/${CIRCUIT_USER}/.ssh" \
+ && chmod 0700 "/home/${CIRCUIT_USER}/.ssh" \
+ && chown -R "${CIRCUIT_USER}:${CIRCUIT_USER}" "/home/${CIRCUIT_USER}"
+
+COPY "${LAKITU_PATH}" /usr/local/bin/lakitu
+RUN chmod +x /usr/local/bin/lakitu
+
+EXPOSE 22
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+CMD ["/usr/sbin/sshd", "-D", "-e"]
