@@ -10,6 +10,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/sshconf"
@@ -263,11 +264,11 @@ func emitCircuitRm(io IO, root *CLI, circuitName string) int {
 	return 0
 }
 
-// emitError prints err to stderr and returns a best-effort exit code. Phase 14
-// will formalize the stderr structure; for now we render the message only.
+// emitError is the drift-side entry point for error reporting. It delegates
+// to errfmt.Emit so every command produces the two-line format defined by
+// plans/PLAN.md § "stderr format (human CLI path)".
 func emitError(io IO, err error) int {
-	fmt.Fprintf(io.Stderr, "error: %v\n", err)
-	return 1
+	return errfmt.Emit(io.Stderr, err)
 }
 
 // sshManagerFor builds a sshconf.Manager rooted at the drift config dir

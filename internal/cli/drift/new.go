@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/kart"
 	"github.com/kurisu-agent/drift/internal/rpc/client"
-	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
@@ -97,24 +97,11 @@ func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 	return 0
 }
 
-// emitRPCError renders a transport or RPC error with plans/PLAN.md's
-// stderr format when possible. Transport failures carry the original SSH
-// stderr; RPC errors are the typed rpcerr.
+// emitRPCError routes both RPC-level and transport errors through errfmt.
+// A *rpcerr.Error produces the full two-line format with exit code mirroring
+// Code; a *client.TransportError (SSH exited non-zero before any envelope
+// was read) is rendered via the untyped fallback — the message is ssh's own
+// stderr passed through verbatim, with exit code 1.
 func emitRPCError(io IO, err error) int {
-	var re *rpcerr.Error
-	if errors.As(err, &re) {
-		fmt.Fprintf(io.Stderr, "error: %s\n", re.Message)
-		buf, mErr := json.Marshal(re)
-		if mErr == nil {
-			fmt.Fprintln(io.Stderr, string(buf))
-		}
-		return int(re.Code)
-	}
-	var te *client.TransportError
-	if errors.As(err, &te) {
-		fmt.Fprintf(io.Stderr, "error: %s\n", te.Error())
-		return 1
-	}
-	fmt.Fprintf(io.Stderr, "error: %v\n", err)
-	return 1
+	return errfmt.Emit(io.Stderr, err)
 }
