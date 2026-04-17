@@ -73,12 +73,79 @@ Client and server versions are matched via **semver**. See [Version compatibilit
 
 All client ↔ server communication runs over **plain SSH**, carrying **JSON-RPC 2.0** as the application protocol. There is no custom wire format, no drift daemon listening on a TCP port, and no bespoke auth layer:
 
-- Every non-local `drift` subcommand resolves to `ssh <circuit-host> lakitu rpc`, with a JSON-RPC request piped to stdin and a JSON-RPC response read from stdout. See [RPC protocol](#rpc-protocol).
-- `drift connect` adds a second leg: `mosh <circuit>` (or `ssh -t`) to land on the circuit, then `devpod ssh <kart>` to enter the container. The mosh/ssh leg is the only non-RPC SSH usage.
+- Every non-local `drift` subcommand resolves to `ssh drift.<circuit> lakitu rpc`, with a JSON-RPC request piped to stdin and a JSON-RPC response read from stdout. See [RPC protocol](#rpc-protocol). The `drift.<circuit>` alias is drift-managed — see [SSH config management](#ssh-config-management).
+- `drift connect` adds a second leg: `mosh drift.<circuit>` (or `ssh -t`) to land on the circuit, then `devpod ssh <kart>` to enter the container. The mosh/ssh leg is the only non-RPC SSH usage.
 
-**Authentication and authorization are out of scope for drift.** Whatever makes `ssh <user>@<circuit-host>` succeed on the user's workstation — OpenSSH keys in `~/.ssh/`, an SSH agent, a YubiKey, certificates, an SSH CA, a jumphost, Tailscale SSH, a corporate bastion, `Match` rules in `sshd_config`, etc. — is what drift uses. drift never asks for a password, never manages keys, and never touches `~/.ssh/config`. If the user can SSH to the circuit, they can use drift; if they can't, drift shows them the OpenSSH error as-is and exits.
+**Authentication and authorization are out of scope for drift.** Whatever makes `ssh drift.<circuit>` succeed on the user's workstation — OpenSSH keys in `~/.ssh/`, an SSH agent, a YubiKey, certificates, an SSH CA, a jumphost, Tailscale SSH, a corporate bastion, `Match` rules in `sshd_config`, etc. — is what drift uses. drift never asks for a password and never manages keys. Its only modification to the user's SSH setup is a single managed `Include` line (detailed below), so per-circuit Host aliases can carry ControlMaster for fast subsequent calls.
 
 The circuit's existing Unix user/group permissions on `~/.drift/garage/` are the only authorization model — if SSH lets you in as user `X`, you have full access to X's karts, characters, and chest entries.
+
+---
+
+## SSH config management
+
+drift manages a **small, well-bounded slice** of the user's SSH setup — enough to give every circuit a named host alias with ControlMaster enabled by default, so RPC calls and `drift connect` alike are fast on second and subsequent invocations. drift does NOT manage keys, identities, or auth — that stays pure OpenSSH user territory.
+
+### Files drift owns
+
+```
+~/.config/drift/
+  ssh_config           # one Host drift.<circuit> block per circuit; fully drift-managed
+  sockets/             # ControlMaster Unix sockets (dir mode 0700)
+```
+
+### The only line drift adds to ~/.ssh/config
+
+On the first `drift circuit add`, drift ensures this line exists **at the top** of `~/.ssh/config` (creates the file with mode 0600 if absent). It never edits any other line in that file.
+
+```
+Include ~/.config/drift/ssh_config
+```
+
+Placing the include at the top means drift's `Host drift.<name>` blocks match before any user `Host *` globals, so ControlMaster settings stick even if the user has `ControlMaster no` as a global default.
+
+### Generated Host block per circuit
+
+Circuit `my-server` with `host: dev@my-server.example.com` in drift's config becomes:
+
+```sshconfig
+Host drift.my-server
+  HostName my-server.example.com
+  User dev
+  ControlMaster auto
+  ControlPath ~/.config/drift/sockets/cm-%r@%h:%p
+  ControlPersist 10m
+  ServerAliveInterval 30
+  ServerAliveCountMax 3
+```
+
+- **`ControlMaster auto` + `ControlPersist 10m`** — first drift call opens a persistent TCP/SSH master, subsequent calls (RPC and `drift connect`) reuse it. Typical warm-call latency: ~10–30 ms vs ~200–400 ms cold.
+- **`ServerAlive*`** — keeps the master healthy across flaky networks and NAT idle timeouts. mosh itself is UDP so this doesn't affect it, but the cold ssh fallback and the port-forwarding leg benefit.
+
+### Usage
+
+All drift internals use the alias:
+- **RPC:** `ssh drift.<name> lakitu rpc`
+- **Connect:** `mosh drift.<name> -- devpod ssh <kart>` (fallback: `ssh -t drift.<name> ...`)
+
+Users get the alias for free too — `ssh drift.my-server` and `mosh drift.my-server` work directly with the same settings.
+
+### Lifecycle
+
+| event                                            | `~/.ssh/config`                  | `~/.config/drift/ssh_config`                          |
+|--------------------------------------------------|----------------------------------|-------------------------------------------------------|
+| `drift circuit add my-server --host dev@...`     | ensure Include line at top       | append `Host drift.my-server` block                   |
+| `drift circuit add my-server ...` (re-run)       | ensure Include line at top       | replace the existing block in place (idempotent)      |
+| `drift circuit rm my-server`                     | untouched                        | remove `Host drift.my-server` block                   |
+
+### Opt-out / override
+
+- `manage_ssh_config: false` in `~/.config/drift/config.yaml` disables all ssh_config writes. drift then passes `user@host` directly to `ssh`/`mosh`, losing ControlMaster speedup.
+- Users who want to customize the block can add overrides to `~/.ssh/config` **before** the drift `Include` line (e.g. their own `Host drift.* IdentityFile ~/.ssh/id_work`). OpenSSH is first-match, so earlier user entries win.
+
+### Future: per-kart wildcard routing
+
+In a later phase, drift will expose each kart as its own SSH host alias — `drift.<circuit>.<kart>` — via a `Host drift.*.* ProxyCommand drift ssh-proxy %h` wildcard. The proxy command parses the alias, SSHes to the circuit, and pipes a `devpod ssh <kart>` session over stdio. This makes karts first-class SSH targets for `scp`, `rsync`, `sshfs`, VS Code Remote-SSH, JetBrains Gateway, etc., without those tools needing to know anything about drift — the same pattern Coder uses. Not in MVP; listed in [Future](#future).
 
 ---
 
@@ -247,7 +314,7 @@ drift delete  <kart>            — remove kart
 drift list                      — list karts and status
 drift enable  <kart>            — auto-start on server reboot
 drift disable <kart>            — disable auto-start
-drift circuit   [list|add]          — manage circuits (client-side config)
+drift circuit   [list|add|rm]       — manage circuits (client-side config + ~/.ssh/config)
 drift character [list|add|show|rm]  — manage identity profiles (server-side)
 drift chest     [set|get|list|rm]   — manage secrets (server-side)
 ```
@@ -296,7 +363,14 @@ Port-forwarding flags are deferred to the ports phase.
 ```
 --host <user@host>    SSH destination
 --default             set as default circuit
+--no-ssh-config       skip writing to ~/.ssh/config and ~/.config/drift/ssh_config for this circuit
 ```
+
+Adding a circuit also writes a `Host drift.<name>` block and ensures the `Include` line in `~/.ssh/config` — see [SSH config management](#ssh-config-management).
+
+#### `drift circuit rm <name>`
+
+Removes the circuit from `~/.config/drift/config.yaml` and deletes its `Host drift.<name>` block from `~/.config/drift/ssh_config`. Leaves `~/.ssh/config` untouched (the `Include` line stays, since other circuits may still need it).
 
 #### `drift chest`
 
@@ -707,9 +781,16 @@ devpod injects an SSH server into every container during `devpod up`. `drift con
 ## Client config layout
 
 ```
-~/.config/drift/config.yaml
+~/.config/drift/
+  config.yaml          user-edited circuit list + preferences
+  ssh_config           drift-managed SSH Host blocks (see SSH config management)
+  sockets/             ControlMaster Unix sockets (0700)
+```
 
+`config.yaml`:
+```yaml
 default_circuit: my-server
+manage_ssh_config: true        # default; set false to skip ~/.ssh/config Include + per-circuit blocks
 circuits:
   my-server:
     host: dev@my-server.example.com
@@ -721,21 +802,21 @@ circuits:
 
 ## Connection flow (`drift connect`)
 
-1. Client runs version check: `ssh <host> lakitu version` → compare to drift version.
-2. Client fetches kart info: `ssh <host> lakitu info <kart>` → JSON ([schema](#lakitu-info-kart--json-schema)).
+1. Client runs version check: `server.version` RPC (via `ssh drift.<circuit> lakitu rpc`) → compare to drift version.
+2. Client fetches kart info: `kart.info` RPC → result ([schema](#lakitu-info-kart--json-schema)).
 
 **mosh path (preferred):**
 
 ```
-mosh <circuit> -- devpod ssh <kart>
-  (mosh lands on circuit, devpod ssh tunnels into container)
+mosh drift.<circuit> -- devpod ssh <kart>
+  (mosh lands on circuit via the drift-managed SSH alias, devpod ssh tunnels into container)
   (UDP session — interactive terminal, survives network changes)
 ```
 
 **SSH fallback (no mosh on client):**
 
 ```
-ssh -t <circuit> "devpod ssh <kart>"
+ssh -t drift.<circuit> "devpod ssh <kart>"
 ```
 
 Agent forwarding (`-A`) is **off by default**. Enable with `--forward-agent` on `drift connect` as an explicit opt-in.
@@ -786,6 +867,8 @@ Homebrew / Nix / manual binary install. No init command — `~/.config/drift/con
 ## Future
 
 - **Ports management** — `drift ports` subcommands, conflict detection, remapping, standalone forwarding, per-workstation remap persistence.
+- **Per-kart SSH aliases (Coder-style wildcard proxy)** — `Host drift.*.*` in the managed ssh_config with `ProxyCommand drift ssh-proxy %h`. `ssh drift.<circuit>.<kart>` (and `scp`, `rsync`, `sshfs`, VS Code Remote-SSH, JetBrains Gateway, etc.) all route automatically: drift ssh-proxy parses the alias, SSHes to the circuit, and pipes `devpod ssh <kart>` over stdio. Makes every kart a first-class SSH target without the tooling knowing about drift.
+- **`lakitu serve` streaming RPC** — long-lived stdin/stdout session with JSON-RPC batching and server-initiated notifications (streaming logs, progress updates). Complements the one-shot `lakitu rpc` mode.
 - **Cross-circuit sync** — sync characters / tunes / chest across circuits via a plugin system, syncthing, or a git-backed garage.
 - **Additional chest backends** — age, 1Password, Vault, SOPS, etc., behind the `ChestBackend` interface.
 - **IDE integration** — devpod's `--ide <name>` (VS Code, JetBrains, OpenVSCode, Zed) exposed as a flag on `drift new` / `drift connect`.
