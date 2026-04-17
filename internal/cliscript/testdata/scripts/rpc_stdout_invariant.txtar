@@ -3,6 +3,8 @@
 # to stderr. See plans/PLAN.md § Critical invariants.
 
 # Case 1: valid request, unknown method → one error envelope on stdout.
+# `nonexistent.method` stays unregistered across phases so this assertion
+# doesn't break when new methods come online.
 stdin unknown.json
 lakitu rpc
 ! stderr .
@@ -20,9 +22,9 @@ lakitu version
 stdout '^lakitu '
 
 -- unknown.json --
-{"jsonrpc":"2.0","method":"kart.list","params":{},"id":1}
+{"jsonrpc":"2.0","method":"nonexistent.method","params":{},"id":1}
 -- unknown.want.json --
-{"jsonrpc":"2.0","error":{"code":2,"message":"method \"kart.list\" not implemented","data":{"method":"kart.list","type":"method_not_found"}},"id":1}
+{"jsonrpc":"2.0","error":{"code":2,"message":"method \"nonexistent.method\" not implemented","data":{"method":"nonexistent.method","type":"method_not_found"}},"id":1}
 -- parse.json --
 not json at all
 -- parse.want.json --

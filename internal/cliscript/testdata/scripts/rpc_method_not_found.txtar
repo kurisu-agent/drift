@@ -1,6 +1,7 @@
 # lakitu rpc reads one JSON-RPC request and responds with method_not_found
 # when the method isn't wired yet. This exercises the stdout-is-JSON-RPC
-# invariant end-to-end.
+# invariant end-to-end. `nonexistent.method` is intentionally never
+# registered by any phase so this test stays stable.
 
 stdin request.json
 lakitu rpc
@@ -8,6 +9,6 @@ lakitu rpc
 cmp stdout want.json
 
 -- request.json --
-{"jsonrpc":"2.0","method":"kart.list","params":{},"id":1}
+{"jsonrpc":"2.0","method":"nonexistent.method","params":{},"id":1}
 -- want.json --
-{"jsonrpc":"2.0","error":{"code":2,"message":"method \"kart.list\" not implemented","data":{"method":"kart.list","type":"method_not_found"}},"id":1}
+{"jsonrpc":"2.0","error":{"code":2,"message":"method \"nonexistent.method\" not implemented","data":{"method":"nonexistent.method","type":"method_not_found"}},"id":1}

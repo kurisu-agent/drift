@@ -97,11 +97,11 @@ Order matters: trivial handlers first to validate the dispatch path end-to-end b
 
 ## Phase 7 — devpod integration
 
-- [ ] `internal/devpod` — typed wrapper over devpod CLI: `Up`, `Stop`, `Delete`, `Status`, `SSH`, `List`, `Logs`, `InstallDotfiles` ([PLAN.md § devpod integration](./PLAN.md#devpod-integration))
-- [ ] All calls go through `internal/exec` with context cancellation
-- [ ] `kart.list` — surface `devpod list --output json` plus garage state
-- [ ] `kart.info` — JSON shape per [PLAN.md § lakitu info schema](./PLAN.md#lakitu-info-kart--json-schema); status enum `running|stopped|busy|error|not_found`
-- [ ] Stale-kart detection: garage dir without devpod workspace → `code:4 stale_kart` ([PLAN.md § Stale karts](./PLAN.md#stale-karts))
+- [x] `internal/devpod` — typed wrapper over devpod CLI: `Up`, `Stop`, `Delete`, `Status`, `SSH`, `List`, `Logs`, `InstallDotfiles` ([PLAN.md § devpod integration](./PLAN.md#devpod-integration))
+- [x] All calls go through `internal/exec` with context cancellation
+- [x] `kart.list` — surface `devpod list --output json` plus garage state
+- [x] `kart.info` — JSON shape per [PLAN.md § lakitu info schema](./PLAN.md#lakitu-info-kart--json-schema); status enum `running|stopped|busy|error|not_found`
+- [x] Stale-kart detection: garage dir without devpod workspace → `code:4 stale_kart` ([PLAN.md § Stale karts](./PLAN.md#stale-karts))
 
 ---
 

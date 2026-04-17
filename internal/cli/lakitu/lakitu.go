@@ -14,8 +14,10 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/kurisu-agent/drift/internal/config"
+	"github.com/kurisu-agent/drift/internal/devpod"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
+	"github.com/kurisu-agent/drift/internal/server"
 	"github.com/kurisu-agent/drift/internal/version"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
@@ -97,6 +99,13 @@ func runVersion(io IO, cmd versionCmd) int {
 func Registry() *rpc.Registry {
 	reg := rpc.NewRegistry()
 	reg.Register(wire.MethodServerInit, serverInitHandler)
+	garage, err := config.GarageDir()
+	if err == nil {
+		server.RegisterKart(reg, server.KartDeps{
+			Devpod:    &devpod.Client{},
+			GarageDir: garage,
+		})
+	}
 	return reg
 }
 
