@@ -69,15 +69,123 @@ Client and server versions are matched via **semver**. See [Version compatibilit
 
 ## Transport and authentication
 
-All client ↔ server communication runs over **plain SSH**. There is no custom wire protocol, no drift daemon listening on a TCP port, and no bespoke auth layer:
+All client ↔ server communication runs over **plain SSH**, carrying **JSON-RPC 2.0** as the application protocol. There is no custom wire format, no drift daemon listening on a TCP port, and no bespoke auth layer:
 
-- Every non-local `drift` subcommand resolves to `ssh <circuit-host> lakitu <subcommand> [args...]`. Stdout, stderr, and exit codes flow back through the SSH pipe.
-- Secret values on `drift chest set` are streamed over the SSH pipe's stdin, never via argv.
-- `drift connect` adds a second leg: `mosh <circuit>` (or `ssh -t`) to land on the circuit, then `devpod ssh <kart>` to enter the container.
+- Every non-local `drift` subcommand resolves to `ssh <circuit-host> lakitu rpc`, with a JSON-RPC request piped to stdin and a JSON-RPC response read from stdout. See [RPC protocol](#rpc-protocol).
+- `drift connect` adds a second leg: `mosh <circuit>` (or `ssh -t`) to land on the circuit, then `devpod ssh <kart>` to enter the container. The mosh/ssh leg is the only non-RPC SSH usage.
 
 **Authentication and authorization are out of scope for drift.** Whatever makes `ssh <user>@<circuit-host>` succeed on the user's workstation — OpenSSH keys in `~/.ssh/`, an SSH agent, a YubiKey, certificates, an SSH CA, a jumphost, Tailscale SSH, a corporate bastion, `Match` rules in `sshd_config`, etc. — is what drift uses. drift never asks for a password, never manages keys, and never touches `~/.ssh/config`. If the user can SSH to the circuit, they can use drift; if they can't, drift shows them the OpenSSH error as-is and exits.
 
 The circuit's existing Unix user/group permissions on `~/.drift/garage/` are the only authorization model — if SSH lets you in as user `X`, you have full access to X's karts, characters, and chest entries.
+
+---
+
+## RPC protocol
+
+drift↔lakitu communication uses **[JSON-RPC 2.0](https://www.jsonrpc.org/specification)** as the wire protocol, carried over a plain SSH channel. drift invokes lakitu once per operation through a single RPC entry point:
+
+```
+ssh <circuit> lakitu rpc
+```
+
+drift writes a JSON-RPC request to stdin; `lakitu rpc` reads it, dispatches to a method handler, writes a JSON-RPC response to stdout, and exits. SSH carries transport and auth; JSON-RPC carries the semantic request/response. No custom framing, no binary protocol, no daemon.
+
+### Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "kart.new",
+  "params": {
+    "name": "myproject",
+    "clone": "git@github.com:user/repo.git",
+    "tune": "node",
+    "character": "kurisu",
+    "autostart": true
+  },
+  "id": 1
+}
+```
+
+- All methods use **named parameters** (`params` is an object, never an array).
+- `id` is always set — drift does not send notifications.
+
+### Response (success)
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": { "...method-specific payload..." },
+  "id": 1
+}
+```
+
+### Response (error)
+
+```json
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": 3,
+    "message": "kart 'myproject' not found",
+    "data": { "type": "kart_not_found", "kart": "myproject" }
+  },
+  "id": 1
+}
+```
+
+The `error` object shape (`code` / `message` / `data`) is defined in [Error handling](#error-handling).
+
+### Process lifecycle
+
+- **MVP: one request per SSH invocation.** `lakitu rpc` reads exactly one request, writes one response, exits. Simple and stateless; OpenSSH's `ControlMaster` provides TCP connection reuse when desired.
+- **Future: `lakitu serve`** — long-lived stdin/stdout session for pipelining, server-initiated notifications (streaming logs, progress), and JSON-RPC batching. Not in MVP.
+
+### Method catalog
+
+All methods are namespaced by resource. Each method has a direct human-CLI counterpart on lakitu (same handler, different I/O wrapper).
+
+| method             | human CLI                 | notes                                            |
+|--------------------|---------------------------|--------------------------------------------------|
+| `server.version`   | `lakitu version`          | returns `{version}`; used for compat check       |
+| `server.init`      | `lakitu init`             | bootstrap garage; idempotent                     |
+| `kart.new`         | `lakitu new`              | returns kart info on success                     |
+| `kart.start`       | `lakitu start`            | idempotent                                       |
+| `kart.stop`        | `lakitu stop`             | idempotent                                       |
+| `kart.restart`     | `lakitu restart`          |                                                  |
+| `kart.delete`      | `lakitu delete`           | errors on missing                                |
+| `kart.list`        | `lakitu list`             | returns array of kart info                       |
+| `kart.info`        | `lakitu info`             | returns single kart info ([schema](#lakitu-info-kart--json-schema)) |
+| `kart.enable`      | `lakitu enable`           | idempotent                                       |
+| `kart.disable`     | `lakitu disable`          | idempotent                                       |
+| `kart.logs`        | `lakitu logs`             | returns a chunk; streaming is future             |
+| `character.add`    | `lakitu character add`    |                                                  |
+| `character.list`   | `lakitu character list`   |                                                  |
+| `character.show`   | `lakitu character show`   |                                                  |
+| `character.remove` | `lakitu character rm`     | errors if any kart references it                 |
+| `chest.set`        | `lakitu chest set`        | value in `params.value`                          |
+| `chest.get`        | `lakitu chest get`        |                                                  |
+| `chest.list`       | `lakitu chest list`       | never returns values                             |
+| `chest.remove`     | `lakitu chest rm`         |                                                  |
+| `tune.list`        | `lakitu tune list`        |                                                  |
+| `tune.show`        | `lakitu tune show`        |                                                  |
+| `tune.set`         | `lakitu tune set`         | creates or updates                               |
+| `tune.remove`      | `lakitu tune rm`          | errors if any kart references it                 |
+| `config.show`      | `lakitu config show`      | returns server-level config                      |
+| `config.set`       | `lakitu config set`       |                                                  |
+
+### Transport semantics
+
+- SSH process exit `0`: RPC response delivered (success **or** error). drift reads the response and branches on `result` vs `error`.
+- SSH process exit `!= 0` (typically `255`): **transport failure** (unreachable host, auth denied, lakitu crashed before writing a response). drift passes OpenSSH's stderr through verbatim and exits non-zero without fabricating a JSON-RPC envelope.
+- stdout carries **exactly one JSON object** per `lakitu rpc` invocation (the JSON-RPC response), newline-terminated.
+- stderr may carry devpod's own output for debugging; drift logs it under `--debug` but does not parse it.
+
+### Human-facing CLI vs RPC
+
+`drift` always uses the RPC path. Humans running `lakitu` directly on a circuit keep the named subcommands (`lakitu new myproject`, `lakitu list`, etc.) — each parses argv, builds the equivalent RPC request, dispatches to the same handler as `lakitu rpc`, and formats the result for the terminal. Errors on the human path follow the [stderr format](#stderr-format) in Error handling.
+
+Shared Go code (`drift/internal/wire/`) defines the method names, parameter structs, and result structs used by both paths.
 
 ---
 
@@ -249,6 +357,7 @@ lakitu disable <kart>           — autostart off
 lakitu logs   <kart>            — systemd journal for kart service
 lakitu version                  — print semver version string (for compat check)
 lakitu init                     — idempotent first-run setup of ~/.drift/garage/
+lakitu rpc                      — read one JSON-RPC request on stdin, write response on stdout (see RPC protocol)
 lakitu character [list|add|show|rm]
 lakitu tune    [list|show|set|rm]
 lakitu chest   [set|get|list|rm]
@@ -303,7 +412,7 @@ Error shape (non-zero exit from `lakitu info`):
 
 drift and lakitu are released together with a shared **semver** version.
 
-On each `drift` invocation that contacts a circuit, drift calls `ssh <circuit> lakitu version` (cached per-session) and compares to its own version:
+On each `drift` invocation that contacts a circuit, drift issues a `server.version` RPC (cached per-session) and compares to its own version:
 
 | comparison            | behavior                   |
 |-----------------------|----------------------------|
@@ -319,11 +428,14 @@ The `lakitu info` JSON schema is versioned by the lakitu semver — additive-onl
 
 ## Error handling
 
-All non-success exits from `lakitu` emit a structured JSON payload on stderr, preceded by a one-line human summary. drift parses the JSON and re-renders with client-side formatting; humans running `lakitu` directly read the summary line and can ignore the JSON.
+Errors surface in two places depending on who's calling lakitu:
 
-We adopt the **[JSON-RPC 2.0 error object](https://www.jsonrpc.org/specification#error_object)** shape (`code` / `message` / `data`) as the payload format. We do **not** implement JSON-RPC as a transport — it's just a well-known, minimal envelope for structured errors that we reuse.
+1. **drift (RPC path):** errors appear as the `error` field of a JSON-RPC 2.0 response on stdout (see [RPC protocol](#rpc-protocol)). SSH exit code is still `0` because the response was delivered — drift branches on the response shape.
+2. **Humans (direct CLI):** `lakitu <subcommand>` emits a one-line human summary to stderr followed by the same error object as JSON on stderr, and exits with a non-zero code.
 
-### Error envelope
+Both paths use the same `error` object — defined here — serialized from the same Go type.
+
+### Error object
 
 ```json
 {
@@ -342,13 +454,13 @@ We adopt the **[JSON-RPC 2.0 error object](https://www.jsonrpc.org/specification
 - `data.type` (string) — stable snake_case identifier for programmatic branching (e.g. `kart_not_found`, `name_collision`, `devpod_up_failed`). Preferred over integer codes in client code paths.
 - `data.*` — arbitrary extension fields carrying context (kart name, tune name, underlying devpod exit code, `suggestion` strings, etc.).
 
-### Exit codes
+### `code` values (and exit codes on the human path)
 
-Small, stable set. drift maps them to typed Go errors via a shared `wire/errors.go` package imported by both binaries.
+Small, stable set. On the human CLI path, `code` doubles as the process exit code. On the RPC path, the SSH process still exits `0` — `code` lives only in the response.
 
-| exit | category       | typical `data.type` values                                           |
+| code | category       | typical `data.type` values                                           |
 |------|----------------|----------------------------------------------------------------------|
-| 0    | success        | —                                                                    |
+| 0    | success        | — (not an error; `result` branch)                                    |
 | 1    | unspecified    | `internal_error`                                                     |
 | 2    | user error     | `invalid_name`, `invalid_flag`, `mutually_exclusive_flags`           |
 | 3    | not found      | `kart_not_found`, `character_not_found`, `chest_entry_not_found`     |
@@ -356,16 +468,18 @@ Small, stable set. drift maps them to typed Go errors via a shared `wire/errors.
 | 5    | devpod error   | `devpod_up_failed`, `devpod_ssh_failed`, `devpod_unreachable`        |
 | 6    | auth/perms     | `chest_backend_denied`, `garage_write_denied`, `systemd_denied`      |
 
-SSH's own exit **255** is never emitted by lakitu. When drift observes 255, it treats the failure as a *transport* error and passes OpenSSH's stderr through verbatim (`ssh: Could not resolve hostname ...`) — no JSON wrapping, no fake error envelope.
+SSH's own exit **255** is never used by drift or lakitu. When drift observes 255 from the `ssh` process, it treats the failure as a *transport* error and passes OpenSSH's stderr through verbatim (`ssh: Could not resolve hostname ...`) — no RPC response, no fabricated envelope.
 
-### stderr format
+### stderr format (human CLI path)
 
 ```
 error: kart 'myproject' not found
 {"code":3,"message":"kart 'myproject' not found","data":{"type":"kart_not_found","kart":"myproject"}}
 ```
 
-Line 1: `error: ` + `message`. Line 2: the JSON object on a single line. **stdout is reserved for structured command output** (`lakitu info`, `lakitu list`, etc.) and never carries error payloads.
+Line 1: `error: ` + `message`. Line 2: the error object on a single line. **stdout stays reserved** for structured command output (table renderings of `lakitu list`, JSON for `--output json`, etc.) and never carries error payloads. Exit code mirrors `code`.
+
+The RPC path uses the same error object but wraps it in a JSON-RPC response envelope on stdout instead — see [RPC protocol](#rpc-protocol).
 
 ### Idempotency
 
