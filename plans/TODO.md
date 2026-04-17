@@ -192,9 +192,9 @@ Order matters: trivial handlers first to validate the dispatch path end-to-end b
 
 ## Phase 17 — Bootstrap docs
 
-- [ ] README quickstart: install lakitu (manual tarball), `lakitu init`, install drift, `drift warmup`, `drift new`, `drift connect`
-- [ ] Manual-install checklist mirrors what the (future) Nix module would automate ([PLAN.md § Bootstrap / install](./PLAN.md#bootstrap--install))
-- [ ] Document `--skip-version-check` use during upgrades
+- [x] README quickstart: install lakitu (manual tarball), `lakitu init`, install drift, `drift warmup`, `drift new`, `drift connect`
+- [x] Manual-install checklist mirrors what the (future) Nix module would automate ([PLAN.md § Bootstrap / install](./PLAN.md#bootstrap--install))
+- [x] Document `--skip-version-check` use during upgrades
 
 ---
 
