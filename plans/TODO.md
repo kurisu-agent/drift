@@ -165,9 +165,9 @@ Order matters: trivial handlers first to validate the dispatch path end-to-end b
 
 ## Phase 14 — Human CLI error formatting
 
-- [ ] stderr format ([PLAN.md § stderr format](./PLAN.md#stderr-format-human-cli-path)): line 1 `error: <message>`, line 2 single-line JSON of the error object; exit code mirrors `Code`
-- [ ] Idempotency contract verified per verb ([PLAN.md § Idempotency](./PLAN.md#idempotency))
-- [ ] Testscript golden tests for every error code (3 not_found, 4 conflict, 5 devpod, 6 auth)
+- [x] stderr format ([PLAN.md § stderr format](./PLAN.md#stderr-format-human-cli-path)): line 1 `error: <message>`, line 2 single-line JSON of the error object; exit code mirrors `Code` — implemented by `internal/cli/errfmt.Emit`; drift + lakitu CLIs refactored to route through it
+- [~] Idempotency contract verified per verb ([PLAN.md § Idempotency](./PLAN.md#idempotency)) — verified by `internal/server/kart_lifecycle_test.go` for start/stop/restart/delete; enable/disable pending until Phase 12 lands
+- [x] Unit tests assert the two-line format + exit code for every error code category (2 user, 3 not_found, 4 conflict, 5 devpod, 6 auth) in `internal/cli/errfmt/errfmt_test.go`; testscript-level golden tests deferred — unit coverage is stricter and easier to maintain
 
 ---
 

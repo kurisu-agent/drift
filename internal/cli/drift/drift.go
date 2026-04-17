@@ -55,11 +55,16 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		kong.Exit(func(int) {}),
 	)
 	if err != nil {
+		// Kong's own construction failures aren't command-level errors — they
+		// indicate a programming mistake in the CLI struct, so we keep the
+		// low-level prefix and don't route through errfmt.
 		fmt.Fprintf(io.Stderr, "drift: %v\n", err)
 		return 1
 	}
 	kctx, err := parser.Parse(argv)
 	if err != nil {
+		// Kong prints its own help/usage when Parse returns; leave its output
+		// alone rather than wrapping it in the errfmt two-line format.
 		fmt.Fprintf(io.Stderr, "drift: %v\n", err)
 		return 2
 	}
@@ -85,8 +90,7 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 	case "logs <name>":
 		return runKartLogs(ctx, io, &cli, cli.Logs, deps)
 	default:
-		fmt.Fprintf(io.Stderr, "drift: unknown command %q\n", kctx.Command())
-		return 2
+		return emitError(io, fmt.Errorf("unknown command %q", kctx.Command()))
 	}
 }
 
@@ -96,8 +100,7 @@ func runVersion(io IO, outputFormat string) int {
 	case "json":
 		buf, err := json.Marshal(info)
 		if err != nil {
-			fmt.Fprintf(io.Stderr, "drift: %v\n", err)
-			return 1
+			return emitError(io, err)
 		}
 		fmt.Fprintln(io.Stdout, string(buf))
 	default:

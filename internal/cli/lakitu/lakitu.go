@@ -13,6 +13,7 @@ import (
 	"sort"
 
 	"github.com/alecthomas/kong"
+	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/devpod"
 	"github.com/kurisu-agent/drift/internal/kart"
@@ -105,8 +106,7 @@ func Run(ctx context.Context, argv []string, io IO) int {
 	case "chest rm <name>":
 		return runChestRemove(ctx, io, cli.Chest.Remove)
 	default:
-		fmt.Fprintf(io.Stderr, "lakitu: unknown command %q\n", kctx.Command())
-		return 2
+		return errfmt.Emit(io.Stderr, fmt.Errorf("unknown command %q", kctx.Command()))
 	}
 }
 
@@ -116,8 +116,7 @@ func runVersion(io IO, cmd versionCmd) int {
 	case "json":
 		buf, err := json.Marshal(info)
 		if err != nil {
-			fmt.Fprintf(io.Stderr, "lakitu: %v\n", err)
-			return 1
+			return errfmt.Emit(io.Stderr, err)
 		}
 		fmt.Fprintln(io.Stdout, string(buf))
 	default:
@@ -153,19 +152,16 @@ func Registry() *rpc.Registry {
 }
 
 // runInit is the human-CLI counterpart of the server.init RPC. It bootstraps
-// the garage and prints a short, stable summary to stdout. Errors land on
-// stderr with a nonzero exit — lakitu's top-level CLI doesn't yet emit the
-// structured stderr format (Phase 14), so we keep the message simple.
+// the garage and prints a short, stable summary to stdout. Errors flow
+// through errfmt.Emit for the two-line format.
 func runInit(io IO) int {
 	root, err := config.GarageDir()
 	if err != nil {
-		fmt.Fprintf(io.Stderr, "lakitu: %v\n", err)
-		return 1
+		return errfmt.Emit(io.Stderr, err)
 	}
 	res, err := config.InitGarage(root)
 	if err != nil {
-		fmt.Fprintf(io.Stderr, "lakitu: %v\n", err)
-		return 1
+		return errfmt.Emit(io.Stderr, err)
 	}
 	if len(res.Created) == 0 {
 		fmt.Fprintf(io.Stdout, "garage already initialized at %s\n", res.GarageDir)

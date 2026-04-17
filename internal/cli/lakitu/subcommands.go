@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/server"
 	"github.com/kurisu-agent/drift/internal/wire"
@@ -161,8 +162,7 @@ func runTuneRemove(ctx context.Context, io IO, cmd tuneRemoveCmd) int {
 func runChestSet(ctx context.Context, io IO, cmd chestSetCmd) int {
 	value, err := io.ReadAll()
 	if err != nil {
-		fmt.Fprintf(io.Stderr, "lakitu: read stdin: %v\n", err)
-		return 1
+		return errfmt.Emit(io.Stderr, fmt.Errorf("read stdin: %w", err))
 	}
 	if n := len(value); n > 0 && value[n-1] == '\n' {
 		value = value[:n-1]
@@ -188,12 +188,11 @@ func runChestRemove(ctx context.Context, io IO, cmd chestRemoveCmd) int {
 // callAndPrint is the shared in-process dispatch helper for every human
 // subcommand. It marshals params, runs them through the live [*rpc.Registry],
 // and then renders the response — either the JSON result on stdout or the
-// structured error on stderr (plans/PLAN.md § stderr format).
+// structured error on stderr via errfmt.Emit (plans/PLAN.md § "stderr format").
 func callAndPrint(ctx context.Context, io IO, method string, params any) int {
 	raw, err := json.Marshal(params)
 	if err != nil {
-		fmt.Fprintf(io.Stderr, "lakitu: marshal params: %v\n", err)
-		return 1
+		return errfmt.Emit(io.Stderr, fmt.Errorf("marshal params: %w", err))
 	}
 	req := &wire.Request{
 		JSONRPC: wire.Version,
@@ -203,27 +202,17 @@ func callAndPrint(ctx context.Context, io IO, method string, params any) int {
 	}
 	resp := Registry().Dispatch(ctx, req)
 	if resp.Error != nil {
-		e := rpcerr.FromWire(resp.Error)
-		// plans/PLAN.md § stderr format: "error: <message>" then the error
-		// object on a single line.
-		fmt.Fprintf(io.Stderr, "error: %s\n", e.Message)
-		buf, mErr := json.Marshal(e)
-		if mErr == nil {
-			fmt.Fprintln(io.Stderr, string(buf))
-		}
-		return int(e.Code)
+		return errfmt.Emit(io.Stderr, rpcerr.FromWire(resp.Error))
 	}
 	// Result is already JSON. Pretty-print for humans; machine callers use
 	// `lakitu rpc` for the raw envelope anyway.
 	var v any
 	if err := json.Unmarshal(resp.Result, &v); err != nil {
-		fmt.Fprintf(io.Stderr, "lakitu: decode result: %v\n", err)
-		return 1
+		return errfmt.Emit(io.Stderr, fmt.Errorf("decode result: %w", err))
 	}
 	pretty, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		fmt.Fprintf(io.Stderr, "lakitu: encode result: %v\n", err)
-		return 1
+		return errfmt.Emit(io.Stderr, fmt.Errorf("encode result: %w", err))
 	}
 	fmt.Fprintln(io.Stdout, string(pretty))
 	return 0
