@@ -1,0 +1,21 @@
+# Golden test for the human CLI stderr format on code 3 (not_found).
+# plans/PLAN.md § "stderr format (human CLI path)" specifies:
+#
+#   line 1: error: <message>
+#   line 2: <single-line JSON of the error object>
+#   exit code: Code  (3 for not_found)
+#
+# lakitu init so the garage (and the characters dir) exist, then ask for a
+# character that was never registered. character.show's handler returns
+# character_not_found (code 3) and the human CLI path routes it through
+# internal/cli/errfmt.Emit.
+
+lakitu init
+! stderr .
+
+! lakitu character show ghost
+stderr '^error: character "ghost" not found'
+stderr '"code":3'
+stderr '"type":"character_not_found"'
+stderr '"name":"ghost"'
+! stdout .
