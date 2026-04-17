@@ -1,8 +1,8 @@
 // Package lakitu contains the Kong CLI definition for the lakitu server binary.
 //
-// Scaffolding covers `version` and a stub `rpc` that reads one JSON-RPC
-// request from stdin and returns method_not_found. Handlers land as they
-// are implemented.
+// Scaffolding covers `version` and `rpc`. The `rpc` command dispatches to
+// handlers registered in a [*rpc.Registry]; wiring for specific methods lands
+// in later phases.
 package lakitu
 
 import (
@@ -12,6 +12,7 @@ import (
 	"io"
 
 	"github.com/alecthomas/kong"
+	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/version"
 	"github.com/kurisu-agent/drift/internal/wire"
@@ -60,7 +61,7 @@ func Run(ctx context.Context, argv []string, io IO) int {
 	case "version":
 		return runVersion(io, cli.Version)
 	case "rpc":
-		return runRPC(ctx, io)
+		return runRPC(ctx, io, Registry())
 	default:
 		fmt.Fprintf(io.Stderr, "lakitu: unknown command %q\n", kctx.Command())
 		return 2
@@ -83,34 +84,31 @@ func runVersion(io IO, cmd versionCmd) int {
 	return 0
 }
 
-// runRPC is the one-shot dispatch entry point. It honors PLAN.md's stdout
-// invariant: only the JSON-RPC response (or nothing on a hard crash) ever
-// goes to stdout.
-func runRPC(_ context.Context, io IO) int {
-	req, err := wire.DecodeRequest(io.Stdin)
-	if err != nil {
-		// Parse error — JSON-RPC 2.0 defines code -32700. drift exit
-		// policy: the SSH channel still returns 0 because we delivered a
-		// response, but the embedded code maps to CodeInternal (1).
-		writeError(io, nil, rpcerr.New(rpcerr.CodeInternal, "parse_error", "parse error: %v", err))
-		return 0
-	}
-	// MVP: no methods wired yet — every request resolves to
-	// method_not_found so the transport layer is still exercisable.
-	e := rpcerr.New(rpcerr.CodeUserError, "method_not_found", "method %q not implemented", req.Method).
-		With("method", req.Method)
-	writeError(io, req.ID, e)
-	return 0
+// Registry returns the method registry used by `lakitu rpc`. Handlers are
+// registered here as they come online in later phases. The registry is
+// rebuilt on every Run call so tests can swap it out.
+func Registry() *rpc.Registry {
+	return rpc.NewRegistry()
 }
 
-func writeError(io IO, id json.RawMessage, e *rpcerr.Error) {
-	envelope := &wire.Response{
-		JSONRPC: wire.Version,
-		ID:      id,
+// runRPC is the one-shot dispatch entry point. It honors plans/PLAN.md's
+// stdout invariant: only the JSON-RPC response (or nothing on a hard crash)
+// ever goes to stdout.
+func runRPC(ctx context.Context, io IO, reg *rpc.Registry) int {
+	req, err := wire.DecodeRequest(io.Stdin)
+	if err != nil {
+		// Parse error — no valid id to echo. Emit a response with a null id
+		// per JSON-RPC 2.0 so drift can still branch on the envelope shape.
+		e := rpcerr.New(rpcerr.CodeInternal, "parse_error", "parse error: %v", err)
+		resp := &wire.Response{
+			JSONRPC: wire.Version,
+			ID:      json.RawMessage("null"),
+			Error:   e.Wire(),
+		}
+		_ = wire.EncodeResponse(io.Stdout, resp)
+		return 0
 	}
-	buf, _ := e.MarshalJSON()
-	var we wire.Error
-	_ = json.Unmarshal(buf, &we)
-	envelope.Error = &we
-	_ = wire.EncodeResponse(io.Stdout, envelope)
+	resp := reg.Dispatch(ctx, req)
+	_ = wire.EncodeResponse(io.Stdout, resp)
+	return 0
 }

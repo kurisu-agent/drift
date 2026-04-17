@@ -1,0 +1,29 @@
+# stdout invariant: every `lakitu rpc` invocation that runs to completion
+# writes exactly one newline-terminated JSON object to stdout and nothing
+# to stderr. See plans/PLAN.md § Critical invariants.
+
+# Case 1: valid request, unknown method → one error envelope on stdout.
+stdin unknown.json
+lakitu rpc
+! stderr .
+cmp stdout unknown.want.json
+
+# Case 2: malformed request → one error envelope with id:null on stdout.
+stdin parse.json
+lakitu rpc
+! stderr .
+cmp stdout parse.want.json
+
+# Case 3: version subcommand — one line on stdout, nothing on stderr.
+lakitu version
+! stderr .
+stdout '^lakitu '
+
+-- unknown.json --
+{"jsonrpc":"2.0","method":"kart.list","params":{},"id":1}
+-- unknown.want.json --
+{"jsonrpc":"2.0","error":{"code":2,"message":"method \"kart.list\" not implemented","data":{"method":"kart.list","type":"method_not_found"}},"id":1}
+-- parse.json --
+not json at all
+-- parse.want.json --
+{"jsonrpc":"2.0","error":{"code":1,"message":"parse error: wire: decode request: invalid character 'o' in literal null (expecting 'u')","data":{"type":"parse_error"}},"id":null}

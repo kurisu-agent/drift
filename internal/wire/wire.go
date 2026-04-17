@@ -1,8 +1,8 @@
 // Package wire defines the JSON-RPC 2.0 types exchanged between drift and lakitu.
 //
 // The protocol is one-shot: drift writes a single [Request] to lakitu's stdin,
-// reads a single [Response] from its stdout, and SSH exits. See PLAN.md
-// § RPC protocol for the full contract.
+// reads a single [Response] from its stdout, and SSH exits. See
+// plans/PLAN.md § RPC protocol for the full contract.
 package wire
 
 import (
@@ -33,7 +33,7 @@ type Response struct {
 	ID      json.RawMessage `json:"id"`
 }
 
-// Error is the JSON-RPC 2.0 error object. See PLAN.md § Error handling for
+// Error is the JSON-RPC 2.0 error object. See plans/PLAN.md § Error handling for
 // the code/type/data contract.
 type Error struct {
 	Code    int             `json:"code"`

@@ -1,14 +1,16 @@
 // Package rpcerr defines the typed error used across drift and lakitu.
 //
-// A single [Error] value serializes into both halves of PLAN.md § Error
-// handling: the JSON-RPC 2.0 error object on the RPC path, and the
-// stderr/exit-code pair on the human CLI path.
+// A single [Error] value serializes into both halves of plans/PLAN.md
+// § Error handling: the JSON-RPC 2.0 error object on the RPC path, and
+// the stderr/exit-code pair on the human CLI path.
 package rpcerr
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/kurisu-agent/drift/internal/wire"
 )
 
 // Code is the small stable set of top-level error codes. On the human CLI
@@ -50,7 +52,7 @@ const (
 )
 
 // Error is the canonical drift/lakitu error. It embeds the JSON-RPC error
-// shape plus the structured Data fields documented in PLAN.md. Wrap
+// shape plus the structured Data fields documented in plans/PLAN.md. Wrap
 // underlying Go errors with Cause; the wrap is hidden from clients (never
 // serialized) but surfaces via errors.Unwrap for logging.
 type Error struct {
@@ -105,6 +107,50 @@ func (e *Error) MarshalJSON() ([]byte, error) {
 		payload.Data = data
 	}
 	return json.Marshal(payload)
+}
+
+// Wire converts e into the JSON-RPC 2.0 error object used on the wire. The
+// Cause is intentionally dropped — it is for internal logging only.
+func (e *Error) Wire() *wire.Error {
+	we := &wire.Error{Code: int(e.Code), Message: e.Message}
+	data := make(map[string]any, len(e.Data)+1)
+	for k, v := range e.Data {
+		data[k] = v
+	}
+	if e.Type != "" {
+		data["type"] = string(e.Type)
+	}
+	if len(data) > 0 {
+		raw, err := json.Marshal(data)
+		if err == nil {
+			we.Data = raw
+		}
+	}
+	return we
+}
+
+// FromWire reconstructs an Error from a wire-level error object. The "type"
+// field inside Data is lifted back to Error.Type.
+func FromWire(we *wire.Error) *Error {
+	if we == nil {
+		return nil
+	}
+	e := &Error{Code: Code(we.Code), Message: we.Message}
+	if len(we.Data) == 0 {
+		return e
+	}
+	var data map[string]any
+	if err := json.Unmarshal(we.Data, &data); err != nil {
+		return e
+	}
+	if t, ok := data["type"].(string); ok {
+		e.Type = Type(t)
+		delete(data, "type")
+	}
+	if len(data) > 0 {
+		e.Data = data
+	}
+	return e
 }
 
 // New builds an Error. Callers typically use a helper below instead.
