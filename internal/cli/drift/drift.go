@@ -28,6 +28,8 @@ type CLI struct {
 	Restart restartCmd `cmd:"" help:"Restart a kart."`
 	Delete  deleteCmd  `cmd:"" help:"Delete a kart (errors if missing)."`
 	Logs    logsCmd    `cmd:"" help:"Fetch a chunk of kart logs."`
+	Enable  enableCmd  `cmd:"" help:"Enable kart autostart on circuit reboot (idempotent)."`
+	Disable disableCmd `cmd:"" help:"Disable kart autostart (idempotent)."`
 
 	SshProxy sshProxyCmd `cmd:"" name:"ssh-proxy" hidden:"" help:"ProxyCommand helper for drift.<circuit>.<kart> aliases (invoked by OpenSSH)."`
 }
@@ -94,6 +96,10 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runKartDelete(ctx, io, &cli, cli.Delete, deps)
 	case "logs <name>":
 		return runKartLogs(ctx, io, &cli, cli.Logs, deps)
+	case "enable <name>":
+		return runKartEnable(ctx, io, &cli, cli.Enable, deps)
+	case "disable <name>":
+		return runKartDisable(ctx, io, &cli, cli.Disable, deps)
 	case "ssh-proxy <alias>", "ssh-proxy <alias> <port>":
 		return runSSHProxy(ctx, io, &cli, cli.SshProxy, deps)
 	default:

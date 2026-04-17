@@ -20,6 +20,7 @@ import (
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/server"
+	"github.com/kurisu-agent/drift/internal/systemd"
 	"github.com/kurisu-agent/drift/internal/version"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
@@ -146,6 +147,10 @@ func Registry() *rpc.Registry {
 				GarageDir: garage,
 				Devpod:    &devpod.Client{},
 			},
+		})
+		server.RegisterKartAutostart(reg, server.KartAutostartDeps{
+			GarageDir: garage,
+			Systemd:   &systemd.Client{},
 		})
 	}
 	return reg
