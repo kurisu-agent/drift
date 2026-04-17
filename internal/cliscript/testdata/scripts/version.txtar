@@ -1,0 +1,12 @@
+# Both binaries print a non-empty version string.
+drift version
+stdout '^drift '
+! stderr .
+
+lakitu version
+stdout '^lakitu '
+! stderr .
+
+# --output json produces parseable JSON with a Version field.
+drift version --output json
+stdout '"Version"'
