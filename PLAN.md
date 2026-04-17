@@ -181,10 +181,6 @@ Users get all three for free once a circuit is added.
 - `manage_ssh_config: false` in `~/.config/drift/config.yaml` disables all ssh_config writes. drift then passes `user@host` directly to `ssh`/`mosh`, losing ControlMaster speedup.
 - Users who want to customize the block can add overrides to `~/.ssh/config` **before** the drift `Include` line (e.g. their own `Host drift.* IdentityFile ~/.ssh/id_work`). OpenSSH is first-match, so earlier user entries win.
 
-### Future: per-kart wildcard routing
-
-In a later phase, drift will expose each kart as its own SSH host alias — `drift.<circuit>.<kart>` — via a `Host drift.*.* ProxyCommand drift ssh-proxy %h` wildcard. The proxy command parses the alias, SSHes to the circuit, and pipes a `devpod ssh <kart>` session over stdio. This makes karts first-class SSH targets for `scp`, `rsync`, `sshfs`, VS Code Remote-SSH, JetBrains Gateway, etc., without those tools needing to know anything about drift — the same pattern Coder uses. Not in MVP; listed in [Future](#future).
-
 ---
 
 ## RPC protocol
@@ -254,7 +250,7 @@ All methods are namespaced by resource. Each method has a direct human-CLI count
 
 | method             | human CLI                 | notes                                            |
 |--------------------|---------------------------|--------------------------------------------------|
-| `server.version`   | `lakitu version`          | returns `{version}`; used for compat check       |
+| `server.version`   | `lakitu version`          | returns `{"version": "<semver>", "api": <int>}`; used for compat check |
 | `server.init`      | `lakitu init`             | bootstrap garage; idempotent                     |
 | `kart.new`         | `lakitu new`              | returns kart info on success                     |
 | `kart.start`       | `lakitu start`            | idempotent                                       |
@@ -408,6 +404,7 @@ Interactive only — returns a `user_error` (exit code 2) if stdin isn't a TTY. 
                            --additional-features (additive, merged last)
 --devcontainer <src>       override devcontainer: JSON string, file path, or URL
                            passed as devpod --extra-devcontainer-path
+--dotfiles <git-url>       layer-2 dotfiles repo (overrides tune's dotfiles_repo)
 --character <name>         git/github identity to inject
 --autostart                enable auto-start on server reboot
 ```
@@ -560,7 +557,16 @@ Error shape (non-zero exit from `lakitu info`):
 
 drift and lakitu are released together with a shared **semver** version.
 
-On each `drift` invocation that contacts a circuit, drift issues a `server.version` RPC (cached per-session) and compares to its own version:
+On each `drift` invocation that contacts a circuit, drift issues a `server.version` RPC (cached per-session — see open question below) and compares to its own version. The response shape:
+
+```json
+{ "version": "1.4.2", "api": 1 }
+```
+
+- `version` — lakitu's semver string. Drives the major/minor/patch comparison below.
+- `api` — integer schema version for the RPC surface itself. Bumped only on breaking wire changes (removed methods, changed required params). Lets drift refuse a lakitu that's still semver-compatible on paper but speaks an older JSON-RPC surface. MVP ships `api: 1`.
+
+Comparison rules:
 
 | comparison            | behavior                   |
 |-----------------------|----------------------------|
@@ -770,6 +776,20 @@ chest:
   backend: envfile      # envfile (MVP) | age | onepassword | vault (future)
   # backend-specific config lives under this key
 ```
+
+Settable via `lakitu config set` (and the `config.set` RPC): `default_tune`, `default_character`, `nix_cache_url`, `chest.backend`. Backend-specific subkeys under `chest.*` are set the same way (e.g. `lakitu config set chest.envfile.path ...` once non-envfile backends land). Unknown keys are rejected with `code: 2` (`invalid_flag`).
+
+### Character file (`characters/<name>.yaml`)
+
+```yaml
+git_name: Kurisu Makise
+git_email: kurisu@example.com
+github_user: kurisu              # optional
+ssh_key_path: ~/.ssh/id_ed25519  # optional; path on the circuit
+pat_secret: chest:github-pat     # optional; chest reference, never a literal token
+```
+
+Only `git_name` and `git_email` are required. `pat_secret` always takes the `chest:<name>` form — literal tokens are rejected at `character add` time.
 
 ### Tune profile fields (all optional)
 
