@@ -8,6 +8,7 @@ require (
 	github.com/alecthomas/kong v1.15.0
 	github.com/google/go-cmp v0.7.0
 	github.com/rogpeppe/go-internal v1.14.1
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

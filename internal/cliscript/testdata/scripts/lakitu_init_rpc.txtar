@@ -1,0 +1,22 @@
+# `lakitu rpc` dispatches server.init to the same handler the named
+# subcommand uses. Response carries the garage path; re-running produces
+# an empty `created` list.
+
+stdin first.json
+lakitu rpc
+! stderr .
+stdout '"jsonrpc":"2.0"'
+stdout '"result":\{"garage_dir":"[^"]+/\.drift/garage","created":\['
+
+exists $HOME/.drift/garage/config.yaml
+
+# Second call — garage already exists, so `created` is omitted (omitempty).
+stdin second.json
+lakitu rpc
+! stderr .
+stdout '"result":\{"garage_dir":"[^"]+/\.drift/garage"\}'
+
+-- first.json --
+{"jsonrpc":"2.0","method":"server.init","params":{},"id":1}
+-- second.json --
+{"jsonrpc":"2.0","method":"server.init","params":{},"id":2}

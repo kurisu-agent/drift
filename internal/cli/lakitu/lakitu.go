@@ -10,8 +10,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 
 	"github.com/alecthomas/kong"
+	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/version"
@@ -23,12 +25,15 @@ type CLI struct {
 	Debug bool `help:"Verbose output." env:"LAKITU_DEBUG"`
 
 	Version versionCmd `cmd:"" help:"Print lakitu version."`
+	Init    initCmd    `cmd:"" help:"Bootstrap the garage at ~/.drift/garage (idempotent)."`
 	RPC     rpcCmd     `cmd:"" name:"rpc" help:"Read one JSON-RPC 2.0 request from stdin and write a response to stdout."`
 }
 
 type versionCmd struct {
 	Output string `enum:"text,json" default:"text" help:"Output format."`
 }
+
+type initCmd struct{}
 
 type rpcCmd struct{}
 
@@ -60,6 +65,8 @@ func Run(ctx context.Context, argv []string, io IO) int {
 	switch kctx.Command() {
 	case "version":
 		return runVersion(io, cli.Version)
+	case "init":
+		return runInit(io)
 	case "rpc":
 		return runRPC(ctx, io, Registry())
 	default:
@@ -88,7 +95,58 @@ func runVersion(io IO, cmd versionCmd) int {
 // registered here as they come online in later phases. The registry is
 // rebuilt on every Run call so tests can swap it out.
 func Registry() *rpc.Registry {
-	return rpc.NewRegistry()
+	reg := rpc.NewRegistry()
+	reg.Register(wire.MethodServerInit, serverInitHandler)
+	return reg
+}
+
+// runInit is the human-CLI counterpart of the server.init RPC. It bootstraps
+// the garage and prints a short, stable summary to stdout. Errors land on
+// stderr with a nonzero exit — lakitu's top-level CLI doesn't yet emit the
+// structured stderr format (Phase 14), so we keep the message simple.
+func runInit(io IO) int {
+	root, err := config.GarageDir()
+	if err != nil {
+		fmt.Fprintf(io.Stderr, "lakitu: %v\n", err)
+		return 1
+	}
+	res, err := config.InitGarage(root)
+	if err != nil {
+		fmt.Fprintf(io.Stderr, "lakitu: %v\n", err)
+		return 1
+	}
+	if len(res.Created) == 0 {
+		fmt.Fprintf(io.Stdout, "garage already initialized at %s\n", res.GarageDir)
+		return 0
+	}
+	created := append([]string(nil), res.Created...)
+	sort.Strings(created)
+	fmt.Fprintf(io.Stdout, "initialized garage at %s\n", res.GarageDir)
+	for _, c := range created {
+		fmt.Fprintf(io.Stdout, "  + %s\n", c)
+	}
+	return 0
+}
+
+// serverInitHandler is the RPC-facing counterpart of `lakitu init`. It
+// resolves the garage root from the server's environment ($HOME) and
+// returns the same InitResult both paths share.
+func serverInitHandler(_ context.Context, params json.RawMessage) (any, error) {
+	// server.init takes no params. Strict binding rejects stray fields
+	// instead of silently ignoring them.
+	var p struct{}
+	if err := rpc.BindParams(params, &p); err != nil {
+		return nil, err
+	}
+	root, err := config.GarageDir()
+	if err != nil {
+		return nil, rpcerr.Internal("resolve garage dir: %v", err).Wrap(err)
+	}
+	res, err := config.InitGarage(root)
+	if err != nil {
+		return nil, rpcerr.Internal("init garage: %v", err).Wrap(err)
+	}
+	return res, nil
 }
 
 // runRPC is the one-shot dispatch entry point. It honors plans/PLAN.md's

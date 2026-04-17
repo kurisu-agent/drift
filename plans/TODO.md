@@ -42,11 +42,11 @@ Legend: `[x]` done · `[ ]` open · `[~]` partial.
 
 ## Phase 2 — Config layer
 
-- [ ] `internal/config` — YAML loader for both client and server configs (yaml.v3 + struct tags + `Validate()`); reject unknown keys
-- [ ] Client `~/.config/drift/config.yaml` schema + atomic write helper ([PLAN.md § Client config layout](./PLAN.md#client-config-layout))
-- [ ] Server `~/.drift/garage/config.yaml` schema ([PLAN.md § Server state layout](./PLAN.md#server-state-layout))
-- [ ] `lakitu init` — idempotent garage bootstrap (creates `~/.drift/garage/{tunes,characters,chest,karts}` with default `config.yaml`)
-- [ ] Path resolution honors `XDG_CONFIG_HOME` on the client and `$HOME` on the server; testscript covers both
+- [x] `internal/config` — YAML loader for both client and server configs (yaml.v3 + struct tags + `Validate()`); reject unknown keys
+- [x] Client `~/.config/drift/config.yaml` schema + atomic write helper ([PLAN.md § Client config layout](./PLAN.md#client-config-layout))
+- [x] Server `~/.drift/garage/config.yaml` schema ([PLAN.md § Server state layout](./PLAN.md#server-state-layout))
+- [x] `lakitu init` — idempotent garage bootstrap (creates `~/.drift/garage/{tunes,characters,chest,karts}` with default `config.yaml`)
+- [x] Path resolution honors `XDG_CONFIG_HOME` on the client and `$HOME` on the server; testscript covers both
 
 ---
 
