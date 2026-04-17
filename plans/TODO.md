@@ -119,12 +119,12 @@ Order matters: trivial handlers first to validate the dispatch path end-to-end b
 
 ## Phase 9 — Kart lifecycle handlers
 
-- [ ] `kart.start` (idempotent) — `devpod up <name>`
-- [ ] `kart.stop` (idempotent) — `devpod stop <name>`
-- [ ] `kart.restart`
-- [ ] `kart.delete` — errors `code:3 kart_not_found` on missing
-- [ ] `kart.logs` — chunk return; streaming deferred ([Future](./PLAN.md#future))
-- [ ] Drift-side commands wired through RPC for each above
+- [x] `kart.start` (idempotent) — `devpod up <name>`
+- [x] `kart.stop` (idempotent) — `devpod stop <name>`
+- [x] `kart.restart`
+- [x] `kart.delete` — errors `code:3 kart_not_found` on missing
+- [x] `kart.logs` — chunk return; streaming deferred ([Future](./PLAN.md#future))
+- [x] Drift-side commands wired through RPC for each above
 
 ---
 

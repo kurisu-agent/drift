@@ -19,12 +19,20 @@ type deps struct {
 	// (nil, nil) is not legal; callers always produce either a non-nil result
 	// on success or an error on failure.
 	probe func(ctx context.Context, circuit string) (*probeResult, error)
+
+	// call issues a single RPC against circuit and decodes the result into
+	// out. Every drift kart subcommand is a thin wrapper around one call. The
+	// hook is injected (rather than calling a package-level function) so tests
+	// can stub the RPC without real SSH.
+	call func(ctx context.Context, circuit, method string, params, out any) error
 }
 
 // defaultDeps wires the production implementations.
 func defaultDeps() deps {
+	c := client.New()
 	return deps{
 		clientConfigPath: config.ClientConfigPath,
-		probe:            defaultProbe(client.New()),
+		probe:            defaultProbe(c),
+		call:             c.Call,
 	}
 }
