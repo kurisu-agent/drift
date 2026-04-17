@@ -20,6 +20,7 @@ type CLI struct {
 
 	Version  versionCmd `cmd:"" help:"Print drift version."`
 	Circuit_ circuitCmd `cmd:"" name:"circuit" help:"Manage circuits (client-side config + SSH config)."`
+	Warmup   warmupCmd  `cmd:"" name:"warmup" help:"Interactive first-time setup wizard (circuits + characters)."`
 	New      newCmd     `cmd:"" name:"new" help:"Create a new kart (from starter or existing repo)."`
 
 	Start   startCmd   `cmd:"" help:"Start a kart (idempotent)."`
@@ -74,6 +75,8 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runCircuitList(io, &cli, deps)
 	case "new <name>":
 		return runNew(ctx, io, &cli, cli.New, deps)
+	case "warmup":
+		return runWarmup(ctx, io, &cli, cli.Warmup, deps)
 	case "start <name>":
 		return runKartStart(ctx, io, &cli, cli.Start, deps)
 	case "stop <name>":

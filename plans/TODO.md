@@ -156,10 +156,10 @@ Order matters: trivial handlers first to validate the dispatch path end-to-end b
 
 ## Phase 13 — `drift warmup`
 
-- [ ] Interactive wizard ([PLAN.md § drift warmup](./PLAN.md#drift-warmup)): circuits → characters → summary
-- [ ] Re-runnable; each phase skippable (`--skip-circuits`, `--skip-characters`, `--no-probe`)
-- [ ] Detects non-TTY stdin and returns `code:2 user_error`
-- [ ] Probe uses Phase 1 RPC client; install hints printed on failure
+- [x] Interactive wizard ([PLAN.md § drift warmup](./PLAN.md#drift-warmup)): circuits → characters → summary
+- [x] Re-runnable; each phase skippable (`--skip-circuits`, `--skip-characters`, `--no-probe`)
+- [x] Detects non-TTY stdin and returns `code:2 user_error`
+- [x] Probe uses Phase 1 RPC client; install hints printed on failure
 
 ---
 
