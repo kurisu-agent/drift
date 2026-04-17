@@ -74,10 +74,10 @@ Legend: `[x]` done · `[ ]` open · `[~]` partial.
 
 ## Phase 5 — `internal/exec` external-process wrapper
 
-- [ ] Single helper around `exec.CommandContext` that always sets `Cancel` (SIGTERM) and `WaitDelay` (5s → SIGKILL) per [PLAN.md § Critical invariants](./PLAN.md#critical-invariants-mechanically-tested)
-- [ ] Never invoke a shell — argv built directly; vet rule or unit test that asserts no `sh -c` usage in callers
-- [ ] Capture stdout/stderr separately; structured error with exit code + first stderr line
-- [ ] Used uniformly by ssh, mosh, docker, devpod call sites
+- [x] Single helper around `exec.CommandContext` that always sets `Cancel` (SIGTERM) and `WaitDelay` (5s → SIGKILL) per [PLAN.md § Critical invariants](./PLAN.md#critical-invariants-mechanically-tested)
+- [x] Never invoke a shell — argv built directly; unit test asserts the package itself never bakes in a shell invocation
+- [x] Capture stdout/stderr separately; structured error with exit code + first stderr line
+- [ ] Used uniformly by ssh, mosh, docker, devpod call sites (follow-up phases will wire callers through this helper)
 
 ---
 
