@@ -130,10 +130,10 @@ Order matters: trivial handlers first to validate the dispatch path end-to-end b
 
 ## Phase 10 — `drift connect`
 
-- [ ] Detect mosh availability on the workstation; default to mosh, fall back to `ssh -t` ([PLAN.md § Connection flow](./PLAN.md#connection-flow-drift-connect))
-- [ ] Auto-start kart if status is `stopped` before connecting
-- [ ] `--ssh` flag forces ssh; `--forward-agent` enables `-A` (off by default)
-- [ ] Use the managed `drift.<circuit>` alias as the SSH/mosh target; final command on the circuit is `devpod ssh <kart>`
+- [x] Detect mosh availability via `exec.LookPath("mosh")`; default to mosh, fall back to `ssh -t`
+- [x] Auto-start kart if status is `stopped` via `kart.info` → `kart.start` → poll `kart.info` until `running` (30s budget)
+- [x] `--ssh` flag forces ssh; `--forward-agent` enables `-A`
+- [x] Use the managed `drift.<circuit>` alias as the SSH/mosh target; final command is `devpod ssh <kart>`; interactive stdio wired through with the Cancel/WaitDelay discipline from plans/PLAN.md § "Critical invariants"
 
 ---
 
