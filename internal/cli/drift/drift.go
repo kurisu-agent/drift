@@ -18,8 +18,9 @@ type CLI struct {
 	Circuit          string `short:"c" help:"Target circuit (overrides default)."`
 	Output           string `name:"output" help:"Output format for structured commands." enum:"text,json" default:"text"`
 
-	Version versionCmd `cmd:"" help:"Print drift version."`
+	Version  versionCmd `cmd:"" help:"Print drift version."`
 	Circuit_ circuitCmd `cmd:"" name:"circuit" help:"Manage circuits (client-side config + SSH config)."`
+	New      newCmd     `cmd:"" name:"new" help:"Create a new kart (from starter or existing repo)."`
 
 	Start   startCmd   `cmd:"" help:"Start a kart (idempotent)."`
 	Stop    stopCmd    `cmd:"" help:"Stop a kart (idempotent)."`
@@ -71,6 +72,8 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runCircuitRm(io, &cli, cli.Circuit_.Rm, deps)
 	case "circuit list":
 		return runCircuitList(io, &cli, deps)
+	case "new <name>":
+		return runNew(ctx, io, &cli, cli.New, deps)
 	case "start <name>":
 		return runKartStart(ctx, io, &cli, cli.Start, deps)
 	case "stop <name>":

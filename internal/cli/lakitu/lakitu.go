@@ -15,6 +15,7 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/devpod"
+	"github.com/kurisu-agent/drift/internal/kart"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/server"
@@ -140,6 +141,13 @@ func Registry() *rpc.Registry {
 		}
 		server.RegisterKart(reg, kartDeps)
 		server.RegisterKartLifecycle(reg, kartDeps)
+		server.RegisterKartNew(reg, server.KartNewDeps{
+			Deps: &server.Deps{GarageDir: garage},
+			Kart: kart.NewDeps{
+				GarageDir: garage,
+				Devpod:    &devpod.Client{},
+			},
+		})
 	}
 	return reg
 }
