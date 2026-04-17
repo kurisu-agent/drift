@@ -18,8 +18,9 @@ type CLI struct {
 	Circuit          string `short:"c" help:"Target circuit (overrides default)."`
 	Output           string `name:"output" help:"Output format for structured commands." enum:"text,json" default:"text"`
 
-	Version versionCmd `cmd:"" help:"Print drift version."`
+	Version  versionCmd `cmd:"" help:"Print drift version."`
 	Circuit_ circuitCmd `cmd:"" name:"circuit" help:"Manage circuits (client-side config + SSH config)."`
+	New      newCmd     `cmd:"" name:"new" help:"Create a new kart (from starter or existing repo)."`
 }
 
 type versionCmd struct{}
@@ -65,6 +66,8 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runCircuitRm(io, &cli, cli.Circuit_.Rm, deps)
 	case "circuit list":
 		return runCircuitList(io, &cli, deps)
+	case "new <name>":
+		return runNew(ctx, io, &cli, cli.New, deps)
 	default:
 		fmt.Fprintf(io.Stderr, "drift: unknown command %q\n", kctx.Command())
 		return 2

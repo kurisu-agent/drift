@@ -107,13 +107,13 @@ Order matters: trivial handlers first to validate the dispatch path end-to-end b
 
 ## Phase 8 — Kart creation + flag composition
 
-- [ ] Flag resolution per [PLAN.md § Flag composition](./PLAN.md#flag-composition-and-resolution): server defaults → tune → explicit flags; `--features` always additive
-- [ ] `--devcontainer` accepts file path, JSON string, or URL — last two written to temp file
-- [ ] Starter history strip ([PLAN.md § Starter history strip](./PLAN.md#starter-history-strip)): clone → rm `.git` → re-init → initial commit using active character (fallback `drift <noreply@drift.local>`)
-- [ ] Layer-1 dotfiles generator from active character (gitconfig, gh hosts.yml, credential helper, optional ssh key + entry) ([PLAN.md § Dotfiles injection](./PLAN.md#dotfiles-injection))
-- [ ] Layer-2 dotfiles passed through as `devpod up --dotfiles <url>`
-- [ ] `kart.new` handler ties it all together; rejects existing-name with `code:4 name_collision`
-- [ ] Interrupt cleanup ([PLAN.md § Interrupts](./PLAN.md#interrupts)): cancel in-flight devpod, remove tmpdirs, write `status: error` marker if kart dir already exists
+- [x] Flag resolution per [PLAN.md § Flag composition](./PLAN.md#flag-composition-and-resolution): server defaults → tune → explicit flags; `--features` always additive
+- [x] `--devcontainer` accepts file path, JSON string, or URL — last two written to temp file
+- [x] Starter history strip ([PLAN.md § Starter history strip](./PLAN.md#starter-history-strip)): clone → rm `.git` → re-init → initial commit using active character (fallback `drift <noreply@drift.local>`)
+- [x] Layer-1 dotfiles generator from active character (gitconfig, gh hosts.yml, credential helper, optional ssh key + entry) ([PLAN.md § Dotfiles injection](./PLAN.md#dotfiles-injection))
+- [x] Layer-2 dotfiles passed through as `devpod up --dotfiles <url>`
+- [x] `kart.new` handler ties it all together; rejects existing-name with `code:4 name_collision`
+- [x] Interrupt cleanup ([PLAN.md § Interrupts](./PLAN.md#interrupts)): cancel in-flight devpod, remove tmpdirs, write `status: error` marker if kart dir already exists
 
 ---
 
