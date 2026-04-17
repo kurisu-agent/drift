@@ -5,8 +5,9 @@
 drift is a Go project — two compiled binaries distributed independently. It wraps [devpod](https://github.com/skevetter/devpod) (maintained fork) to add specific DX quality-of-life features:
 
 - **Server-side management** — workspaces live entirely on remote circuits; clients are stateless
+- **SSH-native transport** — every client↔server call is JSON-RPC 2.0 over a plain SSH channel. No custom daemon, no listening ports, no bespoke auth. Whatever lets you `ssh` to the circuit is what drift uses
 - **Identity and secrets** — first-class git identity profiles (characters) and pluggable secret storage (chest)
-- **Persistent connections** — mosh-based sessions that survive network changes
+- **Persistent connections** — mosh-based terminal sessions that survive network changes
 - **Tune profiles** — reusable presets composing devcontainer features, starters, and dotfiles
 - **Multi-client** — any workstation can connect to any circuit without syncing state
 
@@ -14,10 +15,10 @@ devpod itself is only ever invoked by `lakitu` on the circuit. The `drift` clien
 
 ---
 
-Two binaries:
+Two binaries, shared wire types, same handlers on both I/O paths:
 
-- **`drift`** — client CLI, installed on workstations. Zero local state.
-- **`lakitu`** — server daemon, installed on each circuit. Owns all state.
+- **`drift`** — client CLI on workstations. Zero local state. Speaks JSON-RPC 2.0 to lakitu over SSH.
+- **`lakitu`** — server-side binary on each circuit. Owns all state. Invoked per-call as `lakitu rpc` (by drift, short-lived) or via named subcommands (by humans administering a circuit directly). Both paths dispatch to the same Go handlers.
 
 Client and server versions are matched via **semver**. See [Version compatibility](#version-compatibility).
 
@@ -35,7 +36,7 @@ Client and server versions are matched via **semver**. See [Version compatibilit
   │  config   │          │  config   │          │  config   │
   └─────┬─────┘          └─────┬─────┘          └─────┬─────┘
         │                      │                       │
-        │   SSH + mosh         │                       │
+        │ JSON-RPC/SSH + mosh  │                       │
         ├──────────────────────┤           ┌───────────┘
         │                      │           │
         ▼                      ▼           ▼
@@ -63,7 +64,8 @@ Client and server versions are matched via **semver**. See [Version compatibilit
 - Multiple workstations can target the same circuit simultaneously
 - All kart state, characters, tunes, and chest entries live in the circuit's garage
 - **State is per-circuit.** Characters, chest entries, and tunes are NOT synced across circuits. Cross-circuit sync (plugin-driven, syncthing, git-backed) is deferred — see [Future](#future).
-- `drift connect` uses mosh to the circuit + `devpod ssh` into the container
+- **Every drift command is one JSON-RPC call** over a fresh SSH invocation (`ssh <circuit> lakitu rpc`). lakitu isn't a long-running daemon; it runs, answers, exits. OpenSSH `ControlMaster` can amortize TCP setup for users who want lower latency.
+- `drift connect` is the only exception — it does `mosh <circuit>` (or `ssh -t`) + `devpod ssh <kart>` for the interactive terminal, outside the RPC path.
 
 ---
 
@@ -233,7 +235,7 @@ Shared Go code (`drift/internal/wire/`) defines the method names, parameter stru
 
 ### `drift` (client)
 
-All commands except `circuit` and `connect` delegate to `lakitu` on the circuit via SSH.
+All commands except `circuit` (client-local config) and `connect` (mosh/ssh terminal) dispatch as a JSON-RPC call to `lakitu rpc` over SSH — see [RPC protocol](#rpc-protocol) for the method catalog.
 
 ```
 drift new     <name>  [flags]   — create a new kart (from starter or existing repo)
@@ -342,7 +344,9 @@ The active backend is selected in the server's `config.yaml` under the `chest:` 
 
 ### `lakitu` (server)
 
-Runs locally on the circuit. Can be invoked directly or via SSH from `drift`.
+Runs locally on the circuit. Two invocation modes, same handlers:
+- **Human CLI:** named subcommands below — `lakitu new myproject`, `lakitu list`, etc. For direct circuit administration.
+- **RPC:** `lakitu rpc` reads one JSON-RPC 2.0 request from stdin, writes one response to stdout, exits. This is the path `drift` uses over SSH.
 
 ```
 lakitu new     <name>  [flags]  — create kart (same flags as drift new)
