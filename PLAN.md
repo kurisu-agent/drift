@@ -104,9 +104,11 @@ Include ~/.config/drift/ssh_config
 
 Placing the include at the top means drift's `Host drift.<name>` blocks match before any user `Host *` globals, so ControlMaster settings stick even if the user has `ControlMaster no` as a global default.
 
-### Generated Host block per circuit
+### Generated Host blocks
 
-Circuit `my-server` with `host: dev@my-server.example.com` in drift's config becomes:
+Two kinds of blocks go into `~/.config/drift/ssh_config`: one literal block per circuit, plus a single wildcard block for per-kart IDE routing.
+
+**Per-circuit block** — circuit `my-server` with `host: dev@my-server.example.com` becomes:
 
 ```sshconfig
 Host drift.my-server
@@ -122,13 +124,49 @@ Host drift.my-server
 - **`ControlMaster auto` + `ControlPersist 10m`** — first drift call opens a persistent TCP/SSH master, subsequent calls (RPC and `drift connect`) reuse it. Typical warm-call latency: ~10–30 ms vs ~200–400 ms cold.
 - **`ServerAlive*`** — keeps the master healthy across flaky networks and NAT idle timeouts. mosh itself is UDP so this doesn't affect it, but the cold ssh fallback and the port-forwarding leg benefit.
 
+**Per-kart wildcard block** — written once, at the *end* of `~/.config/drift/ssh_config` so it matches only when no literal per-circuit block hits:
+
+```sshconfig
+Host drift.*.*
+  ProxyCommand drift ssh-proxy %h %p
+  ControlMaster auto
+  ControlPath ~/.config/drift/sockets/cm-%r@%h:%p
+  ControlPersist 10m
+```
+
+OpenSSH is first-match, so literal `Host drift.my-server` blocks win for bare circuit aliases. The wildcard only matches when there are at least two dots after `drift.`, i.e. `drift.<circuit>.<kart>`.
+
+### Per-kart SSH aliases (`drift.<circuit>.<kart>`)
+
+`ssh drift.my-server.kurisu-api` behaves as a plain SSH connection directly into the container — the alias is a first-class SSH target for anything that reads `~/.ssh/config`:
+
+- **IDEs:** VS Code Remote-SSH, JetBrains Gateway, Cursor, Windsurf — pick `drift.<circuit>.<kart>` from the host list, connect, the IDE installs its remote agent into the container, done. No drift-specific IDE plugin required.
+- **File-transfer tooling:** `scp`, `rsync`, `sshfs`, `sftp` — `scp ./file drift.my-server.kurisu-api:/workspace/` just works.
+- **Anything else that speaks SSH** — including CI agents, remote debuggers, language server remote modes.
+
+This is the same pattern [Coder](https://github.com/coder/coder) uses for their workspaces, and the reason it's in MVP rather than Future: without it, IDE integration forces an IDE-specific plugin per IDE.
+
+`drift connect` (mosh-based) remains the preferred way to open an interactive terminal session — faster (UDP), resilient to network changes. The wildcard alias is primarily for tooling that only speaks SSH.
+
+#### How `drift ssh-proxy` works
+
+`drift ssh-proxy <alias> <port>` is invoked by OpenSSH as the ProxyCommand. It:
+
+1. Parses `<alias>` → circuit name + kart name.
+2. Looks up `circuits.<circuit>` in drift's config for the underlying SSH target.
+3. Opens an SSH session to the circuit via the managed `drift.<circuit>` alias (inheriting ControlMaster multiplexing), running `devpod ssh <kart> --stdio` on the far side.
+4. Pipes its own stdin/stdout to that remote process — effectively tunneling the outer SSH handshake through to the container's devpod-injected SSH server.
+
+The outer `ssh drift.<circuit>.<kart>` process speaks SSH with the container's SSH server end-to-end; drift ssh-proxy is just a transparent stdio pipe. Auth at the container layer is handled by devpod's injected SSH server (a generated per-workspace keypair); auth at the circuit layer is the user's own SSH credentials.
+
 ### Usage
 
-All drift internals use the alias:
-- **RPC:** `ssh drift.<name> lakitu rpc`
-- **Connect:** `mosh drift.<name> -- devpod ssh <kart>` (fallback: `ssh -t drift.<name> ...`)
+All drift internals use the appropriate alias:
+- **RPC:** `ssh drift.<circuit> lakitu rpc`
+- **Connect (interactive terminal):** `mosh drift.<circuit> -- devpod ssh <kart>` (fallback: `ssh -t drift.<circuit> ...`)
+- **Per-kart SSH (IDEs, scp, rsync):** `ssh drift.<circuit>.<kart>` — handled by `drift ssh-proxy` under the hood
 
-Users get the alias for free too — `ssh drift.my-server` and `mosh drift.my-server` work directly with the same settings.
+Users get all three for free once a circuit is added.
 
 ### Lifecycle
 
@@ -283,6 +321,7 @@ Shared Go code (`drift/internal/wire/`) defines the method names, parameter stru
 
 | command              | meaning                                            |
 |----------------------|----------------------------------------------------|
+| **`drift warmup`**   | interactive first-time setup (circuits + characters) |
 | **`drift new`**      | create a new kart (starter or clone)               |
 | **`drift connect`**  | connect to a kart (auto-starts if stopped)         |
 | **`drift start`**    | start a stopped kart                               |
@@ -295,6 +334,7 @@ Shared Go code (`drift/internal/wire/`) defines the method names, parameter stru
 | **`drift circuit`**  | manage remote servers                              |
 | **`drift character`**| manage git/GitHub identity profiles                |
 | **`drift chest`**    | manage secrets on the circuit                      |
+| **`drift ssh-proxy`**| internal ProxyCommand helper for `drift.<circuit>.<kart>` aliases |
 
 ---
 
@@ -305,6 +345,7 @@ Shared Go code (`drift/internal/wire/`) defines the method names, parameter stru
 All commands except `circuit` (client-local config) and `connect` (mosh/ssh terminal) dispatch as a JSON-RPC call to `lakitu rpc` over SSH — see [RPC protocol](#rpc-protocol) for the method catalog.
 
 ```
+drift warmup                    — interactive first-time setup (circuits + characters)
 drift new     <name>  [flags]   — create a new kart (from starter or existing repo)
 drift connect <kart>  [flags]   — connect (mosh preferred, ssh fallback); auto-starts if stopped
 drift start   <kart>            — start a stopped kart
@@ -327,6 +368,35 @@ Global flags (all commands):
 --debug                 verbose output
 --skip-version-check    bypass drift↔lakitu semver check (see Version compatibility)
 ```
+
+#### `drift warmup`
+
+Interactive setup wizard for first-time drift users. Re-runnable: each invocation can add more circuits or characters without re-doing earlier steps. Walks through:
+
+1. **Circuits**
+   - Prompt for circuit name (validates against kart-name regex) and SSH target (`user@host[:port]`).
+   - Offer to set as default circuit.
+   - Write the managed SSH config entries (see [SSH config management](#ssh-config-management)).
+   - Probe: call `server.version` RPC, print round-trip latency, confirm lakitu is installed and compatible.
+   - On probe failure: print install hints (Nix module + manual tarball), offer retry / skip / "edit and continue".
+2. **Characters** (only offered once at least one circuit probes OK)
+   - Ask which circuit to attach the character to (default preselected when only one).
+   - Prompt for character name, git name, git email, GitHub username (optional), SSH key path (optional).
+   - Offer to stage a PAT: walks the user through `chest.set`, then stores `chest:<name>` as the character's `pat` field.
+   - Offer to set as the circuit's `default_character`.
+3. **Summary**
+   - Lists configured circuits with last-probe latency and lakitu version.
+   - Lists characters created.
+   - Prints a suggested next command: `drift new my-first-kart`.
+
+Flags:
+```
+--skip-circuits     skip the circuit phase (assume already configured)
+--skip-characters   skip the character phase
+--no-probe          skip the server.version probe (offline setup)
+```
+
+Interactive only — returns a `user_error` (exit code 2) if stdin isn't a TTY. Scripted equivalents are `drift circuit add` + `drift character add` + `drift chest set`.
 
 #### `drift new` flags
 
@@ -867,7 +937,6 @@ Homebrew / Nix / manual binary install. No init command — `~/.config/drift/con
 ## Future
 
 - **Ports management** — `drift ports` subcommands, conflict detection, remapping, standalone forwarding, per-workstation remap persistence.
-- **Per-kart SSH aliases (Coder-style wildcard proxy)** — `Host drift.*.*` in the managed ssh_config with `ProxyCommand drift ssh-proxy %h`. `ssh drift.<circuit>.<kart>` (and `scp`, `rsync`, `sshfs`, VS Code Remote-SSH, JetBrains Gateway, etc.) all route automatically: drift ssh-proxy parses the alias, SSHes to the circuit, and pipes `devpod ssh <kart>` over stdio. Makes every kart a first-class SSH target without the tooling knowing about drift.
 - **`lakitu serve` streaming RPC** — long-lived stdin/stdout session with JSON-RPC batching and server-initiated notifications (streaming logs, progress updates). Complements the one-shot `lakitu rpc` mode.
 - **Cross-circuit sync** — sync characters / tunes / chest across circuits via a plugin system, syncthing, or a git-backed garage.
 - **Additional chest backends** — age, 1Password, Vault, SOPS, etc., behind the `ChestBackend` interface.
