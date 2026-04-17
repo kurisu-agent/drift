@@ -64,11 +64,11 @@ Legend: `[x]` done · `[ ]` open · `[~]` partial.
 
 ## Phase 4 — Circuit management (client)
 
-- [ ] `drift circuit add <name>` — flags `--host`, `--default`, `--no-ssh-config`; updates client config + SSH config
-- [ ] `drift circuit rm <name>` — config + SSH block removal; preserves `Include` line
-- [ ] `drift circuit list` — table output; JSON via global `--output json`
-- [ ] Kart-name regex validator (`^[a-z][a-z0-9-]{0,62}$`) shared between client and server; reserved names `default`, `none`
-- [ ] Probe step: `server.version` RPC, surface latency + version on success
+- [x] `drift circuit add <name>` — flags `--host`, `--default`, `--no-ssh-config`; updates client config + SSH config
+- [x] `drift circuit rm <name>` — config + SSH block removal; preserves `Include` line
+- [x] `drift circuit list` — table output; JSON via global `--output json`
+- [x] Kart-name regex validator (`^[a-z][a-z0-9-]{0,62}$`) shared between client and server; reserved names `default`, `none`
+- [x] Probe step: `server.version` RPC, surface latency + version on success
 
 ---
 

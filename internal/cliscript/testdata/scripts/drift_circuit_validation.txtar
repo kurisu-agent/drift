@@ -1,0 +1,20 @@
+# Kart-name validator rejects invalid and reserved circuit names.
+
+! drift circuit add BadName --host dev@example.com --no-probe
+stderr 'invalid'
+
+! drift circuit add 1abc --host dev@example.com --no-probe
+stderr 'invalid'
+
+! drift circuit add default --host dev@example.com --no-probe
+stderr 'reserved'
+
+! drift circuit add none --host dev@example.com --no-probe
+stderr 'reserved'
+
+! drift circuit add under_score --host dev@example.com --no-probe
+stderr 'invalid'
+
+# Valid name succeeds.
+drift circuit add okay-name --host dev@example.com --no-probe
+! stderr .
