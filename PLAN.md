@@ -69,6 +69,75 @@ Client and server versions are matched via **semver**. See [Version compatibilit
 
 ---
 
+## Implementation stack
+
+Locked-in picks for the Go implementation. Rationale is in commit history / research notes; this section is the contract that future work builds on. Target **Go 1.25** (with `toolchain` directive pinning a concrete patch version). All recommendations are current as of 2026.
+
+### Repo layout
+
+Single Go module at repo root (`github.com/kurisu-agent/drift`). Both binaries, one `go.mod`, same release cadence, same semver. No `go.work` (workspaces are for multi-module setups; we don't have one). No `pkg/` directory — the `golang-standards/project-layout` convention is not followed in 2026; the Go team's own [*Organizing a Go module*](https://go.dev/doc/modules/layout) guide is the reference.
+
+```
+drift/
+  go.mod                     # module github.com/kurisu-agent/drift
+  cmd/
+    drift/main.go            # <30 lines; builds root ctx, parses flags, dispatches
+    lakitu/main.go           # same pattern
+  internal/
+    wire/                    # JSON-RPC 2.0 request/response/error types
+    rpc/                     # dispatcher + method registry (shared)
+    rpcerr/                  # typed error + Go-error → JSON-RPC-error mapping
+    cli/
+      drift/                 # Kong struct for drift subcommands
+      lakitu/                # Kong struct for lakitu subcommands
+    sshconf/                 # ~/.config/drift/ssh_config management
+    exec/                    # thin wrapper around os/exec for ssh/mosh/docker/devpod
+    config/                  # YAML config loader
+    version/                 # ldflag receivers (Version, Commit, Date)
+  flake.nix                  # NixOS module + devShell
+  .goreleaser.yaml
+  .golangci.yml
+  .github/workflows/ci.yml
+```
+
+### Library picks
+
+| concern        | pick                                      | notes                                                                                             |
+|----------------|-------------------------------------------|---------------------------------------------------------------------------------------------------|
+| CLI framework  | `alecthomas/kong`                         | struct-tag driven, no globals, good help/completion. Cobra rejected (globals, codegen overhead).  |
+| JSON-RPC 2.0   | **hand-rolled** in `internal/wire/`       | one-shot stdio doesn't need a connection-oriented library. Reference `creachadair/jrpc2` for dispatcher ergonomics. `net/rpc/jsonrpc` is frozen/non-compliant — do not use. |
+| Logging        | stdlib `log/slog`                         | TextHandler to **stderr** by default; JSON via `--log-format=json`. See stdout invariant below.    |
+| Errors         | stdlib `errors` + typed `rpcerr.Error`    | `errors.Is/As/Join`, wrap with `%w` internally, convert to JSON-RPC error exactly once at the dispatch boundary. No third-party error library. |
+| Config         | `gopkg.in/yaml.v3` + struct tags + `Validate()` | viper explicitly rejected (bloat, key-lowercasing, magic). Koanf v2 if we outgrow stdlib.     |
+| Testing        | stdlib `testing` + `rogpeppe/go-internal/testscript` + `google/go-cmp` | testscript for CLI golden tests; `testing/synctest` (stable in 1.25) for concurrency; fuzz the wire decoder. No testify. |
+| Lint           | `golangci-lint` v2                        | Start from `default: standard`; add `errorlint`, `staticcheck`, `gosec`, `revive`, `errcheck`, `govet`, `ineffassign`, `unused`, `misspell`, `bodyclose`, `nolintlint`, `copyloopvar`. |
+| Vuln           | `govulncheck`                             | PR blocker + weekly cron on `main`.                                                               |
+| Release        | GoReleaser v2 + separate Nix `buildGoModule` | parallel tracks, never try to unify. `-trimpath`, `mod_timestamp: {{.CommitTimestamp}}`, `-X internal/version.*` ldflags for reproducible builds. |
+| Static binary  | `CGO_ENABLED=0`                           | sufficient on its own in 2026 — no `netgo`/`osusergo` tags needed. Lakitu is Linux-only; drift builds for macOS + Linux, amd64 + arm64. |
+
+### Critical invariants (mechanically tested)
+
+- **lakitu never writes non-JSON-RPC to stdout.** stdout is the RPC response channel; logs go to stderr. A testscript assertion guards this from day one — violating it corrupts every client call.
+- **Every I/O-touching function takes `ctx context.Context` as its first parameter.** Root context built in `main` via `signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)` so Ctrl-C cascades through `exec.CommandContext` children.
+- **`exec.CommandContext` + `cmd.Cancel` + `cmd.WaitDelay`** for every external process (ssh, mosh, docker, devpod). SIGTERM first, SIGKILL after 5s. Never invoke a shell — build argv directly.
+- **Panics only on programmer error.** lakitu's `main` wraps a top-level `recover()` that formats a `-32603 internal error` response and exits non-zero; a mid-handler panic must not leave stdout half-written.
+
+### 2026 Go idioms to lean on
+
+`cmp.Or`, `errors.Join`, `sync.OnceValue(s)`, `slices`/`maps` packages, `min`/`max` built-ins, range-over-func iterators where they fit naturally, `t.Context()` / `t.Chdir()` in tests, `debug.ReadBuildInfo()` as the `--version` fallback when ldflags aren't injected.
+
+### Explicitly rejected
+
+- **viper** — dep bloat, silently lowercases keys, magic precedence rules.
+- **cobra** — globals, generator scaffolding, surface area we don't need.
+- **testify** — `cmp.Diff` produces better failure messages; stdlib assertions are enough.
+- **`net/rpc`/`net/rpc/jsonrpc`** — frozen, not JSON-RPC 2.0 compliant.
+- **`pkg/` directory** — nothing is exported to external consumers; `internal/` is the right home.
+- **`go.work`** — one module, no need.
+- **GOEXPERIMENT=jsonv2** — revisit when it lands without the experiment flag; our RPC volume doesn't need the perf.
+
+---
+
 ## Transport and authentication
 
 All client ↔ server communication runs over **plain SSH**, carrying **JSON-RPC 2.0** as the application protocol. There is no custom wire format, no drift daemon listening on a TCP port, and no bespoke auth layer:
