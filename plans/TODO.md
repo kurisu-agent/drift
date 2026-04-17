@@ -139,9 +139,9 @@ Order matters: trivial handlers first to validate the dispatch path end-to-end b
 
 ## Phase 11 — Per-kart SSH proxy
 
-- [ ] `drift ssh-proxy <alias> <port>` subcommand — parses `drift.<circuit>.<kart>`, opens `ssh drift.<circuit> devpod ssh <kart> --stdio`, pipes stdio ([PLAN.md § How drift ssh-proxy works](./PLAN.md#how-drift-ssh-proxy-works))
-- [ ] Wildcard `Host drift.*.*` block auto-written by Phase 3 already exercises this path
-- [ ] Smoke test from inside the integration harness: `ssh drift.<circuit>.<kart> echo ok`
+- [x] `drift ssh-proxy <alias> <port>` subcommand — parses `drift.<circuit>.<kart>`, opens `ssh drift.<circuit> devpod ssh <kart> --stdio`, pipes stdio ([PLAN.md § How drift ssh-proxy works](./PLAN.md#how-drift-ssh-proxy-works))
+- [x] Wildcard `Host drift.*.*` block auto-written by Phase 3 already exercises this path (verified: `internal/sshconf.EnsureWildcardBlock` emits `ProxyCommand drift ssh-proxy %h %p`)
+- [ ] Smoke test from inside the integration harness: `ssh drift.<circuit>.<kart> echo ok` (deferred to Phase 15)
 
 ---
 
