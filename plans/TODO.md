@@ -183,10 +183,10 @@ Order matters: trivial handlers first to validate the dispatch path end-to-end b
 
 ## Phase 16 — Release artifacts
 
-- [ ] `.goreleaser.yaml` — `CGO_ENABLED=0`, `-trimpath`, `mod_timestamp: {{.CommitTimestamp}}`, ldflags injecting `internal/version.{Version,Commit,Date}`
-- [ ] Build matrix: drift {linux,darwin}×{amd64,arm64}; lakitu linux×{amd64,arm64}
-- [ ] `flake.nix` — devShell + manual binary install path documented
-- [ ] `.github/workflows/ci.yml` — vet, test-race, lint, vuln, govulncheck weekly cron on `main`
+- [x] `.goreleaser.yaml` — `CGO_ENABLED=0`, `-trimpath`, `mod_timestamp: {{.CommitTimestamp}}`, ldflags injecting `internal/version.{Version,Commit,Date}`
+- [x] Build matrix: drift {linux,darwin}×{amd64,arm64}; lakitu linux×{amd64,arm64}
+- [x] `flake.nix` — devShell + manual binary install path documented
+- [x] `.github/workflows/ci.yml` — vet, test-race, lint, vuln, govulncheck weekly cron on `main`
 
 ---
 
