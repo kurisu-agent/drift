@@ -90,19 +90,20 @@ Client and server versions are matched via **semver**. See [Version compatibilit
 
 ### Commands
 
-| command              | meaning                                  |
-|----------------------|------------------------------------------|
-| **`drift new`**      | create a kart (starter or clone)         |
-| **`drift connect`**  | connect to a running kart                |
-| **`drift start`**    | start a stopped kart                     |
-| **`drift stop`**     | stop a running kart                      |
-| **`drift delete`**   | remove a kart entirely                   |
-| **`drift list`**     | list all karts and status                |
-| **`drift enable`**   | auto-start kart on server reboot         |
-| **`drift disable`**  | disable auto-start                       |
-| **`drift circuit`**  | manage remote servers                    |
-| **`drift character`**| manage git/GitHub identity profiles      |
-| **`drift chest`**    | manage secrets on the circuit            |
+| command              | meaning                                            |
+|----------------------|----------------------------------------------------|
+| **`drift new`**      | create a new kart (starter or clone)               |
+| **`drift connect`**  | connect to a kart (auto-starts if stopped)         |
+| **`drift start`**    | start a stopped kart                               |
+| **`drift stop`**     | stop a running kart                                |
+| **`drift restart`**  | stop then start a kart                             |
+| **`drift delete`**   | remove a kart entirely                             |
+| **`drift list`**     | list all karts and status                          |
+| **`drift enable`**   | auto-start kart on server reboot                   |
+| **`drift disable`**  | disable auto-start                                 |
+| **`drift circuit`**  | manage remote servers                              |
+| **`drift character`**| manage git/GitHub identity profiles                |
+| **`drift chest`**    | manage secrets on the circuit                      |
 
 ---
 
@@ -113,9 +114,11 @@ Client and server versions are matched via **semver**. See [Version compatibilit
 All commands except `circuit` and `connect` delegate to `lakitu` on the circuit via SSH.
 
 ```
-drift new     <name>  [flags]   — create kart (from starter or existing repo)
-drift connect <kart>  [flags]   — connect (mosh preferred, ssh fallback)
-drift stop    <kart>            — stop kart
+drift new     <name>  [flags]   — create a new kart (from starter or existing repo)
+drift connect <kart>  [flags]   — connect (mosh preferred, ssh fallback); auto-starts if stopped
+drift start   <kart>            — start a stopped kart
+drift stop    <kart>            — stop a running kart
+drift restart <kart>            — stop then start
 drift delete  <kart>            — remove kart
 drift list                      — list karts and status
 drift enable  <kart>            — auto-start on server reboot
@@ -151,7 +154,7 @@ Global flags (all commands):
 `--clone` and `--starter` are mutually exclusive. With neither, defaults from the active tune apply.
 Kart name is always the positional `<name>` argument.
 
-**Name collision:** `drift new <name>` **fails** if a kart with that name already exists on the circuit. No overwrite, no confirmation prompt — user must `drift delete <name>` first.
+**Name collision:** `drift new <name>` **fails** if a kart with that name already exists on the circuit. No overwrite, no confirmation prompt — user must `drift delete <name>` first, or use `drift start <name>` / `drift connect <name>` if they want to resume the existing one.
 
 **Kart name validation:** lowercase alphanumeric + hyphen, 1–63 chars, must start with a letter. Regex: `^[a-z][a-z0-9-]{0,62}$`. Reserved names: `default`, `none` (collide with reserved tune values — see [Flag composition](#flag-composition-and-resolution)).
 
@@ -220,9 +223,11 @@ The active backend is selected in the server's `config.yaml` under the `chest:` 
 Runs locally on the circuit. Can be invoked directly or via SSH from `drift`.
 
 ```
-lakitu new    <name>  [flags]   — create kart (same flags as drift new)
-lakitu stop   <kart>            — stop
-lakitu delete <kart>            — remove
+lakitu new     <name>  [flags]  — create kart (same flags as drift new)
+lakitu start   <kart>           — start a stopped kart (devpod up <kart>, idempotent)
+lakitu stop    <kart>           — stop
+lakitu restart <kart>           — stop then start
+lakitu delete  <kart>           — remove
 lakitu list                     — list
 lakitu info   <kart>            — JSON kart info (used by drift connect)
 lakitu enable  <kart>           — autostart on
@@ -533,7 +538,7 @@ Each enabled kart gets a systemd user service:
 
 Server requires `loginctl enable-linger <user>` (set once via NixOS module or manual bootstrap).
 
-Service runs: `lakitu new <kart>` — devpod up is idempotent, safe to re-run.
+Service runs: `lakitu start <kart>` — reads saved config from the garage and calls `devpod up <kart>`. Idempotent, safe to re-run.
 
 ---
 
