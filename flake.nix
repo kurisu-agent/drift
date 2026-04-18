@@ -36,11 +36,11 @@
       (system:
         let
           pkgs = import nixpkgs { inherit system; };
-          # Drift's go.mod pins Go 1.25 via the `toolchain` directive. Prefer
+          # Drift's go.mod pins Go 1.26 via the `toolchain` directive. Prefer
           # the matching nixpkgs attribute; fall back to `pkgs.go` only when
-          # go_1_25 is missing from the channel bump.
+          # go_1_26 is missing from the channel bump.
           goToolchain =
-            if pkgs ? go_1_25 then pkgs.go_1_25 else pkgs.go;
+            if pkgs ? go_1_26 then pkgs.go_1_26 else pkgs.go;
           goBuild = pkgs.buildGoModule.override { go = goToolchain; };
 
           # devpod — built from the pinned fork so every drift release ships
