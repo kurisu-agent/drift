@@ -19,7 +19,7 @@ var (
 	Date = ""
 
 	// APISchema is the integer JSON-RPC surface version — bumped only on
-	// breaking wire changes. See plans/PLAN.md § Version compatibility.
+	// breaking wire changes.
 	APISchema = 1
 )
 

@@ -271,9 +271,9 @@ func ensureDockerProvider(ctx context.Context) (added bool, err error) {
 	return dev.EnsureProvider(ctx, "docker")
 }
 
-// runRPC is the one-shot dispatch entry point. It honors plans/PLAN.md's
-// stdout invariant: only the JSON-RPC response (or nothing on a hard crash)
-// ever goes to stdout.
+// runRPC is the one-shot dispatch entry point. It honors the stdout
+// invariant: only the JSON-RPC response (or nothing on a hard crash) ever
+// goes to stdout.
 func runRPC(ctx context.Context, io IO, reg *rpc.Registry) int {
 	req, err := wire.DecodeRequest(io.Stdin)
 	if err != nil {

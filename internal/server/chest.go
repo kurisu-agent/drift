@@ -11,8 +11,7 @@ import (
 )
 
 // ChestSetParams is the RPC param shape for `chest.set`. value rides inside
-// the JSON-RPC body so the secret never appears on argv (plans/COMMANDS.md
-// § drift chest).
+// the JSON-RPC body so the secret never appears on argv.
 type ChestSetParams struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
@@ -24,7 +23,7 @@ type ChestNameOnly struct {
 }
 
 // ChestGetResult wraps the secret value so the shape is stable when we
-// eventually add provenance (backend, write timestamp) per plans/PLAN.md.
+// eventually add provenance (backend, write timestamp).
 type ChestGetResult struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
@@ -72,7 +71,7 @@ func (d *Deps) ChestGetHandler(_ context.Context, params json.RawMessage) (any, 
 }
 
 // ChestListHandler returns the set of stored names. Values are never
-// returned (plans/PLAN.md § Method catalog).
+// returned.
 func (d *Deps) ChestListHandler(_ context.Context, params json.RawMessage) (any, error) {
 	var p struct{}
 	if err := rpc.BindParams(params, &p); err != nil {

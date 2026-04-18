@@ -3,8 +3,7 @@
 // methods. MVP ships a single backend, [YAMLFileBackend], backed by a mode
 // 0600 YAML file under the garage.
 //
-// Backends are selected from the server config's `chest.backend` field
-// (see plans/PLAN.md § Server state layout).
+// Backends are selected from the server config's `chest.backend` field.
 package chest
 
 import (

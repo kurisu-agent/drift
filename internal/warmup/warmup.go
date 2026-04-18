@@ -72,7 +72,7 @@ type Deps struct {
 
 // Run drives the wizard and returns nil on success. A non-TTY stdin yields
 // an rpcerr.UserError with CodeUserError so the CLI wrapper can surface
-// exit code 2 per plans/PLAN.md § drift warmup.
+// exit code 2.
 func Run(ctx context.Context, opts Options, deps Deps, stdin io.Reader, stdout io.Writer) error {
 	if !opts.IsTTY {
 		return rpcerr.UserError(rpcerr.TypeInvalidFlag,
@@ -251,7 +251,7 @@ func runCharacterPhase(ctx context.Context, deps Deps, br *bufio.Reader, w io.Wr
 
 // addOneCharacter handles the per-character RPC flow: optionally stage a PAT
 // via chest.set, call character.add, optionally set the circuit's
-// default_character via config.set. See plans/PLAN.md § drift warmup.
+// default_character via config.set.
 func addOneCharacter(ctx context.Context, deps Deps, br *bufio.Reader, w io.Writer, cfg *config.Client) error {
 	circuit, err := pickCircuit(br, w, cfg)
 	if err != nil {
@@ -426,10 +426,10 @@ func listCharactersFor(ctx context.Context, deps Deps, w io.Writer, circuit stri
 }
 
 // printInstallHints renders a short block pointing users at the install
-// surface when a probe fails. Keep it under 5 lines per plans/PLAN.md.
+// surface when a probe fails. Keep it under 5 lines.
 func printInstallHints(w io.Writer, circuit string) {
 	fmt.Fprintf(w, "  lakitu may not be installed (or may be the wrong version) on %q.\n", circuit)
-	fmt.Fprintln(w, "  install via the Nix module or the manual tarball — see plans/PLAN.md § Bootstrap / install.")
+	fmt.Fprintln(w, "  install via the Nix module or the manual tarball — see the README for bootstrap instructions.")
 	fmt.Fprintln(w, "  re-run `drift warmup` after installing to re-probe.")
 }
 

@@ -7,9 +7,8 @@ import (
 )
 
 // deleteCmd is `drift delete <kart>`. Unlike start/stop/restart, delete
-// errors on missing per plans/PLAN.md § Idempotency; the not_found surface
-// is produced by the server and flows through emitError like any other
-// rpcerr.
+// errors on missing; the not_found surface is produced by the server and
+// flows through emitError like any other rpcerr.
 type deleteCmd struct {
 	Name string `arg:"" help:"Kart name."`
 }

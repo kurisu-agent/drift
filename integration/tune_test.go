@@ -294,7 +294,7 @@ func TestFeaturesFlagExplicit(t *testing.T) {
 	}
 }
 
-// TestFeaturesAdditiveMerge exercises plans/PLAN.md § Flag composition's
+// TestFeaturesAdditiveMerge exercises flag composition's
 // "--features is always additive": a tune with feature A and a kart invoked
 // with --features B should produce a merged JSON object with both keys, and
 // a shared key from --features wins over the tune's value.

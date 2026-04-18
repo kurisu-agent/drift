@@ -2,8 +2,8 @@
 // can enable, disable, and query kart autostart units without open-coding
 // argv construction at every call site.
 //
-// Only the subset of systemctl needed by plans/PLAN.md § "Auto-start on
-// reboot" is exposed. Every command runs through internal/exec.Run so the
+// Only the subset of systemctl needed for kart auto-start on reboot is
+// exposed. Every command runs through internal/exec.Run so the
 // Cancel/WaitDelay discipline is uniform with the rest of the codebase.
 package systemd
 
@@ -85,7 +85,7 @@ func (c *Client) IsEnabled(ctx context.Context, kart string) (bool, error) {
 
 // DenialError is returned when systemctl reports a permission-level failure
 // (lingering not enabled, no $XDG_RUNTIME_DIR, etc.). Callers can map this
-// to plans/PLAN.md's `code:6 systemd_denied` without re-parsing stderr.
+// to `code:6 systemd_denied` without re-parsing stderr.
 type DenialError struct {
 	Op     string
 	Kart   string

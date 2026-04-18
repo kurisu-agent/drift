@@ -29,8 +29,8 @@ type InitResult struct {
 }
 
 // InitGarage bootstraps ~/.drift/garage at root so that the server-side
-// file layout from plans/PLAN.md § Server state layout exists. It is
-// idempotent: re-running reports no new Created entries.
+// file layout exists. It is idempotent: re-running reports no new Created
+// entries.
 //
 // The chest directory is created with mode 0700 because the MVP yamlfile
 // backend keeps plain-text secrets under it. Other directories use 0755.

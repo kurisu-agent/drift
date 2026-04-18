@@ -202,7 +202,7 @@ func runChestRemove(ctx context.Context, io IO, cmd chestRemoveCmd) int {
 // callAndPrint is the shared in-process dispatch helper for every human
 // subcommand. It marshals params, runs them through the live [*rpc.Registry],
 // and then renders the response — either the JSON result on stdout or the
-// structured error on stderr via errfmt.Emit (plans/PLAN.md § "stderr format").
+// structured error on stderr via errfmt.Emit.
 func callAndPrint(ctx context.Context, io IO, method string, params any) int {
 	raw, err := json.Marshal(params)
 	if err != nil {

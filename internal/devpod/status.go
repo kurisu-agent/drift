@@ -3,10 +3,10 @@ package devpod
 import "strings"
 
 // Status is the devpod workspace lifecycle state, normalized to the small
-// enum lakitu exposes over the wire. plans/PLAN.md § "lakitu info kart —
-// JSON schema" enumerates `running|stopped|busy|error|not_found`; devpod
-// itself reports slightly more states ("Running", "Stopped", "Busy",
-// "NotFound") so the wrapper maps them deterministically.
+// enum lakitu exposes over the wire:
+// `running|stopped|busy|error|not_found`. devpod itself reports slightly
+// more states ("Running", "Stopped", "Busy", "NotFound") so the wrapper
+// maps them deterministically.
 type Status string
 
 const (

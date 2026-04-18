@@ -11,7 +11,7 @@ import (
 )
 
 // ConfigSetParams is the shape accepted by `config.set`. Keys use dotted
-// paths rooted at the server config (plans/PLAN.md § Server state layout).
+// paths rooted at the server config.
 type ConfigSetParams struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
@@ -19,8 +19,7 @@ type ConfigSetParams struct {
 
 // ServerConfig is the JSON-shaped mirror of [config.Server]. The config
 // package uses yaml-tagged fields for on-disk round-tripping; handlers
-// convert to this type before returning so clients see snake_case keys
-// matching plans/PLAN.md § Server state layout.
+// convert to this type before returning so clients see snake_case keys.
 type ServerConfig struct {
 	DefaultTune      string      `json:"default_tune"`
 	DefaultCharacter string      `json:"default_character"`
@@ -78,9 +77,8 @@ func (d *Deps) ConfigSetHandler(_ context.Context, params json.RawMessage) (any,
 	return toServerConfig(srv), nil
 }
 
-// applyConfigKey mutates s so the dotted key resolves to value. The set of
-// recognized keys mirrors plans/PLAN.md § Server state layout; anything else
-// is a user error.
+// applyConfigKey mutates s so the dotted key resolves to value. Unknown
+// keys are a user error.
 func applyConfigKey(s *config.Server, key, value string) error {
 	switch key {
 	case "default_tune":

@@ -41,15 +41,14 @@ type KartLifecycleResult struct {
 }
 
 // KartLogsResult is returned by kart.logs. The chunk is the raw bytes of
-// `devpod logs <name>` captured in one read; streaming is deferred per
-// plans/PLAN.md § Future.
+// `devpod logs <name>` captured in one read; streaming is deferred.
 type KartLogsResult struct {
 	Name  string `json:"name"`
 	Chunk string `json:"chunk"`
 }
 
 // kartStartHandler runs `devpod up <name>`. Idempotent: starting a running
-// kart is a success (code 0) per plans/PLAN.md § Idempotency.
+// kart is a success (code 0).
 func (d KartDeps) kartStartHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	p, err := bindLifecycleParams(params, "kart.start")
 	if err != nil {
@@ -143,8 +142,8 @@ func (d KartDeps) kartDeleteHandler(ctx context.Context, params json.RawMessage)
 }
 
 // kartLogsHandler returns a single chunk of devpod logs output. Streaming is
-// deferred (plans/PLAN.md § Future) — the MVP surface returns whatever
-// `devpod logs <name>` emits in one read.
+// deferred — the MVP surface returns whatever `devpod logs <name>` emits in
+// one read.
 func (d KartDeps) kartLogsHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	p, err := bindLifecycleParams(params, "kart.logs")
 	if err != nil {

@@ -106,8 +106,7 @@ func (d *KartAutostartDeps) removeAutostartMarker(kart string) error {
 // wrapSystemdError maps systemd-specific errors to the rpcerr catalog: a
 // *systemd.DenialError becomes code:6 systemd_denied with a suggestion;
 // anything else is surfaced as code:5 (the systemd integration belongs to
-// the devpod-adjacent "external process failure" bucket since plans/PLAN.md
-// doesn't split it out).
+// the devpod-adjacent "external process failure" bucket).
 func wrapSystemdError(err error) error {
 	if err == nil {
 		return nil

@@ -20,9 +20,9 @@ import (
 // PAT is stored in the chest and referenced as `chest:<name>` on the
 // character; the server resolves it before kart.new sees the Character, so
 // the generated git_credentials line carries the literal token. That is
-// exactly the plans/PLAN.md § Dotfiles injection contract and the behavior
-// the upstream unit tests exercise in isolation — this test validates it
-// survives the full RPC → lakitu → kart.new → devpod pipeline.
+// exactly the dotfiles-injection contract and the behavior the upstream
+// unit tests exercise in isolation — this test validates it survives the
+// full RPC → lakitu → kart.new → devpod pipeline.
 func TestLayer1Dotfilesland(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()

@@ -235,8 +235,7 @@ func CircuitHostName(circuit string) string {
 }
 
 // WriteCircuitBlock writes (or replaces) the per-circuit Host block for the
-// given circuit in the managed ssh_config. The block is emitted in the exact
-// form from plans/PLAN.md § Generated Host blocks.
+// given circuit in the managed ssh_config.
 //
 // name is the circuit's short name (the Host alias is `drift.<name>`), host
 // is the DNS name or IP of the remote, and user is the SSH login. user may
@@ -449,7 +448,7 @@ func (m *Manager) EnsureSocketsDir() error {
 // ----------------------------------------------------------------------------
 
 // circuitBlock returns the canonical per-circuit HostBlock for the given
-// parameters, matching plans/PLAN.md § Generated Host blocks byte-for-byte.
+// parameters.
 func circuitBlock(name, host, user string) HostBlock {
 	body := []string{
 		"  HostName " + host,

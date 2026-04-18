@@ -8,8 +8,7 @@ import (
 	"github.com/kurisu-agent/drift/internal/version"
 )
 
-// VersionResult is the shape returned by `server.version`. Mirrors
-// plans/PLAN.md § Version compatibility.
+// VersionResult is the shape returned by `server.version`.
 type VersionResult struct {
 	Version string `json:"version"`
 	API     int    `json:"api"`

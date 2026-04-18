@@ -140,7 +140,7 @@ func TestRunSIGKILLAfterWaitDelayOnHungChild(t *testing.T) {
 func TestRunDefaultWaitDelayIsFiveSeconds(t *testing.T) {
 	t.Parallel()
 	if driftexec.DefaultWaitDelay != 5*time.Second {
-		t.Errorf("DefaultWaitDelay = %s, want 5s (plans/PLAN.md invariant)", driftexec.DefaultWaitDelay)
+		t.Errorf("DefaultWaitDelay = %s, want 5s", driftexec.DefaultWaitDelay)
 	}
 }
 
@@ -166,10 +166,10 @@ func TestRunPropagatesStdin(t *testing.T) {
 	}
 }
 
-// TestNoShellInvocationInSources enforces plans/PLAN.md § Critical
-// invariants: the exec package itself must never construct an argv that
-// invokes a shell. It walks the package's non-test .go files and fails
-// if any exec.Command* call site mentions "sh" or "bash".
+// TestNoShellInvocationInSources enforces the "no shell" invariant: the
+// exec package itself must never construct an argv that invokes a shell.
+// It walks the package's non-test .go files and fails if any exec.Command*
+// call site mentions "sh" or "bash".
 func TestNoShellInvocationInSources(t *testing.T) {
 	t.Parallel()
 

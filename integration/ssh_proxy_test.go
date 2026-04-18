@@ -11,8 +11,8 @@ import (
 	"github.com/kurisu-agent/drift/integration"
 )
 
-// TestSSHProxyEchoOK covers plans/TODO.md § Phase 11's "ssh
-// drift.<circuit>.<kart> echo ok" smoke: the client invokes OpenSSH with the
+// TestSSHProxyEchoOK covers the "ssh drift.<circuit>.<kart> echo ok" smoke:
+// the client invokes OpenSSH with the
 // harness-generated ssh_config whose `Host drift.*.*` block routes through
 // `drift ssh-proxy %h %p`. drift ssh-proxy then opens a nested SSH
 // connection to the circuit and runs `devpod ssh <kart> --stdio`.

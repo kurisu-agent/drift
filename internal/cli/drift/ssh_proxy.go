@@ -27,8 +27,7 @@ type sshProxyCmd struct {
 // runSSHProxy parses the alias, resolves the circuit's managed SSH alias, and
 // execs `ssh drift.<circuit> devpod ssh <kart> --stdio`, piping its stdio
 // directly to our own. Exit code mirrors the child's so OpenSSH can diagnose
-// transport failures correctly. See plans/PLAN.md § "How drift ssh-proxy
-// works" for the full dance.
+// transport failures correctly.
 func runSSHProxy(ctx context.Context, io IO, _ *CLI, cmd sshProxyCmd, deps deps) int {
 	circuit, kart, err := parseKartAlias(cmd.Alias)
 	if err != nil {
@@ -79,7 +78,7 @@ func parseKartAlias(alias string) (circuit, kart string, err error) {
 
 // execSSHProxy runs `bin argv...` with stdin/stdout/stderr wired directly to
 // our own, mirrors the child's exit code, and enforces the SIGTERM → SIGKILL
-// ladder from plans/PLAN.md § "Critical invariants".
+// ladder.
 //
 // internal/exec.Run isn't suitable here because it captures stdio into
 // buffers; ProxyCommand semantics require transparent pass-through.

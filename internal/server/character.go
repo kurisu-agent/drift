@@ -20,8 +20,6 @@ import (
 // Character is the on-disk schema for `characters/<name>.yaml`. Only
 // git_name and git_email are required; `pat_secret` always carries a
 // `chest:<name>` reference (literal tokens are rejected at add time).
-//
-// Mirrors plans/PLAN.md § Character file.
 type Character struct {
 	GitName    string `yaml:"git_name" json:"git_name"`
 	GitEmail   string `yaml:"git_email" json:"git_email"`
@@ -155,7 +153,7 @@ func (d *Deps) CharacterShowHandler(_ context.Context, params json.RawMessage) (
 // CharacterRemoveHandler deletes a character yaml. Removal is rejected if
 // any kart references the character — scanning `garage/karts/*/config.yaml`
 // is sufficient because per-kart config is the only place a character is
-// pinned (plans/COMMANDS.md § drift character).
+// pinned.
 func (d *Deps) CharacterRemoveHandler(_ context.Context, params json.RawMessage) (any, error) {
 	var p CharacterNameOnly
 	if err := rpc.BindParams(params, &p); err != nil {

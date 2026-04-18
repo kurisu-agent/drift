@@ -59,7 +59,7 @@ func (b *YAMLFileBackend) Get(name string) ([]byte, error) {
 }
 
 // List returns the stored key names in lexicographic order. Values are
-// never returned (plans/PLAN.md § Method catalog).
+// never returned.
 func (b *YAMLFileBackend) List() ([]string, error) {
 	entries, err := b.read()
 	if err != nil {
@@ -112,8 +112,7 @@ func (b *YAMLFileBackend) read() (map[string]string, error) {
 
 func (b *YAMLFileBackend) write(entries map[string]string) error {
 	// Ensure the chest directory exists with mode 0700 — WriteFileAtomic
-	// creates parent dirs at 0755, but the chest subtree is 0700 per
-	// plans/PLAN.md § Server state layout.
+	// creates parent dirs at 0755, but the chest subtree is 0700.
 	if err := os.MkdirAll(filepath.Dir(b.path), 0o700); err != nil {
 		return fmt.Errorf("chest: mkdir %s: %w", filepath.Dir(b.path), err)
 	}

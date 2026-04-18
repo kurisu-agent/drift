@@ -5,8 +5,7 @@ import (
 	"regexp"
 )
 
-// Client is the workstation-side config, mirroring plans/PLAN.md
-// § Client config layout.
+// Client is the workstation-side config.
 type Client struct {
 	DefaultCircuit  string                   `yaml:"default_circuit"`
 	ManageSSHConfig *bool                    `yaml:"manage_ssh_config,omitempty"`
@@ -19,13 +18,12 @@ type ClientCircuit struct {
 }
 
 // circuitNameRE matches lowercase alphanumeric + hyphen, 1–63 chars, starting
-// with a letter. Mirrors the kart-name regex from plans/PLAN.md § drift new
-// flags — circuit names share the same shape.
+// with a letter — circuit names share the kart-name shape.
 var circuitNameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
 // ManagesSSHConfig reports whether drift should write to the user's
 // ~/.ssh/config + ~/.config/drift/ssh_config. It defaults to true when the
-// field is absent, matching plans/PLAN.md § Client config layout.
+// field is absent.
 func (c *Client) ManagesSSHConfig() bool {
 	if c.ManageSSHConfig == nil {
 		return true

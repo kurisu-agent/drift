@@ -25,7 +25,7 @@ type KartDeps struct {
 	Devpod *devpod.Client
 	// GarageDir is the absolute path to `~/.drift/garage`. Kart handlers
 	// reconcile workspaces listed by devpod against entries under
-	// GarageDir/karts to detect stale karts (plans/PLAN.md § Stale karts).
+	// GarageDir/karts to detect stale karts.
 	GarageDir string
 }
 
@@ -37,10 +37,9 @@ func RegisterKart(reg *rpc.Registry, d KartDeps) {
 	reg.Register(wire.MethodKartInfo, d.kartInfoHandler)
 }
 
-// KartConfig is the on-disk shape of `garage/karts/<name>/config.yaml`. The
-// fields mirror plans/PLAN.md § Server state layout. Only the resource
-// identifiers (tune, character, source) need to round-trip — container and
-// devpod details come from devpod at query time.
+// KartConfig is the on-disk shape of `garage/karts/<name>/config.yaml`.
+// Only the resource identifiers (tune, character, source) need to
+// round-trip — container and devpod details come from devpod at query time.
 type KartConfig struct {
 	Repo       string `yaml:"repo,omitempty"`
 	Tune       string `yaml:"tune,omitempty"`
@@ -54,7 +53,6 @@ type KartConfig struct {
 }
 
 // KartSource is the `source` sub-object of the kart.info payload.
-// plans/PLAN.md § lakitu info kart — JSON schema.
 type KartSource struct {
 	Mode string `json:"mode"`
 	URL  string `json:"url,omitempty"`
@@ -77,7 +75,7 @@ type KartDevpod struct {
 }
 
 // KartInfo is the stable JSON shape returned by `kart.info` and embedded
-// (per entry) in `kart.list`. Additive-only forward compat per plans/PLAN.md.
+// (per entry) in `kart.list`. Additive-only forward compat.
 type KartInfo struct {
 	Name      string         `json:"name"`
 	Status    devpod.Status  `json:"status"`
@@ -89,9 +87,9 @@ type KartInfo struct {
 	Container *KartContainer `json:"container,omitempty"`
 	Devpod    *KartDevpod    `json:"devpod,omitempty"`
 	// Stale is true when the kart exists in the garage but devpod has no
-	// matching workspace. plans/PLAN.md § Stale karts uses `status:error`
-	// plus a `stale: true` hint in the list view; info returns the full
-	// stale_kart error object instead of this shape.
+	// matching workspace. The list view uses `status:error` plus a
+	// `stale: true` hint; info returns the full stale_kart error object
+	// instead of this shape.
 	Stale bool `json:"stale,omitempty"`
 }
 
@@ -161,8 +159,8 @@ func (d KartDeps) kartListHandler(ctx context.Context, params json.RawMessage) (
 }
 
 // kartInfoHandler returns a single kart. A garage entry without a matching
-// devpod workspace yields `stale_kart` (code 4) per plans/PLAN.md § Stale
-// karts; an entirely unknown name yields `kart_not_found` (code 3).
+// devpod workspace yields `stale_kart` (code 4); an entirely unknown name
+// yields `kart_not_found` (code 3).
 func (d KartDeps) kartInfoHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	var p KartInfoParams
 	if err := rpc.BindParams(params, &p); err != nil {
@@ -323,7 +321,7 @@ func (d KartDeps) readKartConfig(name string) (KartConfig, bool, error) {
 }
 
 // kartAutostartEnabled reports whether the marker file in the kart's
-// garage dir is present (plans/PLAN.md § Server state layout).
+// garage dir is present.
 func (d KartDeps) kartAutostartEnabled(name string) bool {
 	path := filepath.Join(d.GarageDir, "karts", name, "autostart")
 	if _, err := os.Stat(path); err == nil {

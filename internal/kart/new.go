@@ -49,8 +49,8 @@ type NewDeps struct {
 //  9. cleans up the starter and dotfiles tmpdirs on success
 //
 // On any error after step 7, the kart dir is marked `status: error` so a
-// retry sees a stale kart and surfaces the right hint (plans/PLAN.md
-// § Interrupts). All tmpdirs are removed on every error path.
+// retry sees a stale kart and surfaces the right hint. All tmpdirs are
+// removed on every error path.
 //
 // The function is context-aware: a cancelled ctx triggers devpod cancel via
 // internal/exec (SIGTERM → SIGKILL after 5s), then the deferred cleanup runs.
@@ -73,8 +73,7 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 	if _, err := os.Stat(kartDir); err == nil {
 		// Garage dir exists. Distinguish a real collision (devpod knows the
 		// workspace too) from a stale corpse (garage-only, from a crashed
-		// `drift new`). Stale corpses get a suggestion the user can paste —
-		// plans/PLAN.md § Stale karts / § Interrupts.
+		// `drift new`). Stale corpses get a suggestion the user can paste.
 		workspaces, lerr := d.Devpod.List(ctx)
 		if lerr != nil {
 			return nil, rpcerr.Internal("kart.new: devpod list: %v", lerr).Wrap(lerr)
@@ -160,8 +159,8 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 	}
 
 	// Write garage/karts/<name>/config.yaml BEFORE devpod up so an
-	// interrupt mid-up produces the stale-kart state plans/PLAN.md asks
-	// for — the garage entry exists without a running workspace.
+	// interrupt mid-up produces the stale-kart state — the garage entry
+	// exists without a running workspace.
 	if err := writeKartConfig(kartDir, resolved, d.now()); err != nil {
 		return nil, rpcerr.Internal("kart.new: write config: %v", err).Wrap(err)
 	}
@@ -205,7 +204,7 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 	// errors quietly. The command returns success but layer-1 files do
 	// not land in the container. Moving the install to a post-up `devpod
 	// ssh --command` with the script piped over stdin is the planned
-	// follow-up — tracked in plans/TODO.md (not yet filed).
+	// follow-up.
 	fileURL := "file://" + df.Path
 	if err := d.Devpod.InstallDotfiles(ctx, fileURL); err != nil {
 		// Non-fatal at this phase — the kart itself is up. Surface the
@@ -253,8 +252,7 @@ type Result struct {
 }
 
 // KartSource mirrors server.KartSource — duplicated here because this
-// package must stay under server in the dep graph. plans/PLAN.md § lakitu
-// info kart — JSON schema.
+// package must stay under server in the dep graph.
 type KartSource struct {
 	Mode string `json:"mode"`
 	URL  string `json:"url,omitempty"`
@@ -288,14 +286,14 @@ func writeKartConfig(kartDir string, r *Resolved, now time.Time) error {
 }
 
 // writeAutostartMarker touches garage/karts/<name>/autostart. Presence is
-// the signal; contents are ignored (plans/PLAN.md § Server state layout).
+// the signal; contents are ignored.
 func writeAutostartMarker(kartDir string) error {
 	return config.WriteFileAtomic(filepath.Join(kartDir, "autostart"), nil, 0o644)
 }
 
 // writeErrorMarker stamps garage/karts/<name>/status with the literal
 // "error" marker so a subsequent drift new sees the kart as stale and
-// bails out with stale_kart (code:4). plans/PLAN.md § Interrupts.
+// bails out with stale_kart (code:4).
 func writeErrorMarker(kartDir string, cause error) error {
 	msg := "error"
 	if cause != nil {

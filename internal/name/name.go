@@ -1,6 +1,6 @@
 // Package name validates kart, circuit, and character identifiers used across
 // drift and lakitu. The same regex and reserved-word list applies to every
-// name in the system — see plans/PLAN.md § drift new flags.
+// name in the system.
 //
 // This package is deliberately tiny and dependency-free so both the drift
 // client and the lakitu server can import it without pulling in CLI or RPC
@@ -14,15 +14,13 @@ import (
 )
 
 // Pattern is the canonical regex for drift identifiers: lowercase
-// alphanumeric + hyphen, 1–63 chars, starting with a letter. Mirrors
-// plans/PLAN.md § drift new flags.
+// alphanumeric + hyphen, 1–63 chars, starting with a letter.
 const Pattern = `^[a-z][a-z0-9-]{0,62}$`
 
 var re = regexp.MustCompile(Pattern)
 
 // Reserved names cannot be used for karts, circuits, or characters — they
-// collide with the tune sentinel values documented in plans/PLAN.md
-// § Flag composition.
+// collide with the tune sentinel values.
 var reserved = map[string]struct{}{
 	"default": {},
 	"none":    {},

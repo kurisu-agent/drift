@@ -18,8 +18,7 @@ type probeResult struct {
 	LatencyMS int64 `json:"latency_ms"`
 }
 
-// versionResult mirrors the JSON shape of server.version — see
-// plans/PLAN.md § Version compatibility.
+// versionResult mirrors the JSON shape of server.version.
 type versionResult struct {
 	Version string `json:"version"`
 	API     int    `json:"api"`

@@ -19,8 +19,6 @@ import (
 
 // Tune mirrors the on-disk shape at `garage/tunes/<name>.yaml`. All fields
 // are optional — tunes exist to compose defaults at `drift new` time.
-//
-// Mirrors plans/PLAN.md § Tune profile fields.
 type Tune struct {
 	Starter      string `yaml:"starter,omitempty" json:"starter,omitempty"`
 	Devcontainer string `yaml:"devcontainer,omitempty" json:"devcontainer,omitempty"`
@@ -51,10 +49,9 @@ type TuneNameOnly struct {
 }
 
 // tuneNameRE is deliberately local to this package — unlike characters and
-// karts, `default` is a *legitimate* tune name (plans/PLAN.md § Flag
-// composition: the literal tune named `default` is what `--tune default`
-// resolves to). Only `none` is reserved, since it's the sentinel for "no
-// tune at all".
+// karts, `default` is a *legitimate* tune name (the literal tune named
+// `default` is what `--tune default` resolves to). Only `none` is reserved,
+// since it's the sentinel for "no tune at all".
 var tuneNameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
 func validateTuneName(n string) error {
@@ -116,8 +113,8 @@ func (d *Deps) TuneShowHandler(_ context.Context, params json.RawMessage) (any, 
 	return TuneResult{Name: p.Name, Tune: *t}, nil
 }
 
-// TuneSetHandler creates or updates a tune — `tune.set` is idempotent per
-// plans/PLAN.md § Method catalog ("creates or updates").
+// TuneSetHandler creates or updates a tune — `tune.set` is idempotent
+// ("creates or updates").
 func (d *Deps) TuneSetHandler(_ context.Context, params json.RawMessage) (any, error) {
 	var p TuneSetParams
 	if err := rpc.BindParams(params, &p); err != nil {

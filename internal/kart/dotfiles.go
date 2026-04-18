@@ -25,8 +25,8 @@ type DotfilesResult struct {
 	HasSSHKey    bool
 }
 
-// WriteLayer1Dotfiles materializes the layer-1 dotfiles tree described in
-// plans/PLAN.md § Dotfiles injection (character layer). It creates:
+// WriteLayer1Dotfiles materializes the layer-1 dotfiles tree (the character
+// layer of dotfiles injection). It creates:
 //
 //   - gitconfig            — ~/.gitconfig lines from the character
 //   - gh_hosts.yml         — ~/.config/gh/hosts.yml when a PAT is present

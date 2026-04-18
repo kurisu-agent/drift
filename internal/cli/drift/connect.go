@@ -9,8 +9,7 @@ import (
 	"github.com/kurisu-agent/drift/internal/rpc/client"
 )
 
-// connectCmd is `drift connect <kart>`. Flags mirror plans/PLAN.md §
-// "drift connect flags".
+// connectCmd is `drift connect <kart>`.
 type connectCmd struct {
 	Name         string `arg:"" help:"Kart name."`
 	SSH          bool   `name:"ssh" help:"Force plain SSH (skip mosh)."`

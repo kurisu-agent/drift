@@ -1,7 +1,6 @@
 // Package exec is the single entry point every drift/lakitu caller uses to
 // run an external process (ssh, mosh, docker, devpod, git). It wraps
-// os/exec with the invariants required by plans/PLAN.md § Critical
-// invariants (mechanically tested):
+// os/exec with the following invariants (mechanically tested):
 //
 //   - exec.CommandContext is always used so cancellation of the parent
 //     context tears the child down.
@@ -27,7 +26,7 @@ import (
 )
 
 // DefaultWaitDelay is the grace period between SIGTERM and SIGKILL for a
-// cancelled child. Matches plans/PLAN.md § Critical invariants.
+// cancelled child.
 const DefaultWaitDelay = 5 * time.Second
 
 // Cmd describes a single subprocess invocation. The zero value is not

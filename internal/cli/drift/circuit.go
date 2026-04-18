@@ -265,8 +265,7 @@ func emitCircuitRm(io IO, root *CLI, circuitName string) int {
 }
 
 // emitError is the drift-side entry point for error reporting. It delegates
-// to errfmt.Emit so every command produces the two-line format defined by
-// plans/PLAN.md § "stderr format (human CLI path)".
+// to errfmt.Emit so every command produces the shared stderr format.
 func emitError(io IO, err error) int {
 	return errfmt.Emit(io.Stderr, err)
 }

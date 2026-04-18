@@ -3,11 +3,9 @@
 // Two schemas live here, one per binary:
 //
 //   - [Client] — `~/.config/drift/config.yaml` on a workstation. Path resolved
-//     via [ClientConfigPath], which honors XDG_CONFIG_HOME per plans/PLAN.md
-//     § Client config layout.
+//     via [ClientConfigPath], which honors XDG_CONFIG_HOME.
 //   - [Server] — `~/.drift/garage/config.yaml` on a circuit. Garage root
-//     resolved via [GarageDir], which honors $HOME per plans/PLAN.md
-//     § Server state layout.
+//     resolved via [GarageDir], which honors $HOME.
 //
 // Both types are decoded with strict YAML parsing (unknown keys rejected) and
 // validated via [Client.Validate] / [Server.Validate]. [WriteFileAtomic] is

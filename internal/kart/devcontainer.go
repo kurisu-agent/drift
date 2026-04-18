@@ -47,8 +47,7 @@ func defaultDevcontainerFetcher(ctx context.Context, url string) ([]byte, error)
 
 // NormalizeDevcontainer turns raw — a file path, a JSON string, or a URL —
 // into a path on the local filesystem that devpod's
-// --extra-devcontainer-path can consume. plans/PLAN.md § Flag composition
-// step 5.
+// --extra-devcontainer-path can consume.
 //
 //   - file path (absolute or starting with ./ or ../, or an existing file):
 //     returned as-is; the empty path cleanup does nothing.

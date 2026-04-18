@@ -12,9 +12,9 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// newCmd is the Kong command for `drift new <name>`. plans/PLAN.md § drift
-// new flags enumerates the flags; this struct stays 1:1 with that list so
-// the drift client and the kart.new RPC surface never drift apart.
+// newCmd is the Kong command for `drift new <name>`. This struct stays 1:1
+// with the `drift new` flag list so the drift client and the kart.new RPC
+// surface never drift apart.
 type newCmd struct {
 	Name         string `arg:"" help:"Kart name (matches ^[a-z][a-z0-9-]{0,62}$)."`
 	Clone        string `name:"clone" help:"Clone an existing repo (mutually exclusive with --starter)."`

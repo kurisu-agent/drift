@@ -1,8 +1,7 @@
 // Package kart implements `kart.new` and its supporting pieces: flag
 // composition, devcontainer source normalization, starter history strip,
 // layer-1 dotfiles generation, and the orchestrator that ties them together
-// with devpod. See plans/PLAN.md § Flag composition and resolution and
-// § Kart creation modes.
+// with devpod.
 package kart
 
 import (
@@ -16,8 +15,7 @@ import (
 
 // Tune mirrors the tune-profile fields the resolver reads. Duplicated from
 // internal/server.Tune so internal/kart stays below internal/server in the
-// dependency graph — the server package imports this one. plans/PLAN.md
-// § Tune profile fields.
+// dependency graph — the server package imports this one.
 type Tune struct {
 	Starter      string
 	Devcontainer string
@@ -27,7 +25,6 @@ type Tune struct {
 
 // Character mirrors the character fields kart.new consumes: git identity
 // plus optional GitHub/PAT/SSH data used by the layer-1 dotfiles generator.
-// plans/PLAN.md § Character file.
 type Character struct {
 	GitName    string
 	GitEmail   string
@@ -49,8 +46,8 @@ type ServerDefaults struct {
 }
 
 // Flags is the parsed-but-unresolved input to `kart.new`. All fields map 1:1
-// to the `drift new` flags documented in plans/PLAN.md § drift new flags.
-// Empty means "not set" so Resolve() can layer tune defaults underneath.
+// to the `drift new` flags. Empty means "not set" so Resolve() can layer
+// tune defaults underneath.
 type Flags struct {
 	Name         string
 	Clone        string
@@ -95,7 +92,7 @@ type Resolver struct {
 	LoadCharacter func(name string) (*Character, error)
 }
 
-// Resolve applies plans/PLAN.md § Flag composition:
+// Resolve applies the flag composition:
 //  1. server defaults (default_tune, default_character)
 //  2. tune preset (starter, features, devcontainer, dotfiles_repo)
 //  3. explicit flags always override tune values

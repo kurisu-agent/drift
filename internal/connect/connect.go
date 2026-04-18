@@ -166,7 +166,7 @@ func ensureRunning(ctx context.Context, d Deps, opts Options) error {
 
 // InfoResult is a minimal view of kart.info — only the status field matters
 // for connect's state machine. We tolerate unknown fields because the
-// kart.info schema is additive-forward (plans/PLAN.md § "lakitu info").
+// kart.info schema is additive-forward.
 type InfoResult struct {
 	Status string `json:"status"`
 }
@@ -226,9 +226,8 @@ func pollUntilRunning(ctx context.Context, d Deps, opts Options) error {
 
 // execStdio is the production Exec binding: stdin/stdout/stderr are wired
 // straight through so the child owns the TTY. We keep the SIGTERM → SIGKILL
-// ladder from plans/PLAN.md § "Critical invariants" by setting Cmd.Cancel
-// and Cmd.WaitDelay; internal/exec.Run would buffer stdio, which is wrong
-// for an interactive session.
+// ladder by setting Cmd.Cancel and Cmd.WaitDelay; internal/exec.Run would
+// buffer stdio, which is wrong for an interactive session.
 func execStdio(ctx context.Context, bin string, argv []string, stdio Stdio) error {
 	c := osexec.CommandContext(ctx, bin, argv...)
 	c.Stdin = stdio.Stdin

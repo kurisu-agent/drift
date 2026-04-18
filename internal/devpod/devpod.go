@@ -1,8 +1,8 @@
 // Package devpod is lakitu's typed wrapper around the devpod CLI.
 //
 // Every call routes through [internal/exec.Run] so the process tree honors
-// plans/PLAN.md § Critical invariants: context-cancellable, SIGTERM → SIGKILL
-// after WaitDelay, no shell interposition, stdout/stderr captured separately.
+// the critical invariants: context-cancellable, SIGTERM → SIGKILL after
+// WaitDelay, no shell interposition, stdout/stderr captured separately.
 // The drift client binary never imports this package — devpod runs only on
 // the circuit, invoked by lakitu.
 package devpod
@@ -87,8 +87,7 @@ func (c *Client) envOrNil() []string {
 	return append([]string(nil), c.Env...)
 }
 
-// UpOpts mirrors the subset of `devpod up` flags documented in
-// plans/PLAN.md § "Useful devpod up flags" that lakitu composes from
+// UpOpts mirrors the subset of `devpod up` flags that lakitu composes from
 // drift's own flags and tune presets.
 type UpOpts struct {
 	// Name is the workspace name (required). Passed as the positional
@@ -98,10 +97,10 @@ type UpOpts struct {
 	// Source is the positional source arg: a git URL, a local path, or
 	// empty to reuse an existing workspace.
 	Source string
-	// Provider is the devpod provider (plans/PLAN.md fixes on "docker").
+	// Provider is the devpod provider (fixed on "docker").
 	// Empty means don't pass --provider.
 	Provider string
-	// IDE maps to --ide; plans/PLAN.md locks this at "none".
+	// IDE maps to --ide; locked at "none".
 	IDE string
 	// AdditionalFeatures is a JSON object serialized to
 	// --additional-features. Pass the zero-value empty string to omit.
@@ -180,7 +179,7 @@ func (c *Client) Up(ctx context.Context, opts UpOpts) ([]byte, error) {
 
 // Stop invokes `devpod stop <name>`. Idempotent at the devpod layer —
 // stopping an already-stopped workspace is a no-op exit 0. lakitu relies on
-// this for its own idempotency contract in plans/PLAN.md § Idempotency.
+// this for its own idempotency contract.
 func (c *Client) Stop(ctx context.Context, name string) error {
 	if name == "" {
 		return errors.New("devpod: Stop: name is required")
@@ -219,8 +218,7 @@ func (c *Client) Status(ctx context.Context, name string) (Status, error) {
 	return normalizeStatus(payload.State), nil
 }
 
-// SSHOpts mirrors the useful subset of `devpod ssh` flags from
-// plans/PLAN.md § "Useful devpod ssh flags".
+// SSHOpts mirrors the useful subset of `devpod ssh` flags.
 type SSHOpts struct {
 	// Name is the target workspace (required).
 	Name string

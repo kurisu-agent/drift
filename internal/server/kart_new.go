@@ -29,8 +29,8 @@ type KartNewDeps struct {
 }
 
 // KartNewParams is the RPC param shape for kart.new. Field names mirror
-// plans/PLAN.md § drift new flags so the drift and lakitu schemas align
-// without a translation layer.
+// the `drift new` flags so the drift and lakitu schemas align without a
+// translation layer.
 type KartNewParams struct {
 	Name         string `json:"name"`
 	Clone        string `json:"clone,omitempty"`

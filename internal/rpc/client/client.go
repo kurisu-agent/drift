@@ -134,7 +134,7 @@ func buildRequest(id json.RawMessage, method string, params any) ([]byte, error)
 // a [*TransportError] carrying ssh's exit code and stderr verbatim.
 //
 // The ssh invocation routes through [driftexec.Run] so it inherits the
-// Cancel/WaitDelay discipline from plans/PLAN.md § "Critical invariants".
+// standard Cancel/WaitDelay discipline.
 func SSHTransport() Transport {
 	return func(ctx context.Context, circuit string, request []byte) ([]byte, error) {
 		alias := "drift." + circuit

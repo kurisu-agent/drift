@@ -2,9 +2,8 @@ package config
 
 import "fmt"
 
-// Server is the circuit-side config, mirroring plans/PLAN.md § Server state
-// layout — the fields settable via `lakitu config set` / the `config.set`
-// RPC method.
+// Server is the circuit-side config — the fields settable via
+// `lakitu config set` / the `config.set` RPC method.
 type Server struct {
 	DefaultTune      string      `yaml:"default_tune"`
 	DefaultCharacter string      `yaml:"default_character"`
@@ -33,9 +32,8 @@ var validChestBackends = map[string]struct{}{
 }
 
 // DefaultServer is the config that `lakitu init` writes on a fresh garage.
-// default_tune is "default" to match plans/PLAN.md § Flag composition — a
-// tune literally named "default" becomes the implicit preset when
-// --tune is omitted.
+// default_tune is "default" — a tune literally named "default" becomes the
+// implicit preset when --tune is omitted.
 func DefaultServer() *Server {
 	return &Server{
 		DefaultTune: "default",

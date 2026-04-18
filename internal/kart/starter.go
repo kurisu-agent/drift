@@ -10,8 +10,8 @@ import (
 )
 
 // fallbackAuthorName is the starter commit author when no character is
-// attached. plans/PLAN.md § Starter history strip: "falls back to
-// drift <noreply@drift.local> when no character is configured".
+// attached: the starter history-strip falls back to
+// drift <noreply@drift.local> when no character is configured.
 const fallbackAuthorName = "drift"
 const fallbackAuthorEmail = "noreply@drift.local"
 
@@ -33,10 +33,9 @@ func (f starterRunnerFunc) Run(ctx context.Context, cmd driftexec.Cmd) (driftexe
 // through to internal/exec.Run.
 var defaultStarterRunner StarterRunner = starterRunnerFunc(driftexec.Run)
 
-// Starter runs the history-strip flow described in plans/PLAN.md § Starter
-// history strip: clone → rm .git → git init → add+commit with character as
-// author. The final directory path is what kart.new passes to `devpod up`
-// as the positional source argument.
+// Starter runs the history-strip flow: clone → rm .git → git init →
+// add+commit with character as author. The final directory path is what
+// kart.new passes to `devpod up` as the positional source argument.
 type Starter struct {
 	Runner StarterRunner
 }
@@ -49,7 +48,7 @@ func NewStarter() *Starter { return &Starter{Runner: defaultStarterRunner} }
 // must be empty or not yet exist; the caller owns tmpdir cleanup on error.
 //
 // This function never runs a shell — every step is a separate argv invoked
-// through internal/exec, per plans/PLAN.md § Critical invariants.
+// through internal/exec.
 func (s *Starter) Strip(ctx context.Context, url, destDir string, char *Character) error {
 	if url == "" {
 		return fmt.Errorf("starter: url is required")

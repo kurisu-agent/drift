@@ -13,7 +13,6 @@ import (
 )
 
 // warmupCmd is `drift warmup` — an interactive wizard for first-time setup.
-// See plans/PLAN.md § drift warmup for the phase contract.
 type warmupCmd struct {
 	SkipCircuits   bool `name:"skip-circuits" help:"Skip the circuit phase (assume already configured)."`
 	SkipCharacters bool `name:"skip-characters" help:"Skip the character phase."`

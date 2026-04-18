@@ -10,7 +10,7 @@
 #   - The test-built `lakitu` binary, copied in at build time.
 #   - The test-installed `devpod` binary. Pinning a version here keeps the
 #     integration suite deterministic — production circuits install it out
-#     of band per plans/PLAN.md § "Bootstrap / install".
+#     of band.
 #
 # sshd runs as PID 1; the harness connects over the forwarded port and
 # drives `lakitu rpc` through the same SSH transport drift uses in

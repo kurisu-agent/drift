@@ -1,8 +1,8 @@
 // Package rpcerr defines the typed error used across drift and lakitu.
 //
-// A single [Error] value serializes into both halves of plans/PLAN.md
-// § Error handling: the JSON-RPC 2.0 error object on the RPC path, and
-// the stderr/exit-code pair on the human CLI path.
+// A single [Error] value serializes into both halves of the error-handling
+// contract: the JSON-RPC 2.0 error object on the RPC path, and the
+// stderr/exit-code pair on the human CLI path.
 package rpcerr
 
 import (
@@ -52,9 +52,9 @@ const (
 )
 
 // Error is the canonical drift/lakitu error. It embeds the JSON-RPC error
-// shape plus the structured Data fields documented in plans/PLAN.md. Wrap
-// underlying Go errors with Cause; the wrap is hidden from clients (never
-// serialized) but surfaces via errors.Unwrap for logging.
+// shape plus a structured Data map. Wrap underlying Go errors with Cause;
+// the wrap is hidden from clients (never serialized) but surfaces via
+// errors.Unwrap for logging.
 type Error struct {
 	Code    Code
 	Type    Type

@@ -28,7 +28,7 @@ type ServerVersion struct {
 // and callers can signal that by not invoking CheckCompat at all, or by
 // passing a zero skip=true on the return value.
 //
-// Semver comparison mirrors plans/PLAN.md § Version compatibility:
+// Semver comparison:
 //
 //   - major mismatch  → abort with a typed rpcerr
 //   - minor mismatch  → write a single warning line to stderr
