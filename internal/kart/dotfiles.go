@@ -83,7 +83,7 @@ func WriteLayer1Dotfiles(tmpDir string, char *Character) (*DotfilesResult, error
 	}
 	res.InstallScript = scriptPath
 
-	// devpod's `install-dotfiles --repository` (skevetter fork v0.17) runs
+	// devpod's `install-dotfiles --repository` (skevetter fork v0.22) runs
 	// a git clone against the URL we pass. file:// URLs are valid targets
 	// only when the directory is a git repo, so stamp an ephemeral repo in
 	// place. The commit never leaves this tmpdir — we clean it up once the

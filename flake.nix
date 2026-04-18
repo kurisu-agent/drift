@@ -20,10 +20,13 @@
       devpodPin = {
         owner   = "skevetter";
         repo    = "devpod";
-        version = "v0.17.0";
-        # hash of the upstream source tarball (set both together when bumping).
-        srcHash    = "sha256-quWYRn2vJEeHaUQC1GFnOqQuRPsjmWbDuLFTFX0frS0=";
-        vendorHash = "sha256-TztljwhE4w4D7IYkkA/9E61JZEb+999XSGkZv/RUOsg=";
+        version = "v0.22.0";
+        # Placeholder hashes — re-run `nix build .#devpod` on a Nix-enabled
+        # host; the build fails with the real `got: sha256-…` values which
+        # should be pasted back here (srcHash first, then vendorHash after
+        # rerunning). Keep both entries in sync with the version field.
+        srcHash    = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        vendorHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
       };
     in
     flake-utils.lib.eachSystem

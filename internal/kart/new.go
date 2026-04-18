@@ -199,7 +199,7 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 	// Layer-1 dotfiles: push the generated tmpdir to devpod's
 	// install-dotfiles helper. file:// URL is expected by that API.
 	//
-	// KNOWN LIMITATION (skevetter/devpod v0.17): install-dotfiles runs
+	// KNOWN LIMITATION (skevetter/devpod v0.22): install-dotfiles runs
 	// inside the agent context; a file:// URL written to the host tmpdir
 	// isn't visible there, so git-clone silently pulls an empty repo or
 	// errors quietly. The command returns success but layer-1 files do

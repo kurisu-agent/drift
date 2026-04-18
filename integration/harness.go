@@ -511,18 +511,6 @@ exec %s -F %s "$@"
 	}
 }
 
-// SetupDevpodDockerProvider runs `devpod provider add docker` as the circuit
-// user so subsequent `devpod up` invocations have a default provider to
-// dispatch to. Idempotent in devpod (re-adding the same provider is a no-op
-// with a warning, which the --silent flag suppresses). Required by tests
-// that let real devpod run instead of the recorder shim.
-func (c *Circuit) SetupDevpodDockerProvider(ctx context.Context) {
-	c.t.Helper()
-	if err := SSHCommand(ctx, c, "devpod", "provider", "add", "docker", "--silent"); err != nil {
-		c.t.Fatalf("devpod provider add docker: %v", err)
-	}
-}
-
 // StageStarter creates a bare git repo at /tmp/<name>.git inside the circuit
 // containing one commit with the supplied files (relative-path → contents)
 // and returns its file:// URL. Tests use this to feed drift --starter a

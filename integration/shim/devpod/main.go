@@ -83,7 +83,10 @@ func copyKnownArtifacts(argv []string, dir string) {
 			if i+1 < len(argv) {
 				_ = copyFile(argv[i+1], filepath.Join(dir, "extra-devcontainer.json"))
 			}
-		case "--dotfiles":
+		case "--dotfiles", "--repository":
+			// `up --dotfiles` (layer-2) and `agent workspace install-dotfiles
+			// --repository` (layer-1, skevetter fork v0.22) both carry a
+			// file:// URL pointing at a tmpdir drift materialized.
 			if i+1 < len(argv) {
 				if path, ok := strings.CutPrefix(argv[i+1], "file://"); ok {
 					_ = copyTree(path, filepath.Join(dir, "dotfiles"))

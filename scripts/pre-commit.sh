@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Let `go` auto-download a newer toolchain when go.mod requires one the
+# host hasn't installed yet (the devcontainer pins GOTOOLCHAIN=local).
+export GOTOOLCHAIN=auto
+
 staged_go=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' || true)
 if [ -z "$staged_go" ]; then
     exit 0

@@ -123,11 +123,12 @@ func TestLayer1Dotfilesland(t *testing.T) {
 		}
 	}
 
-	// Final sanity: the --dotfiles flag on install-dotfiles is the
-	// file:// URL of the same tmpdir. Argv-level check so a regression
-	// that breaks the URL scheme fails loudly.
-	u := argvValue(inv.Argv, "--dotfiles")
+	// Final sanity: the --repository flag on install-dotfiles is the
+	// file:// URL of the same tmpdir (skevetter fork v0.22 — the flag name
+	// differs from upstream devpod's `--dotfiles`). Argv-level check so a
+	// regression that breaks the URL scheme fails loudly.
+	u := argvValue(inv.Argv, "--repository")
 	if !strings.HasPrefix(u, "file:///") {
-		t.Errorf("--dotfiles url = %q, want file:///… URL", u)
+		t.Errorf("--repository url = %q, want file:///… URL", u)
 	}
 }

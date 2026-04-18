@@ -384,7 +384,7 @@ func (c *Client) Verify(ctx context.Context) (VersionCheck, error) {
 }
 
 // Version invokes `devpod version` and returns the trimmed one-line output
-// (e.g. "v0.17.0"). Empty output yields an empty string — the caller
+// (e.g. "v0.22.0"). Empty output yields an empty string — the caller
 // decides whether that's an error.
 func (c *Client) Version(ctx context.Context) (string, error) {
 	res, err := c.run(ctx, "version")

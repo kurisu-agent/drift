@@ -37,7 +37,8 @@ func TestRealDevpodUpAndDelete(t *testing.T) {
 		t.Fatalf("lakitu init: %v", err)
 	}
 	c.RegisterCircuit(ctx, "test")
-	c.SetupDevpodDockerProvider(ctx)
+	// `lakitu init` already auto-registers the docker provider idempotently
+	// via devpod.EnsureProvider, so no follow-up `provider add` is needed.
 
 	// Minimal starter with a devcontainer.json pointing at debian:bookworm-slim
 	// — already cached on the host (the circuit image uses the same base), so
