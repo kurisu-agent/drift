@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -266,7 +267,7 @@ func TestKartDeleteStaleKartCleansGarageOnly(t *testing.T) {
 	}
 }
 
-func TestKartLogsReturnsChunk(t *testing.T) {
+func TestKartLogsReturnsTextLines(t *testing.T) {
 	t.Parallel()
 	fake := &recordingDevpod{
 		replies: map[string]fakeReply{
@@ -287,8 +288,142 @@ func TestKartLogsReturnsChunk(t *testing.T) {
 	if got.Name != "alpha" {
 		t.Errorf("name = %q, want alpha", got.Name)
 	}
-	if got.Chunk != "line one\nline two\n" {
-		t.Errorf("chunk = %q, want raw devpod logs output", got.Chunk)
+	if got.Format != server.LogFormatText {
+		t.Errorf("format = %q, want %q", got.Format, server.LogFormatText)
+	}
+	if len(got.Lines) != 2 || got.Lines[0] != "line one" || got.Lines[1] != "line two" {
+		t.Errorf("lines = %v, want [line one line two]", got.Lines)
+	}
+}
+
+func TestKartLogsDetectsJSONL(t *testing.T) {
+	t.Parallel()
+	stdout := `{"time":"2026-04-18T09:05:07Z","level":"INFO","msg":"ready","kart":"alpha"}` + "\n" +
+		`{"time":"2026-04-18T09:05:08Z","level":"WARN","msg":"slow"}` + "\n"
+	fake := &recordingDevpod{
+		replies: map[string]fakeReply{
+			"list": {stdout: `[{"id":"alpha","provider":{"name":"docker"}}]`},
+			"logs": {stdout: stdout},
+		},
+	}
+	deps := newKartDeps(t, fake)
+
+	resp := registerLifecycleAndDispatch(t, deps, wire.MethodKartLogs, map[string]string{"name": "alpha"})
+	if resp.Error != nil {
+		t.Fatalf("dispatch error: %+v", resp.Error)
+	}
+	var got server.KartLogsResult
+	if err := json.Unmarshal(resp.Result, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Format != server.LogFormatJSONL {
+		t.Errorf("format = %q, want %q", got.Format, server.LogFormatJSONL)
+	}
+	if len(got.Lines) != 2 {
+		t.Fatalf("lines count = %d, want 2; got=%v", len(got.Lines), got.Lines)
+	}
+}
+
+func TestKartLogsJSONLFallsBackToTextIfAnyLineNotJSON(t *testing.T) {
+	t.Parallel()
+	stdout := `{"time":"2026-04-18T09:05:07Z","level":"INFO","msg":"ready"}` + "\n" +
+		`plain text line` + "\n"
+	fake := &recordingDevpod{
+		replies: map[string]fakeReply{
+			"list": {stdout: `[{"id":"alpha","provider":{"name":"docker"}}]`},
+			"logs": {stdout: stdout},
+		},
+	}
+	deps := newKartDeps(t, fake)
+
+	resp := registerLifecycleAndDispatch(t, deps, wire.MethodKartLogs, map[string]string{"name": "alpha"})
+	if resp.Error != nil {
+		t.Fatalf("dispatch error: %+v", resp.Error)
+	}
+	var got server.KartLogsResult
+	if err := json.Unmarshal(resp.Result, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Format != server.LogFormatText {
+		t.Errorf("format = %q, want text fallback", got.Format)
+	}
+}
+
+func TestKartLogsAppliesTail(t *testing.T) {
+	t.Parallel()
+	fake := &recordingDevpod{
+		replies: map[string]fakeReply{
+			"list": {stdout: `[{"id":"alpha","provider":{"name":"docker"}}]`},
+			"logs": {stdout: "a\nb\nc\nd\ne\n"},
+		},
+	}
+	deps := newKartDeps(t, fake)
+
+	resp := registerLifecycleAndDispatch(t, deps, wire.MethodKartLogs,
+		map[string]any{"name": "alpha", "tail": 2})
+	if resp.Error != nil {
+		t.Fatalf("dispatch error: %+v", resp.Error)
+	}
+	var got server.KartLogsResult
+	if err := json.Unmarshal(resp.Result, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Lines) != 2 || got.Lines[0] != "d" || got.Lines[1] != "e" {
+		t.Errorf("tail = %v, want [d e]", got.Lines)
+	}
+}
+
+func TestKartLogsGrepTextLines(t *testing.T) {
+	t.Parallel()
+	fake := &recordingDevpod{
+		replies: map[string]fakeReply{
+			"list": {stdout: `[{"id":"alpha","provider":{"name":"docker"}}]`},
+			"logs": {stdout: "kart started\nidle\nkart stopped\n"},
+		},
+	}
+	deps := newKartDeps(t, fake)
+
+	resp := registerLifecycleAndDispatch(t, deps, wire.MethodKartLogs,
+		map[string]any{"name": "alpha", "grep": "kart"})
+	if resp.Error != nil {
+		t.Fatalf("dispatch error: %+v", resp.Error)
+	}
+	var got server.KartLogsResult
+	if err := json.Unmarshal(resp.Result, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Lines) != 2 {
+		t.Errorf("lines = %v, want 2 matches", got.Lines)
+	}
+}
+
+func TestKartLogsFiltersJSONLByLevel(t *testing.T) {
+	t.Parallel()
+	stdout := `{"time":"2026-04-18T09:05:07Z","level":"DEBUG","msg":"a"}` + "\n" +
+		`{"time":"2026-04-18T09:05:08Z","level":"INFO","msg":"b"}` + "\n" +
+		`{"time":"2026-04-18T09:05:09Z","level":"WARN","msg":"c"}` + "\n"
+	fake := &recordingDevpod{
+		replies: map[string]fakeReply{
+			"list": {stdout: `[{"id":"alpha","provider":{"name":"docker"}}]`},
+			"logs": {stdout: stdout},
+		},
+	}
+	deps := newKartDeps(t, fake)
+
+	resp := registerLifecycleAndDispatch(t, deps, wire.MethodKartLogs,
+		map[string]any{"name": "alpha", "level": "warn"})
+	if resp.Error != nil {
+		t.Fatalf("dispatch error: %+v", resp.Error)
+	}
+	var got server.KartLogsResult
+	if err := json.Unmarshal(resp.Result, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Lines) != 1 {
+		t.Fatalf("lines = %v, want 1 (WARN only)", got.Lines)
+	}
+	if !strings.Contains(got.Lines[0], `"msg":"c"`) {
+		t.Errorf("remaining line wrong: %q", got.Lines[0])
 	}
 }
 

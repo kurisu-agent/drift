@@ -1,8 +1,8 @@
 # Nicer logs
 
-Status: proposed
+Status: shipped (steps 1–4). Step 5 (recent_logs breadcrumbs) deferred.
 Owner: unassigned
-Related: `internal/cli/drift/logs.go`, `internal/cli/errfmt`, `internal/wire`, `internal/server/kart_lifecycle.go`
+Related: `internal/cli/drift/logs.go`, `internal/slogfmt`, `internal/cli/errfmt`, `internal/server/kart_lifecycle.go`
 
 ## Problem
 

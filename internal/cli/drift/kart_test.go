@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/wire"
@@ -83,12 +84,12 @@ func TestRunKartDelete_NotFoundBubblesUp(t *testing.T) {
 	}
 }
 
-func TestRunKartLogs_WritesChunkRaw(t *testing.T) {
+func TestRunKartLogs_TextLinesWrappedAsInfoRecords(t *testing.T) {
 	d, _ := newKartDeps(t, func(_ context.Context, _, method string, _, out any) error {
 		if method != wire.MethodKartLogs {
 			t.Errorf("method = %q, want %q", method, wire.MethodKartLogs)
 		}
-		raw := json.RawMessage(`{"name":"alpha","chunk":"line 1\nline 2\n"}`)
+		raw := json.RawMessage(`{"name":"alpha","format":"text","lines":["line 1","line 2"]}`)
 		*(out.(*json.RawMessage)) = raw
 		return nil
 	})
@@ -100,8 +101,115 @@ func TestRunKartLogs_WritesChunkRaw(t *testing.T) {
 	if rc != 0 {
 		t.Fatalf("rc=%d stderr=%s", rc, stderr.String())
 	}
-	if stdout.String() != "line 1\nline 2\n" {
-		t.Errorf("stdout = %q", stdout.String())
+	got := stdout.String()
+	lines := strings.Split(strings.TrimSuffix(got, "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("line count = %d, want 2; stdout=%q", len(lines), got)
+	}
+	for i, want := range []string{"line 1", "line 2"} {
+		if !strings.HasSuffix(lines[i], " INFO  "+want) {
+			t.Errorf("line[%d] = %q, want suffix %q", i, lines[i], " INFO  "+want)
+		}
+	}
+}
+
+func TestRunKartLogs_JSONLRendersStructured(t *testing.T) {
+	d, _ := newKartDeps(t, func(_ context.Context, _, _ string, _, out any) error {
+		raw := json.RawMessage(`{"name":"alpha","format":"jsonl","lines":[` +
+			`"{\"time\":\"2026-04-18T09:05:07Z\",\"level\":\"WARN\",\"msg\":\"slow\",\"kart\":\"alpha\"}"` +
+			`]}`)
+		*(out.(*json.RawMessage)) = raw
+		return nil
+	})
+	var stdout, stderr bytes.Buffer
+	io := IO{Stdout: &stdout, Stderr: &stderr}
+	cli := &CLI{}
+
+	rc := runKartLogs(context.Background(), io, cli, logsCmd{Name: "alpha"}, d)
+	if rc != 0 {
+		t.Fatalf("rc=%d stderr=%s", rc, stderr.String())
+	}
+	got := stdout.String()
+	want := "09:05:07 WARN  slow\n  kart: alpha\n"
+	if got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestRunKartLogs_DebugFlagDropsLevelFloor(t *testing.T) {
+	d, _ := newKartDeps(t, func(_ context.Context, _, _ string, _, out any) error {
+		raw := json.RawMessage(`{"name":"alpha","format":"jsonl","lines":[` +
+			`"{\"time\":\"2026-04-18T09:05:07Z\",\"level\":\"DEBUG\",\"msg\":\"chatty\"}"` +
+			`]}`)
+		*(out.(*json.RawMessage)) = raw
+		return nil
+	})
+	var stdout, stderr bytes.Buffer
+	io := IO{Stdout: &stdout, Stderr: &stderr}
+
+	// Without --debug, a DEBUG record is filtered out.
+	rc := runKartLogs(context.Background(), io, &CLI{}, logsCmd{Name: "alpha"}, d)
+	if rc != 0 || stdout.Len() != 0 {
+		t.Fatalf("without --debug: rc=%d stdout=%q", rc, stdout.String())
+	}
+
+	// With --debug, the same record renders.
+	stdout.Reset()
+	rc = runKartLogs(context.Background(), io, &CLI{Debug: true}, logsCmd{Name: "alpha"}, d)
+	if rc != 0 {
+		t.Fatalf("rc=%d stderr=%s", rc, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "DEBUG") {
+		t.Errorf("debug record not rendered: %q", stdout.String())
+	}
+}
+
+func TestRunKartLogs_JSONOutputPassesThrough(t *testing.T) {
+	raw := `{"name":"alpha","format":"text","lines":["a","b"]}`
+	d, _ := newKartDeps(t, func(_ context.Context, _, _ string, _, out any) error {
+		*(out.(*json.RawMessage)) = json.RawMessage(raw)
+		return nil
+	})
+	var stdout, stderr bytes.Buffer
+	io := IO{Stdout: &stdout, Stderr: &stderr}
+	cli := &CLI{Output: "json"}
+
+	rc := runKartLogs(context.Background(), io, cli, logsCmd{Name: "alpha"}, d)
+	if rc != 0 {
+		t.Fatalf("rc=%d stderr=%s", rc, stderr.String())
+	}
+	if strings.TrimSpace(stdout.String()) != raw {
+		t.Errorf("got %q, want %q", stdout.String(), raw)
+	}
+}
+
+func TestRunKartLogs_SendsFilterParams(t *testing.T) {
+	var gotParams logsParams
+	d, _ := newKartDeps(t, func(_ context.Context, _, _ string, params, out any) error {
+		// deps.call receives the same struct value the caller passed — we're
+		// the stub so we can type-assert back.
+		if p, ok := params.(logsParams); ok {
+			gotParams = p
+		}
+		*(out.(*json.RawMessage)) = json.RawMessage(`{"name":"alpha","format":"text","lines":[]}`)
+		return nil
+	})
+	var stdout, stderr bytes.Buffer
+	io := IO{Stdout: &stdout, Stderr: &stderr}
+
+	rc := runKartLogs(context.Background(), io, &CLI{}, logsCmd{
+		Name:  "alpha",
+		Tail:  50,
+		Since: 10 * time.Minute,
+		Level: "warn",
+		Grep:  "started",
+	}, d)
+	if rc != 0 {
+		t.Fatalf("rc=%d stderr=%s", rc, stderr.String())
+	}
+	if gotParams.Name != "alpha" || gotParams.Tail != 50 || gotParams.Since != 10*time.Minute ||
+		gotParams.Level != "warn" || gotParams.Grep != "started" {
+		t.Errorf("params = %+v", gotParams)
 	}
 }
 
@@ -155,4 +263,3 @@ func TestRunKartStop_ExplicitCircuitOverridesDefault(t *testing.T) {
 		t.Errorf("circuit = %q, want secondary", gotCircuit)
 	}
 }
-

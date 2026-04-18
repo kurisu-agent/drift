@@ -165,7 +165,7 @@ func TestRun_ProbeFailure_PrintsInstallHints(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	outStr := out.String()
-	for _, want := range []string{"probe failed", "install", "Bootstrap"} {
+	for _, want := range []string{"probe failed", "install", "bootstrap"} {
 		if !strings.Contains(outStr, want) {
 			t.Errorf("output missing %q:\n%s", want, outStr)
 		}

@@ -6,12 +6,21 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/kurisu-agent/drift/internal/devpod"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
+	"github.com/kurisu-agent/drift/internal/slogfmt"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
+
+// defaultLogTailLimit caps the number of lines returned when the caller does
+// not set Tail explicitly. The one-shot SSH channel can't stream, so an
+// unbounded response is a foot-gun — users who need more can page with
+// --since or set --tail explicitly.
+const defaultLogTailLimit = 1000
 
 // RegisterKartLifecycle wires the Phase 9 kart lifecycle handlers into reg.
 // It is a separate entry point from [RegisterKart] so Phase 7 (list/info) and
@@ -40,12 +49,31 @@ type KartLifecycleResult struct {
 	Status devpod.Status `json:"status"`
 }
 
-// KartLogsResult is returned by kart.logs. The chunk is the raw bytes of
-// `devpod logs <name>` captured in one read; streaming is deferred.
-type KartLogsResult struct {
-	Name  string `json:"name"`
-	Chunk string `json:"chunk"`
+// KartLogsParams is the param shape for kart.logs. Every filter is optional:
+// a zero value means "no filter". Tail=0 invokes the server-side default cap.
+type KartLogsParams struct {
+	Name  string        `json:"name"`
+	Tail  int           `json:"tail,omitempty"`
+	Since time.Duration `json:"since,omitempty"`
+	Level string        `json:"level,omitempty"`
+	Grep  string        `json:"grep,omitempty"`
 }
+
+// KartLogsResult is returned by kart.logs. Format discriminates between
+// JSONL-per-line (each entry is a slog record as an object) and text (each
+// entry is a raw line). The client renders both with slogfmt.Emit; text
+// lines are wrapped into synthetic INFO records at render time.
+type KartLogsResult struct {
+	Name   string   `json:"name"`
+	Format string   `json:"format"`
+	Lines  []string `json:"lines"`
+}
+
+// Log format discriminators.
+const (
+	LogFormatJSONL = "jsonl"
+	LogFormatText  = "text"
+)
 
 // kartStartHandler runs `devpod up <name>`. Idempotent: starting a running
 // kart is a success (code 0).
@@ -141,13 +169,22 @@ func (d KartDeps) kartDeleteHandler(ctx context.Context, params json.RawMessage)
 	return KartLifecycleResult{Name: p.Name, Status: devpod.StatusNotFound}, nil
 }
 
-// kartLogsHandler returns a single chunk of devpod logs output. Streaming is
-// deferred — the MVP surface returns whatever `devpod logs <name>` emits in
-// one read.
+// kartLogsHandler fetches `devpod logs <name>` output and packages it into a
+// KartLogsResult. If every non-empty line parses as a slog-JSON record with a
+// `time` field, Format is "jsonl" and lines pass through verbatim; otherwise
+// Format is "text" and the client wraps each line at render time.
+//
+// Filter order: since → level → grep → tail. The first three are applied
+// only where meaningful for the chosen format (since/level require JSONL,
+// grep works on both). Tail is applied last so a user asking for "the last
+// 20 matching warnings" gets exactly that.
 func (d KartDeps) kartLogsHandler(ctx context.Context, params json.RawMessage) (any, error) {
-	p, err := bindLifecycleParams(params, "kart.logs")
-	if err != nil {
+	var p KartLogsParams
+	if err := rpc.BindParams(params, &p); err != nil {
 		return nil, err
+	}
+	if p.Name == "" {
+		return nil, rpcerr.UserError(rpcerr.TypeInvalidFlag, "kart.logs: name is required")
 	}
 	if err := d.requireDevpod(); err != nil {
 		return nil, err
@@ -165,7 +202,97 @@ func (d KartDeps) kartLogsHandler(ctx context.Context, params json.RawMessage) (
 		return nil, rpcerr.New(rpcerr.CodeDevpod, rpcerr.TypeDevpodUnreachable,
 			"devpod logs %s failed: %v", p.Name, err).Wrap(err).With("kart", p.Name)
 	}
-	return KartLogsResult{Name: p.Name, Chunk: string(out)}, nil
+	format, lines := classifyLogLines(string(out))
+	lines = filterLogLines(lines, format, p, time.Now())
+	return KartLogsResult{Name: p.Name, Format: format, Lines: lines}, nil
+}
+
+// classifyLogLines splits chunk into lines, dropping the trailing empty
+// fragment produced by a terminal newline. Every non-empty line must parse
+// as a JSON object with a `time` field for the result to be tagged "jsonl";
+// otherwise "text" so the client knows to synthesize INFO records.
+func classifyLogLines(chunk string) (format string, lines []string) {
+	if chunk == "" {
+		return LogFormatText, nil
+	}
+	split := strings.Split(strings.TrimSuffix(chunk, "\n"), "\n")
+	allJSONL := true
+	nonEmpty := 0
+	for _, line := range split {
+		if line == "" {
+			continue
+		}
+		nonEmpty++
+		var obj map[string]any
+		if err := json.Unmarshal([]byte(line), &obj); err != nil {
+			allJSONL = false
+			break
+		}
+		if _, ok := obj["time"]; !ok {
+			allJSONL = false
+			break
+		}
+	}
+	if nonEmpty == 0 {
+		return LogFormatText, nil
+	}
+	if allJSONL {
+		return LogFormatJSONL, split
+	}
+	return LogFormatText, split
+}
+
+// filterLogLines applies the KartLogsParams filters in order. The since/
+// level filters are meaningful only when format is JSONL — for text lines
+// the server has no per-line time or level to inspect. Tail is applied last
+// so it always reflects the post-filter population.
+func filterLogLines(lines []string, format string, p KartLogsParams, now time.Time) []string {
+	minLevel := slogfmt.ParseLevel(p.Level)
+	hasLevel := strings.TrimSpace(p.Level) != ""
+	cutoff := time.Time{}
+	if p.Since > 0 {
+		cutoff = now.Add(-p.Since)
+	}
+	grep := p.Grep
+
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		if format == LogFormatJSONL {
+			var obj map[string]any
+			if err := json.Unmarshal([]byte(line), &obj); err != nil {
+				// Shouldn't happen — classifyLogLines already validated — but
+				// guard anyway so a malformed line doesn't panic.
+				continue
+			}
+			rec := slogfmt.DecodeRecord(obj)
+			if !cutoff.IsZero() && rec.Time.Before(cutoff) {
+				continue
+			}
+			if hasLevel && slogfmt.ParseLevel(rec.Level) < minLevel {
+				continue
+			}
+			if grep != "" && !strings.Contains(rec.Msg, grep) {
+				continue
+			}
+		} else {
+			if grep != "" && !strings.Contains(line, grep) {
+				continue
+			}
+		}
+		out = append(out, line)
+	}
+
+	limit := p.Tail
+	if limit <= 0 {
+		limit = defaultLogTailLimit
+	}
+	if len(out) > limit {
+		out = out[len(out)-limit:]
+	}
+	return out
 }
 
 // bindLifecycleParams decodes params and enforces that a name was provided.
