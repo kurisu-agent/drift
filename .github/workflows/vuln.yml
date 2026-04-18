@@ -1,10 +1,8 @@
 name: vuln
 
-# Weekly govulncheck against main. Runs at 06:00 UTC every Monday, and can
-# be triggered manually via the Actions UI.
+# Weekly govulncheck against main. Temporarily manual-only (cron disabled)
+# while the MVP iteration is in flight — same rationale as ci.yml.
 on:
-  schedule:
-    - cron: '0 6 * * 1'
   workflow_dispatch:
 
 permissions:
