@@ -127,4 +127,3 @@ func setDiff(a, b map[string]struct{}) []string {
 	}
 	return out
 }
-

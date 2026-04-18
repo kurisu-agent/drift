@@ -60,4 +60,3 @@ func verifyNow(ctx context.Context, dev *devpod.Client) VerifyResult {
 	res.DevpodMatch = vc.Match
 	return res
 }
-
