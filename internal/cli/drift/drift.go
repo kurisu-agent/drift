@@ -19,6 +19,7 @@ type CLI struct {
 	Output           string `name:"output" help:"Output format for structured commands." enum:"text,json" default:"text"`
 
 	Version  versionCmd `cmd:"" help:"Print drift version."`
+	Help     helpCmd    `cmd:"" help:"Print an LLM-friendly command + protocol reference."`
 	Circuit_ circuitCmd `cmd:"" name:"circuit" help:"Manage circuits (client-side config + SSH config)."`
 	Warmup   warmupCmd  `cmd:"" name:"warmup" help:"Interactive first-time setup wizard (circuits + characters)."`
 	New      newCmd     `cmd:"" name:"new" help:"Create a new kart (from starter or existing repo)."`
@@ -33,6 +34,7 @@ type CLI struct {
 	Enable  enableCmd  `cmd:"" help:"Enable kart autostart on circuit reboot (idempotent)."`
 	Disable disableCmd `cmd:"" help:"Disable kart autostart (idempotent)."`
 	Connect connectCmd `cmd:"" help:"Connect to a kart via mosh (ssh fallback); auto-starts if stopped."`
+	AI      aiCmd      `cmd:"" name:"ai" help:"Launch claude --dangerously-skip-permissions on the circuit (mosh/ssh)."`
 
 	SshProxy sshProxyCmd `cmd:"" name:"ssh-proxy" hidden:"" help:"ProxyCommand helper for drift.<circuit>.<kart> aliases (invoked by OpenSSH)."`
 }
@@ -79,6 +81,8 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 	switch kctx.Command() {
 	case "version":
 		return runVersion(io, cli.Output)
+	case "help":
+		return runHelp(io, parser)
 	case "circuit add <name>":
 		return runCircuitAdd(ctx, io, &cli, cli.Circuit_.Add, deps)
 	case "circuit rm <name>":
@@ -109,6 +113,8 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runKartDisable(ctx, io, &cli, cli.Disable, deps)
 	case "connect <name>":
 		return runConnect(ctx, io, &cli, cli.Connect, deps)
+	case "ai":
+		return runAI(ctx, io, &cli, cli.AI, deps)
 	case "ssh-proxy <alias>", "ssh-proxy <alias> <port>":
 		return runSSHProxy(ctx, io, &cli, cli.SshProxy, deps)
 	default:

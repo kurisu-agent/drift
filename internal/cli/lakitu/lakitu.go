@@ -30,6 +30,7 @@ type CLI struct {
 	Debug bool `help:"Verbose output." env:"LAKITU_DEBUG"`
 
 	Version   versionCmd   `cmd:"" help:"Print lakitu version."`
+	Help      helpCmd      `cmd:"" help:"Print an LLM-friendly command + protocol reference."`
 	Init      initCmd      `cmd:"" help:"Bootstrap the garage at ~/.drift/garage (idempotent)."`
 	RPC       rpcCmd       `cmd:"" name:"rpc" help:"Read one JSON-RPC 2.0 request from stdin and write a response to stdout."`
 	List      kartListCmd  `cmd:"" help:"List karts known to this circuit."`
@@ -76,6 +77,8 @@ func Run(ctx context.Context, argv []string, io IO) int {
 	switch kctx.Command() {
 	case "version":
 		return runVersion(io, cli.Version)
+	case "help":
+		return runHelp(io, parser)
 	case "init":
 		return runInit(ctx, io)
 	case "rpc":
@@ -175,7 +178,15 @@ func runInit(ctx context.Context, io IO) int {
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
-	if len(res.Created) == 0 {
+	driftHome, herr := config.DriftHomeDir()
+	if herr != nil {
+		return errfmt.Emit(io.Stderr, herr)
+	}
+	claudeCreated, cerr := config.EnsureClaudeMD(driftHome)
+	if cerr != nil {
+		return errfmt.Emit(io.Stderr, cerr)
+	}
+	if len(res.Created) == 0 && !claudeCreated {
 		fmt.Fprintf(io.Stdout, "garage already initialized at %s\n", res.GarageDir)
 	} else {
 		created := append([]string(nil), res.Created...)
@@ -183,6 +194,9 @@ func runInit(ctx context.Context, io IO) int {
 		fmt.Fprintf(io.Stdout, "initialized garage at %s\n", res.GarageDir)
 		for _, c := range created {
 			fmt.Fprintf(io.Stdout, "  + %s\n", c)
+		}
+		if claudeCreated {
+			fmt.Fprintf(io.Stdout, "  + %s\n", "../CLAUDE.md")
 		}
 	}
 	added, perr := ensureDockerProvider(ctx)
@@ -230,6 +244,15 @@ func serverInitHandler(ctx context.Context, params json.RawMessage) (any, error)
 	res, err := config.InitGarage(root)
 	if err != nil {
 		return nil, rpcerr.Internal("init garage: %v", err).Wrap(err)
+	}
+	driftHome, herr := config.DriftHomeDir()
+	if herr != nil {
+		return nil, rpcerr.Internal("resolve drift home: %v", herr).Wrap(herr)
+	}
+	if created, cerr := config.EnsureClaudeMD(driftHome); cerr != nil {
+		return nil, rpcerr.Internal("write CLAUDE.md: %v", cerr).Wrap(cerr)
+	} else if created {
+		res.Created = append(res.Created, "../CLAUDE.md")
 	}
 	if _, perr := ensureDockerProvider(ctx); perr != nil {
 		// Same rationale as runInit: the garage exists; surface the devpod

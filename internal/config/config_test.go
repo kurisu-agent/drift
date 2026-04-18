@@ -361,6 +361,45 @@ func TestInitGarage_PreservesUserEdits(t *testing.T) {
 	}
 }
 
+func TestEnsureClaudeMD_WritesOnceThenPreserves(t *testing.T) {
+	home := t.TempDir()
+
+	created, err := config.EnsureClaudeMD(home)
+	if err != nil {
+		t.Fatalf("EnsureClaudeMD (first): %v", err)
+	}
+	if !created {
+		t.Error("first call should report created=true")
+	}
+	body, err := os.ReadFile(filepath.Join(home, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("read CLAUDE.md: %v", err)
+	}
+	if !strings.Contains(string(body), "circuit — agent context") {
+		t.Errorf("CLAUDE.md missing expected header, got:\n%s", body)
+	}
+
+	// User edits get preserved on re-init.
+	edited := []byte("# my custom notes\n")
+	if err := os.WriteFile(filepath.Join(home, "CLAUDE.md"), edited, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	created, err = config.EnsureClaudeMD(home)
+	if err != nil {
+		t.Fatalf("EnsureClaudeMD (second): %v", err)
+	}
+	if created {
+		t.Error("second call should report created=false")
+	}
+	got, err := os.ReadFile(filepath.Join(home, "CLAUDE.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(edited) {
+		t.Errorf("CLAUDE.md clobbered: got %q, want %q", got, edited)
+	}
+}
+
 func TestInitGarage_FailsWhenGarageIsAFile(t *testing.T) {
 	blocker := filepath.Join(t.TempDir(), "garage")
 	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {

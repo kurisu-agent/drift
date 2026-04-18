@@ -56,10 +56,10 @@ type characterCmd struct {
 
 type characterAddCmd struct {
 	Name       string `arg:""`
-	GitName    string `name:"git-name" required:""`
-	GitEmail   string `name:"git-email" required:""`
-	GithubUser string `name:"github-user"`
-	SSHKeyPath string `name:"ssh-key-path"`
+	GitName    string `name:"git-name" required:"" help:"Git committer name (user.name)."`
+	GitEmail   string `name:"git-email" required:"" help:"Git committer email (user.email)."`
+	GithubUser string `name:"github-user" help:"GitHub handle for gh CLI auth inside karts."`
+	SSHKeyPath string `name:"ssh-key-path" help:"Path to the SSH private key to mount into karts."`
 	PATSecret  string `name:"pat-secret" help:"Chest reference of the form chest:<name>."`
 }
 
@@ -84,9 +84,9 @@ type tuneShowCmd struct {
 }
 type tuneSetCmd struct {
 	Name         string `arg:""`
-	Starter      string `name:"starter"`
-	Devcontainer string `name:"devcontainer"`
-	DotfilesRepo string `name:"dotfiles-repo"`
+	Starter      string `name:"starter" help:"Starter repo URL (git or file://). Cloned into new karts that pick this tune."`
+	Devcontainer string `name:"devcontainer" help:"Path to a devcontainer.json fragment merged into the starter."`
+	DotfilesRepo string `name:"dotfiles-repo" help:"Dotfiles repo URL applied on kart creation."`
 	Features     string `name:"features" help:"Raw JSON passed through to devpod --additional-features."`
 }
 type tuneRemoveCmd struct {

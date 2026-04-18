@@ -5,7 +5,7 @@
 // build-tag-gated so `go test ./...` stays fast; `make integration` is
 // the canonical entry point.
 //
-// Design overview (plans/PLAN.md § "Integration harness"):
+// Design overview:
 //
 //   - One container per test, built on demand from Dockerfile.circuit with
 //     a freshly compiled lakitu copied in at build time. Short-lived so a
@@ -562,6 +562,24 @@ func (c *Circuit) InstallDevpodShim(ctx context.Context, body string) {
 	}
 	if err := run(ctx, "docker", "exec", c.ContainerID, "chmod", "0755", "/usr/local/bin/devpod"); err != nil {
 		c.t.Fatalf("chmod devpod shim: %v", err)
+	}
+}
+
+// InstallBin writes body to /usr/local/bin/<name> inside the circuit
+// container (as root, via docker cp) and makes it executable. Tests use it
+// to drop ad-hoc shims on the circuit PATH — `claude` for the drift-ai
+// path, anything else a future test needs.
+func (c *Circuit) InstallBin(ctx context.Context, name, body string) {
+	c.t.Helper()
+	host := filepath.Join(c.WorkDir, name+"-shim")
+	if err := os.WriteFile(host, []byte(body), 0o755); err != nil {
+		c.t.Fatalf("write %s shim: %v", name, err)
+	}
+	if err := run(ctx, "docker", "cp", host, c.ContainerID+":/usr/local/bin/"+name); err != nil {
+		c.t.Fatalf("docker cp %s shim: %v", name, err)
+	}
+	if err := run(ctx, "docker", "exec", c.ContainerID, "chmod", "0755", "/usr/local/bin/"+name); err != nil {
+		c.t.Fatalf("chmod %s shim: %v", name, err)
 	}
 }
 
