@@ -13,8 +13,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
 
+	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
@@ -132,26 +132,28 @@ func buildRequest(id json.RawMessage, method string, params any) ([]byte, error)
 // SSHTransport returns the default Transport that shells out to
 // `ssh drift.<circuit> lakitu rpc`. Any non-zero exit from ssh is wrapped in
 // a [*TransportError] carrying ssh's exit code and stderr verbatim.
+//
+// The ssh invocation routes through [driftexec.Run] so it inherits the
+// Cancel/WaitDelay discipline from plans/PLAN.md § "Critical invariants".
 func SSHTransport() Transport {
 	return func(ctx context.Context, circuit string, request []byte) ([]byte, error) {
 		alias := "drift." + circuit
 		// SSH alias is a drift-managed Host entry from ~/.config/drift/ssh_config;
 		// argv is built directly (no shell) so circuit interpolation is safe.
-		cmd := exec.CommandContext(ctx, "ssh", alias, "lakitu", "rpc") //nolint:gosec // argv, not a shell string
-
-		cmd.Stdin = bytes.NewReader(request)
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-		err := cmd.Run()
+		res, err := driftexec.Run(ctx, driftexec.Cmd{
+			Name:  "ssh",
+			Args:  []string{alias, "lakitu", "rpc"},
+			Stdin: bytes.NewReader(request),
+		})
 		if err != nil {
-			te := &TransportError{ExitCode: -1, Stderr: stderr.String(), Cause: err}
-			var ee *exec.ExitError
+			te := &TransportError{ExitCode: -1, Cause: err}
+			var ee *driftexec.Error
 			if errors.As(err, &ee) {
-				te.ExitCode = ee.ExitCode()
+				te.ExitCode = ee.ExitCode
+				te.Stderr = string(ee.Stderr)
 			}
 			return nil, te
 		}
-		return stdout.Bytes(), nil
+		return res.Stdout, nil
 	}
 }

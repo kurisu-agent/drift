@@ -77,7 +77,7 @@ Legend: `[x]` done · `[ ]` open · `[~]` partial.
 - [x] Single helper around `exec.CommandContext` that always sets `Cancel` (SIGTERM) and `WaitDelay` (5s → SIGKILL) per [PLAN.md § Critical invariants](./PLAN.md#critical-invariants-mechanically-tested)
 - [x] Never invoke a shell — argv built directly; unit test asserts the package itself never bakes in a shell invocation
 - [x] Capture stdout/stderr separately; structured error with exit code + first stderr line
-- [ ] Used uniformly by ssh, mosh, docker, devpod call sites (follow-up phases will wire callers through this helper)
+- [x] Used uniformly by ssh, docker, devpod, git call sites (`internal/rpc/client.SSHTransport`, `internal/devpod`, `internal/systemd`, `internal/kart.Starter` all route through `driftexec.Run`). Interactive stdio paths (`internal/connect.execStdio`, `internal/cli/drift.execSSHProxy`) deliberately bypass `internal/exec` because it buffers stdio — they reproduce the Cancel/WaitDelay discipline inline and are documented as such.
 
 ---
 
@@ -141,7 +141,7 @@ Order matters: trivial handlers first to validate the dispatch path end-to-end b
 
 - [x] `drift ssh-proxy <alias> <port>` subcommand — parses `drift.<circuit>.<kart>`, opens `ssh drift.<circuit> devpod ssh <kart> --stdio`, pipes stdio ([PLAN.md § How drift ssh-proxy works](./PLAN.md#how-drift-ssh-proxy-works))
 - [x] Wildcard `Host drift.*.*` block auto-written by Phase 3 already exercises this path (verified: `internal/sshconf.EnsureWildcardBlock` emits `ProxyCommand drift ssh-proxy %h %p`)
-- [ ] Smoke test from inside the integration harness: `ssh drift.<circuit>.<kart> echo ok` (deferred to Phase 15)
+- [x] Smoke test from inside the integration harness: `ssh drift.<circuit>.<kart> echo ok` — `TestSSHProxyEchoOK` in `integration/ssh_proxy_test.go`. The circuit image lacks a docker daemon, so the test swaps `/usr/local/bin/devpod` with a shim that bridges `devpod ssh <kart> --stdio` to local sshd via netcat. The outer SSH client completes its handshake through the ProxyCommand pipe and runs `echo ok`, exercising drift ssh-proxy + the nested ssh hop for real.
 
 ---
 
@@ -176,7 +176,7 @@ Order matters: trivial handlers first to validate the dispatch path end-to-end b
 - [x] Dockerfile for a "circuit" image at `integration/Dockerfile.circuit`: Debian-slim + sshd + devpod + lakitu (docker access is delegated to the devcontainer's outer daemon via socket bind, matching plans/PLAN.md § "Integration harness")
 - [x] Test driver at `integration/harness.go`: builds the image, spins a per-test container on an ephemeral port, generates an ed25519 keypair, writes a per-test ssh config, and exposes `Circuit.Drift(ctx, args...)` so tests drive the real `drift` binary over real SSH
 - [x] Build-tag-gated (`//go:build integration`) so unit `go test ./...` stays fast
-- [~] Cover: warmup probe, kart.new with `--clone`, connect via ssh fallback, kart.delete, character add+list, chest set+get — scaffolding landed with one end-to-end smoke (`TestDriftInitAndServerVersion`); remaining coverage is a follow-up iteration on top of the harness
+- [~] Cover: warmup probe, kart.new with `--clone`, connect via ssh fallback, kart.delete, character add+list, chest set+get. Done in `integration/`: init+version (`TestDriftInitAndServerVersion`), probe via circuit add (`TestCircuitAddProbe`), character add/list/show/remove (`TestCharacterLifecycle`), chest set/get/list/rm incl. multiline values (`TestChestLifecycle`), and end-to-end ssh-proxy smoke (`TestSSHProxyEchoOK`). Kart lifecycle (`kart.new --clone`, `drift connect`, `kart.delete`) stays deferred — the circuit image has no docker daemon so `devpod up` cannot actually stand up a workspace; unit-level coverage in `internal/server` + `internal/kart` remains the tier-1 net.
 - [x] CI job target in `Makefile`: `make integration`
 
 ---

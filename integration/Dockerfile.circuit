@@ -17,7 +17,8 @@
 # production.
 FROM debian:bookworm-slim
 
-ARG DEVPOD_VERSION=v0.6.10
+ARG DEVPOD_VERSION=v0.22.0
+ARG DOCKER_CLI_VERSION=28.5.2
 ARG LAKITU_PATH=./lakitu
 ARG CIRCUIT_USER=circuit
 ARG CIRCUIT_UID=1000
@@ -32,18 +33,35 @@ RUN apt-get update \
       git \
       sudo \
       dumb-init \
+      netcat-openbsd \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p /run/sshd \
  && sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config \
  && sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config \
- && sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+ && sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config \
+ # PermitUserEnvironment + AcceptEnv so the harness can pin TMPDIR (shared
+ # bind mount path) via ~/.ssh/environment for lakitu-over-ssh sessions.
+ && printf 'PermitUserEnvironment yes\nAcceptEnv TMPDIR\n' >> /etc/ssh/sshd_config
 
-# Install devpod. Skipping a full docker install inside the circuit image
-# because the harness runs the circuit as a sibling of the devcontainer's
-# outer docker — the devpod provider inside circuit talks to the shared
-# daemon via a bind-mounted socket.
-RUN curl -L -o /usr/local/bin/devpod \
-      "https://github.com/skevetter/devpod/releases/download/${DEVPOD_VERSION}/devpod-linux-amd64" \
+# Install the docker CLI (static binary; no daemon). devpod's docker provider
+# talks to the bind-mounted host socket, so only the client is needed inside
+# the image. Pinning the version keeps the integration suite deterministic.
+RUN arch="$(dpkg --print-architecture)" \
+ && case "$arch" in \
+      amd64) docker_arch=x86_64 ;; \
+      arm64) docker_arch=aarch64 ;; \
+      *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac \
+ && curl -L -o /tmp/docker.tgz "https://download.docker.com/linux/static/stable/${docker_arch}/docker-${DOCKER_CLI_VERSION}.tgz" \
+ && tar -xzf /tmp/docker.tgz -C /usr/local/bin --strip-components=1 docker/docker \
+ && rm /tmp/docker.tgz
+
+# Install devpod. The harness runs circuit containers as siblings of the
+# devcontainer's outer docker — the devpod provider inside circuit talks to
+# the shared daemon via a bind-mounted /var/run/docker.sock.
+RUN arch="$(dpkg --print-architecture)" \
+ && curl -fL -o /usr/local/bin/devpod \
+      "https://github.com/skevetter/devpod/releases/download/${DEVPOD_VERSION}/devpod-linux-${arch}" \
  && chmod +x /usr/local/bin/devpod
 
 # Non-root circuit user mirrors the production install pattern: sshd drops
