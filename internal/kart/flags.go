@@ -7,6 +7,7 @@ package kart
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -108,17 +109,30 @@ func (r *Resolver) Resolve(f Flags) (*Resolved, error) {
 	}
 
 	tuneName := f.Tune
+	tuneFromDefault := false
 	if tuneName == "" {
 		tuneName = r.Defaults.DefaultTune
+		tuneFromDefault = true
 	}
 	var tune *Tune
 	effectiveTune := tuneName
 	if tuneName != "" && tuneName != "none" {
 		t, err := r.LoadTune(tuneName)
 		if err != nil {
-			return nil, err
+			// default_tune is a hint, not a hard requirement. When it points
+			// at a tune that doesn't exist (e.g. the server config ships
+			// `default_tune: default` but no `tunes/default.yaml` has been
+			// created yet), fall through to "no tune" rather than erroring.
+			// Explicit --tune still errors — only the defaulted path degrades.
+			var rpcErr *rpcerr.Error
+			if tuneFromDefault && errors.As(err, &rpcErr) && rpcErr.Type == "tune_not_found" {
+				effectiveTune = ""
+			} else {
+				return nil, err
+			}
+		} else {
+			tune = t
 		}
-		tune = t
 	}
 	if tuneName == "none" {
 		effectiveTune = ""

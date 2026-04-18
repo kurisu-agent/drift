@@ -3,6 +3,7 @@ package kart
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -81,7 +82,41 @@ func WriteLayer1Dotfiles(tmpDir string, char *Character) (*DotfilesResult, error
 		return nil, err
 	}
 	res.InstallScript = scriptPath
+
+	// devpod's `install-dotfiles --repository` (skevetter fork v0.17) runs
+	// a git clone against the URL we pass. file:// URLs are valid targets
+	// only when the directory is a git repo, so stamp an ephemeral repo in
+	// place. The commit never leaves this tmpdir — we clean it up once the
+	// kart is up — so author values are cosmetic.
+	if err := initEphemeralGitRepo(tmpDir); err != nil {
+		return nil, err
+	}
 	return res, nil
+}
+
+// initEphemeralGitRepo runs `git init && git add -A && git commit` inside
+// dir so devpod's dotfiles cloner accepts the directory as a valid source.
+// All three invocations are best-effort: a failure leaves the tmpdir
+// usable for non-git tooling, so we surface the error only if the initial
+// `git init` fails outright.
+func initEphemeralGitRepo(dir string) error {
+	gitEnv := append(os.Environ(),
+		"GIT_AUTHOR_NAME=drift", "GIT_AUTHOR_EMAIL=noreply@drift.local",
+		"GIT_COMMITTER_NAME=drift", "GIT_COMMITTER_EMAIL=noreply@drift.local",
+	)
+	for _, args := range [][]string{
+		{"init", "--quiet", "-b", "main"},
+		{"add", "-A"},
+		{"commit", "--quiet", "-m", "drift layer-1 dotfiles"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = gitEnv
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("dotfiles: git %s: %w: %s", strings.Join(args, " "), err, string(out))
+		}
+	}
+	return nil
 }
 
 // writeGitConfig produces a minimal gitconfig — only the fields PLAN.md

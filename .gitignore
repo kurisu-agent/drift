@@ -3,3 +3,7 @@ bin/
 *.test
 *.out
 .DS_Store
+
+# nix build / nixos-rebuild output symlinks
+result
+result-*

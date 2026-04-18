@@ -21,6 +21,20 @@ import (
 // the stdout invariant test in cliscript protects the RPC side; the human
 // side gets the same behavior for free.
 
+type kartListCmd struct{}
+
+type kartInfoCmd struct {
+	Name string `arg:"" help:"Kart name."`
+}
+
+func runKartList(ctx context.Context, io IO) int {
+	return callAndPrint(ctx, io, wire.MethodKartList, struct{}{})
+}
+
+func runKartInfo(ctx context.Context, io IO, cmd kartInfoCmd) int {
+	return callAndPrint(ctx, io, wire.MethodKartInfo, server.KartInfoParams{Name: cmd.Name})
+}
+
 type configCmd struct {
 	Show configShowCmd `cmd:"" help:"Print the server config."`
 	Set  configSetCmd  `cmd:"" help:"Set a server config key."`

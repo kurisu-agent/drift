@@ -71,8 +71,30 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 
 	kartDir := filepath.Join(d.GarageDir, "karts", f.Name)
 	if _, err := os.Stat(kartDir); err == nil {
-		return nil, rpcerr.Conflict(rpcerr.TypeNameCollision,
-			"kart %q already exists", f.Name).With("name", f.Name)
+		// Garage dir exists. Distinguish a real collision (devpod knows the
+		// workspace too) from a stale corpse (garage-only, from a crashed
+		// `drift new`). Stale corpses get a suggestion the user can paste —
+		// plans/PLAN.md § Stale karts / § Interrupts.
+		workspaces, lerr := d.Devpod.List(ctx)
+		if lerr != nil {
+			return nil, rpcerr.Internal("kart.new: devpod list: %v", lerr).Wrap(lerr)
+		}
+		inDevpod := false
+		for _, w := range workspaces {
+			if w.ID == f.Name {
+				inDevpod = true
+				break
+			}
+		}
+		if inDevpod {
+			return nil, rpcerr.Conflict(rpcerr.TypeNameCollision,
+				"kart %q already exists", f.Name).With("name", f.Name)
+		}
+		return nil, rpcerr.Conflict(rpcerr.TypeStaleKart,
+			"kart %q is stale (garage state without devpod workspace)", f.Name).
+			With("kart", f.Name).
+			With("suggestion",
+				fmt.Sprintf("drift delete %s to clean up, then drift new %s", f.Name, f.Name))
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return nil, rpcerr.Internal("kart.new: stat %s: %v", kartDir, err).Wrap(err)
 	}
@@ -176,6 +198,14 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 
 	// Layer-1 dotfiles: push the generated tmpdir to devpod's
 	// install-dotfiles helper. file:// URL is expected by that API.
+	//
+	// KNOWN LIMITATION (skevetter/devpod v0.17): install-dotfiles runs
+	// inside the agent context; a file:// URL written to the host tmpdir
+	// isn't visible there, so git-clone silently pulls an empty repo or
+	// errors quietly. The command returns success but layer-1 files do
+	// not land in the container. Moving the install to a post-up `devpod
+	// ssh --command` with the script piped over stdin is the planned
+	// follow-up — tracked in plans/TODO.md (not yet filed).
 	fileURL := "file://" + df.Path
 	if err := d.Devpod.InstallDotfiles(ctx, fileURL); err != nil {
 		// Non-fatal at this phase — the kart itself is up. Surface the

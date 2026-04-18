@@ -8,6 +8,7 @@
 package devpod
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -345,15 +346,120 @@ func (c *Client) Logs(ctx context.Context, name string) ([]byte, error) {
 	return res.Stdout, nil
 }
 
+// ExpectedVersion is the devpod fork/release drift was built against —
+// injected at build time by the flake:
+//
+//	-X github.com/kurisu-agent/drift/internal/devpod.ExpectedVersion=v0.17.0
+//
+// Empty means "no pin" (dev builds); Verify then only reports what the
+// circuit has without a match check. Keep the string in the same shape
+// `devpod version` emits (with the leading "v").
+var ExpectedVersion = ""
+
+// VersionCheck is the result of comparing the circuit's live devpod
+// version to ExpectedVersion. Callers (lakitu init, kart.new) decide what
+// severity to render each state as.
+type VersionCheck struct {
+	Actual   string
+	Expected string
+	// Match is true when Expected is empty (no pin) or Actual == Expected.
+	// Callers should treat Match=false as a warning, not a hard error —
+	// devpod forks maintain backwards-compatible argv across minor bumps.
+	Match bool
+}
+
+// Verify calls `devpod version` and compares to ExpectedVersion. A
+// non-nil error means we couldn't determine the circuit's version at
+// all (devpod binary missing, permissions, etc.).
+func (c *Client) Verify(ctx context.Context) (VersionCheck, error) {
+	got, err := c.Version(ctx)
+	if err != nil {
+		return VersionCheck{Expected: ExpectedVersion}, err
+	}
+	return VersionCheck{
+		Actual:   got,
+		Expected: ExpectedVersion,
+		Match:    ExpectedVersion == "" || got == ExpectedVersion,
+	}, nil
+}
+
+// Version invokes `devpod version` and returns the trimmed one-line output
+// (e.g. "v0.17.0"). Empty output yields an empty string — the caller
+// decides whether that's an error.
+func (c *Client) Version(ctx context.Context) (string, error) {
+	res, err := c.run(ctx, "version")
+	if err != nil {
+		return "", err
+	}
+	return string(bytes.TrimSpace(res.Stdout)), nil
+}
+
+// ProviderList invokes `devpod provider list --output json` and returns
+// the set of installed provider names. Order is unspecified.
+func (c *Client) ProviderList(ctx context.Context) ([]string, error) {
+	res, err := c.run(ctx, "provider", "list", "--output", "json")
+	if err != nil {
+		return nil, err
+	}
+	trimmed := trimJSONSpace(res.Stdout)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return []string{}, nil
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(res.Stdout, &m); err != nil {
+		return nil, fmt.Errorf("devpod: parse provider list: %w", err)
+	}
+	names := make([]string, 0, len(m))
+	for n := range m {
+		names = append(names, n)
+	}
+	return names, nil
+}
+
+// ProviderAdd invokes `devpod provider add <name>`. Callers should prefer
+// EnsureProvider for idempotent add-if-missing flows.
+func (c *Client) ProviderAdd(ctx context.Context, name string) error {
+	if name == "" {
+		return errors.New("devpod: ProviderAdd: name is required")
+	}
+	_, err := c.run(ctx, "provider", "add", name)
+	return err
+}
+
+// EnsureProvider registers `name` via devpod if it isn't already listed.
+// Safe to call on every init; a no-op when the provider is present.
+// Returns true when a registration actually happened (useful for init
+// summaries).
+func (c *Client) EnsureProvider(ctx context.Context, name string) (added bool, err error) {
+	have, err := c.ProviderList(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, h := range have {
+		if h == name {
+			return false, nil
+		}
+	}
+	if err := c.ProviderAdd(ctx, name); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // InstallDotfiles invokes `devpod agent workspace install-dotfiles` with the
 // given dotfiles URL (layer-1 plumbing used by Phase 8). A file:// URL is
 // valid — lakitu writes the generated layer-1 script to a tmpdir and passes
 // it here.
+//
+// The skevetter/devpod fork exposes this as `--repository <url>`. Upstream
+// devpod used `--dotfiles`; we track the fork (see flake.nix devpodPin) so
+// --repository is the right flag. If a future fork bump renames again, a
+// thin fallback here would be cleaner than forcing every lakitu rebuild.
 func (c *Client) InstallDotfiles(ctx context.Context, url string) error {
 	if url == "" {
 		return errors.New("devpod: InstallDotfiles: url is required")
 	}
-	_, err := c.run(ctx, "agent", "workspace", "install-dotfiles", "--dotfiles", url)
+	_, err := c.run(ctx, "agent", "workspace", "install-dotfiles", "--repository", url)
 	return err
 }
 

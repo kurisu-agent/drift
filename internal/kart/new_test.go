@@ -18,13 +18,21 @@ import (
 // assert on argv without needing a real devpod binary on PATH.
 type recorder struct {
 	calls []driftexec.Cmd
+	// listStdout overrides the response to `devpod list`. Empty string
+	// means "no workspaces" (returns `[]`). Tests that need a specific
+	// workspace to appear as known to devpod set this explicitly.
+	listStdout string
 }
 
 func (r *recorder) Run(_ context.Context, cmd driftexec.Cmd) (driftexec.Result, error) {
 	r.calls = append(r.calls, cmd)
 	switch {
 	case len(cmd.Args) > 0 && cmd.Args[0] == "list":
-		return driftexec.Result{Stdout: []byte(`[]`)}, nil
+		out := r.listStdout
+		if out == "" {
+			out = "[]"
+		}
+		return driftexec.Result{Stdout: []byte(out)}, nil
 	case len(cmd.Args) > 0 && cmd.Args[0] == "up":
 		return driftexec.Result{Stdout: []byte(`{}`)}, nil
 	case len(cmd.Args) > 0 && cmd.Args[0] == "agent":
@@ -45,11 +53,12 @@ func (r *recorder) upCalls() []driftexec.Cmd {
 }
 
 func TestNewRejectsCollision(t *testing.T) {
+	// Real collision: garage dir AND devpod both know the workspace.
 	garage := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(garage, "karts", "dup"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	rec := &recorder{}
+	rec := &recorder{listStdout: `[{"id":"dup"}]`}
 	deps := NewDeps{
 		GarageDir: garage,
 		Devpod:    &devpod.Client{Runner: devpod.RunnerFunc(rec.Run)},
@@ -62,6 +71,33 @@ func TestNewRejectsCollision(t *testing.T) {
 	var re *rpcerr.Error
 	if !errors.As(err, &re) || re.Type != rpcerr.TypeNameCollision {
 		t.Fatalf("expected name_collision, got %v", err)
+	}
+}
+
+func TestNewDetectsStaleGarageCorpse(t *testing.T) {
+	// Stale corpse: garage dir exists (crashed previous `drift new`) but
+	// devpod knows nothing. Next attempt must return stale_kart with a
+	// suggestion the user can act on.
+	garage := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(garage, "karts", "ghost"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rec := &recorder{} // default listStdout "" → recorder returns "[]"
+	deps := NewDeps{
+		GarageDir: garage,
+		Devpod:    &devpod.Client{Runner: devpod.RunnerFunc(rec.Run)},
+		Resolver: &Resolver{
+			LoadTune:      func(string) (*Tune, error) { return &Tune{}, nil },
+			LoadCharacter: func(string) (*Character, error) { return &Character{}, nil },
+		},
+	}
+	_, err := New(context.Background(), deps, Flags{Name: "ghost"})
+	var re *rpcerr.Error
+	if !errors.As(err, &re) || re.Type != rpcerr.TypeStaleKart {
+		t.Fatalf("expected stale_kart, got %v", err)
+	}
+	if _, ok := re.Data["suggestion"]; !ok {
+		t.Fatalf("stale_kart error should carry a suggestion field: %+v", re.Data)
 	}
 }
 

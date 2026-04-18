@@ -23,6 +23,8 @@ type CLI struct {
 	Warmup   warmupCmd  `cmd:"" name:"warmup" help:"Interactive first-time setup wizard (circuits + characters)."`
 	New      newCmd     `cmd:"" name:"new" help:"Create a new kart (from starter or existing repo)."`
 
+	List    listCmd    `cmd:"" help:"List karts on the target circuit."`
+	Info    infoCmd    `cmd:"" help:"Show a single kart's info (JSON)."`
 	Start   startCmd   `cmd:"" help:"Start a kart (idempotent)."`
 	Stop    stopCmd    `cmd:"" help:"Stop a kart (idempotent)."`
 	Restart restartCmd `cmd:"" help:"Restart a kart."`
@@ -85,6 +87,10 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runCircuitList(io, &cli, deps)
 	case "new <name>":
 		return runNew(ctx, io, &cli, cli.New, deps)
+	case "list":
+		return runKartList(ctx, io, &cli, cli.List, deps)
+	case "info <name>":
+		return runKartInfo(ctx, io, &cli, cli.Info, deps)
 	case "warmup":
 		return runWarmup(ctx, io, &cli, cli.Warmup, deps)
 	case "start <name>":

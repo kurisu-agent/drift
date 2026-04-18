@@ -32,6 +32,8 @@ type CLI struct {
 	Version   versionCmd   `cmd:"" help:"Print lakitu version."`
 	Init      initCmd      `cmd:"" help:"Bootstrap the garage at ~/.drift/garage (idempotent)."`
 	RPC       rpcCmd       `cmd:"" name:"rpc" help:"Read one JSON-RPC 2.0 request from stdin and write a response to stdout."`
+	List      kartListCmd  `cmd:"" help:"List karts known to this circuit."`
+	Info      kartInfoCmd  `cmd:"" help:"Show one kart's state (JSON)."`
 	Config    configCmd    `cmd:"" help:"Manage server-level config."`
 	Character characterCmd `cmd:"" help:"Manage character (git/GitHub identity) profiles."`
 	Tune      tuneCmd      `cmd:"" help:"Manage tune profiles."`
@@ -75,9 +77,13 @@ func Run(ctx context.Context, argv []string, io IO) int {
 	case "version":
 		return runVersion(io, cli.Version)
 	case "init":
-		return runInit(io)
+		return runInit(ctx, io)
 	case "rpc":
 		return runRPC(ctx, io, Registry())
+	case "list":
+		return runKartList(ctx, io)
+	case "info <name>":
+		return runKartInfo(ctx, io, cli.Info)
 	case "config show":
 		return runConfigShow(ctx, io)
 	case "config set <key> <value>":
@@ -157,9 +163,10 @@ func Registry() *rpc.Registry {
 }
 
 // runInit is the human-CLI counterpart of the server.init RPC. It bootstraps
-// the garage and prints a short, stable summary to stdout. Errors flow
-// through errfmt.Emit for the two-line format.
-func runInit(io IO) int {
+// the garage, ensures the devpod docker provider is registered, and prints
+// a short, stable summary to stdout. Errors flow through errfmt.Emit for
+// the two-line format.
+func runInit(ctx context.Context, io IO) int {
 	root, err := config.GarageDir()
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
@@ -170,13 +177,38 @@ func runInit(io IO) int {
 	}
 	if len(res.Created) == 0 {
 		fmt.Fprintf(io.Stdout, "garage already initialized at %s\n", res.GarageDir)
-		return 0
+	} else {
+		created := append([]string(nil), res.Created...)
+		sort.Strings(created)
+		fmt.Fprintf(io.Stdout, "initialized garage at %s\n", res.GarageDir)
+		for _, c := range created {
+			fmt.Fprintf(io.Stdout, "  + %s\n", c)
+		}
 	}
-	created := append([]string(nil), res.Created...)
-	sort.Strings(created)
-	fmt.Fprintf(io.Stdout, "initialized garage at %s\n", res.GarageDir)
-	for _, c := range created {
-		fmt.Fprintf(io.Stdout, "  + %s\n", c)
+	added, perr := ensureDockerProvider(ctx)
+	switch {
+	case perr != nil:
+		// Don't fail init on this — a circuit with a missing devpod binary
+		// is a real problem, but the garage is already set up and the user
+		// can fix devpod without re-running init.
+		fmt.Fprintf(io.Stderr, "warning: devpod provider check failed: %v\n", perr)
+	case added:
+		fmt.Fprintln(io.Stdout, "  + devpod provider: docker")
+	}
+
+	// Surface the devpod version check so a mismatched binary is visible
+	// immediately rather than showing up as mystery errors on kart.new.
+	dev := &devpod.Client{}
+	if vc, verr := dev.Verify(ctx); verr != nil {
+		fmt.Fprintf(io.Stderr, "warning: could not determine devpod version: %v\n", verr)
+	} else if vc.Expected == "" {
+		fmt.Fprintf(io.Stdout, "  devpod: %s (no pin — dev build)\n", vc.Actual)
+	} else if vc.Match {
+		fmt.Fprintf(io.Stdout, "  devpod: %s (matches pin)\n", vc.Actual)
+	} else {
+		fmt.Fprintf(io.Stderr,
+			"warning: devpod version mismatch: have %s, lakitu was built against %s\n",
+			vc.Actual, vc.Expected)
 	}
 	return 0
 }
@@ -184,7 +216,7 @@ func runInit(io IO) int {
 // serverInitHandler is the RPC-facing counterpart of `lakitu init`. It
 // resolves the garage root from the server's environment ($HOME) and
 // returns the same InitResult both paths share.
-func serverInitHandler(_ context.Context, params json.RawMessage) (any, error) {
+func serverInitHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	// server.init takes no params. Strict binding rejects stray fields
 	// instead of silently ignoring them.
 	var p struct{}
@@ -199,7 +231,21 @@ func serverInitHandler(_ context.Context, params json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, rpcerr.Internal("init garage: %v", err).Wrap(err)
 	}
+	if _, perr := ensureDockerProvider(ctx); perr != nil {
+		// Same rationale as runInit: the garage exists; surface the devpod
+		// hiccup but don't let it mask a successful init.
+		res.Created = append(res.Created, fmt.Sprintf("warning: devpod provider check failed: %v", perr))
+	}
 	return res, nil
+}
+
+// ensureDockerProvider idempotently registers the docker provider with
+// devpod. First-run `devpod up` fails with "provider with name docker not
+// found" unless this has run — folding it into init saves users the
+// surprise of a broken first `drift new`.
+func ensureDockerProvider(ctx context.Context) (added bool, err error) {
+	dev := &devpod.Client{}
+	return dev.EnsureProvider(ctx, "docker")
 }
 
 // runRPC is the one-shot dispatch entry point. It honors plans/PLAN.md's

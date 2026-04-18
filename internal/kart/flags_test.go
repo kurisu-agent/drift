@@ -70,6 +70,48 @@ func TestResolveTuneNone(t *testing.T) {
 	}
 }
 
+func TestResolveDefaultTuneMissingDegradesToNone(t *testing.T) {
+	// When default_tune is set in server config but the tune file doesn't
+	// exist yet, Resolve should treat it as "no tune" rather than erroring —
+	// the default is a hint, not a hard requirement. Explicit --tune still
+	// errors (covered by TestResolveExplicitTuneMissingErrors below).
+	r := &Resolver{
+		Defaults: ServerDefaults{DefaultTune: "default"},
+		LoadTune: func(string) (*Tune, error) {
+			return nil, rpcerr.NotFound("tune_not_found", "tune %q not found", "default")
+		},
+	}
+	got, err := r.Resolve(Flags{Name: "k"})
+	if err != nil {
+		t.Fatalf("expected silent degrade, got %v", err)
+	}
+	if got.TuneName != "" {
+		t.Fatalf("TuneName should be empty when default tune missing, got %q", got.TuneName)
+	}
+	if got.Tune != nil {
+		t.Fatalf("Tune should be nil, got %+v", got.Tune)
+	}
+	if got.SourceMode != "none" {
+		t.Fatalf("SourceMode should be none, got %q", got.SourceMode)
+	}
+}
+
+func TestResolveExplicitTuneMissingErrors(t *testing.T) {
+	// Explicit --tune on a non-existent tune must error; only the defaulted
+	// path silently degrades.
+	r := &Resolver{
+		Defaults: ServerDefaults{DefaultTune: "default"},
+		LoadTune: func(string) (*Tune, error) {
+			return nil, rpcerr.NotFound("tune_not_found", "tune %q not found", "missing")
+		},
+	}
+	_, err := r.Resolve(Flags{Name: "k", Tune: "missing"})
+	var re *rpcerr.Error
+	if !errors.As(err, &re) || re.Type != "tune_not_found" {
+		t.Fatalf("expected tune_not_found, got %v", err)
+	}
+}
+
 func TestResolveFeaturesAdditive(t *testing.T) {
 	r := &Resolver{
 		Defaults: ServerDefaults{DefaultTune: "default"},

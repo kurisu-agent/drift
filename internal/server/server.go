@@ -37,6 +37,7 @@ func RegisterServer(reg *rpc.Registry, d *Deps) {
 		d = &Deps{}
 	}
 	reg.Register(wire.MethodServerVersion, VersionHandler)
+	reg.Register(wire.MethodServerVerify, VerifyHandler)
 
 	reg.Register(wire.MethodConfigShow, d.ConfigShowHandler)
 	reg.Register(wire.MethodConfigSet, d.ConfigSetHandler)

@@ -137,7 +137,7 @@ func TestStopDeleteLogsInstallDotfilesHappyPath(t *testing.T) {
 			call: func(c *devpod.Client, ctx context.Context) error {
 				return c.InstallDotfiles(ctx, "file:///tmp/layer1.sh")
 			},
-			args: []string{"agent", "workspace", "install-dotfiles", "--dotfiles", "file:///tmp/layer1.sh"},
+			args: []string{"agent", "workspace", "install-dotfiles", "--repository", "file:///tmp/layer1.sh"},
 		},
 	}
 	for _, tc := range cases {

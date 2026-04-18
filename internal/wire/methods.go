@@ -6,6 +6,7 @@ package wire
 const (
 	MethodServerVersion = "server.version"
 	MethodServerInit    = "server.init"
+	MethodServerVerify  = "server.verify"
 
 	MethodKartNew     = "kart.new"
 	MethodKartStart   = "kart.start"

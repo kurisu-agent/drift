@@ -193,6 +193,33 @@ func addOneCircuit(ctx context.Context, opts Options, deps Deps, br *bufio.Reade
 		}
 		probes[circuitName] = pr
 		fmt.Fprintf(w, "  probe ok — lakitu %s (api %d, %dms)\n", pr.Version, pr.API, pr.LatencyMS)
+
+		// Deeper one-shot check that pulls live devpod version info. Scoped
+		// to this setup-time flow rather than every RPC (per user guidance
+		// — kart lifecycle RPCs stay on the cheap server.version probe).
+		if deps.Call != nil {
+			var vr struct {
+				DevpodActual   string `json:"devpod_actual"`
+				DevpodExpected string `json:"devpod_expected"`
+				DevpodMatch    bool   `json:"devpod_match"`
+				DevpodError    string `json:"devpod_error"`
+			}
+			if err := deps.Call(ctx, circuitName, wire.MethodServerVerify, struct{}{}, &vr); err != nil {
+				fmt.Fprintf(w, "  devpod probe skipped: %v\n", err)
+			} else {
+				switch {
+				case vr.DevpodError != "":
+					fmt.Fprintf(w, "  devpod unreachable on circuit: %s\n", vr.DevpodError)
+				case vr.DevpodExpected == "":
+					fmt.Fprintf(w, "  devpod: %s (lakitu has no pin — dev build)\n", vr.DevpodActual)
+				case vr.DevpodMatch:
+					fmt.Fprintf(w, "  devpod: %s (matches pin)\n", vr.DevpodActual)
+				default:
+					fmt.Fprintf(w, "  devpod: %s — WARNING: lakitu expects %s\n",
+						vr.DevpodActual, vr.DevpodExpected)
+				}
+			}
+		}
 	}
 	return nil
 }
