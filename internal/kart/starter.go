@@ -57,7 +57,7 @@ func (s *Starter) Strip(ctx context.Context, url, destDir string, char *Characte
 	if destDir == "" {
 		return fmt.Errorf("starter: destDir is required")
 	}
-	if err := os.MkdirAll(filepath.Dir(destDir), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(destDir), 0o700); err != nil {
 		return fmt.Errorf("starter: mkdir parent: %w", err)
 	}
 

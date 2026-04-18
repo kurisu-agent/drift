@@ -23,10 +23,29 @@ linters:
         - fmt.Fprint
         - fmt.Fprintf
         - fmt.Fprintln
+    gosec:
+      # G204: drift's purpose is to exec user commands on remote circuits.
+      # G304: drift reads paths supplied by config/flags by design.
+      excludes:
+        - G204
+        - G304
     revive:
       rules:
         - name: exported
           disabled: true
+  exclusions:
+    rules:
+      # Tests routinely use 0755/0644 perms and unchecked type assertions on
+      # controlled fixture data — neither is a real hazard.
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+      # The devpod shim is an integration-test artifact that runs inside a
+      # throwaway container; permissive perms and tainted paths are inherent.
+      - path: integration/shim/
+        linters:
+          - gosec
 
 issues:
   max-issues-per-linter: 0

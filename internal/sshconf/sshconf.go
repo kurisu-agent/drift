@@ -438,7 +438,7 @@ func (m *Manager) EnsureSocketsDir() error {
 	}
 	// MkdirAll does not chmod an existing directory; enforce 0700 explicitly
 	// so a pre-existing 0755 dir is tightened.
-	if err := os.Chmod(path, 0o700); err != nil {
+	if err := os.Chmod(path, 0o700); err != nil { //nolint:gosec // G302: path is a directory; 0700 is the intended mode.
 		return fmt.Errorf("sshconf: chmod %s: %w", path, err)
 	}
 	return nil
@@ -495,13 +495,13 @@ func writeFile(path string, data []byte, mode os.FileMode) error {
 		return fmt.Errorf("sshconf: create temp in %s: %w", dir, err)
 	}
 	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath) // no-op on success (rename moved it)
+	defer func() { _ = os.Remove(tmpPath) }() // no-op on success (rename moved it)
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("sshconf: write %s: %w", tmpPath, err)
 	}
 	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("sshconf: chmod %s: %w", tmpPath, err)
 	}
 	if err := tmp.Close(); err != nil {

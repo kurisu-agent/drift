@@ -201,4 +201,3 @@ func TestRunCircuitRm_UnknownCircuit(t *testing.T) {
 		t.Errorf("stderr = %q, want not found", errBuf.String())
 	}
 }
-

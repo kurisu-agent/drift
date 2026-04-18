@@ -22,7 +22,7 @@ func loadYAMLStrict(path string, dst any) (bool, error) {
 		}
 		return false, fmt.Errorf("config: open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	dec := yaml.NewDecoder(f)
 	dec.KnownFields(true)
@@ -49,7 +49,7 @@ func marshalAndWrite(path string, src any, mode os.FileMode) error {
 // created with mode 0755 if absent.
 func WriteFileAtomic(path string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("config: mkdir %s: %w", dir, err)
 	}
 

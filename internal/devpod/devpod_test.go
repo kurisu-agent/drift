@@ -118,9 +118,9 @@ func TestStopDeleteLogsInstallDotfilesHappyPath(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name  string
-		call  func(c *devpod.Client, ctx context.Context) error
-		args  []string
+		name string
+		call func(c *devpod.Client, ctx context.Context) error
+		args []string
 	}{
 		{
 			name: "stop",

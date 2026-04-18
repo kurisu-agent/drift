@@ -113,7 +113,7 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 	}
 	// Clean scratch on any exit path. The caller has no reason to inspect
 	// it after New returns.
-	defer os.RemoveAll(scratch)
+	defer func() { _ = os.RemoveAll(scratch) }()
 
 	// Context cancellation is observed deliberately — not just via the
 	// subprocess runners — so step transitions after devpod fail quickly.
@@ -212,14 +212,14 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 		// failure as a warning via the result struct; future phases can
 		// escalate if users want stricter behavior.
 		return &Result{
-			Name:        resolved.Name,
-			Source:      KartSource{Mode: resolved.SourceMode, URL: resolved.SourceURL},
-			Tune:        resolved.TuneName,
-			Character:   resolved.CharacterName,
-			Autostart:   resolved.Autostart,
-			Dotfiles1:   df,
-			Warning:     fmt.Sprintf("layer-1 dotfiles install failed: %v", err),
-			CreatedAt:   d.now().Format(time.RFC3339),
+			Name:      resolved.Name,
+			Source:    KartSource{Mode: resolved.SourceMode, URL: resolved.SourceURL},
+			Tune:      resolved.TuneName,
+			Character: resolved.CharacterName,
+			Autostart: resolved.Autostart,
+			Dotfiles1: df,
+			Warning:   fmt.Sprintf("layer-1 dotfiles install failed: %v", err),
+			CreatedAt: d.now().Format(time.RFC3339),
 		}, nil
 	}
 
@@ -263,7 +263,7 @@ type KartSource struct {
 // writeKartConfig renders garage/karts/<name>/config.yaml. The shape mirrors
 // the KartConfig consumed by server.kart_list / kart_info.
 func writeKartConfig(kartDir string, r *Resolved, now time.Time) error {
-	if err := os.MkdirAll(kartDir, 0o755); err != nil {
+	if err := os.MkdirAll(kartDir, 0o700); err != nil {
 		return err
 	}
 	type onDisk struct {

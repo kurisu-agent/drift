@@ -11,12 +11,12 @@ func TestCompareSemver(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		local        string
-		remote       string
-		wantErr      bool
-		wantWarn     bool
-		wantErrType  rpcerr.Type
+		name        string
+		local       string
+		remote      string
+		wantErr     bool
+		wantWarn    bool
+		wantErrType rpcerr.Type
 	}{
 		{"identical", "1.2.3", "1.2.3", false, false, ""},
 		{"patch differs is silent", "1.2.3", "1.2.9", false, false, ""},

@@ -34,7 +34,7 @@ type DotfilesResult struct {
 //   - ssh/id_<name>        — copy of the character's SSH key when set
 //   - ssh/config           — per-host entry pointing ssh at the copied key
 //   - install.sh           — POSIX shell that places the above files and
-//                            wires the git credential helper
+//     wires the git credential helper
 //
 // When character is nil (no character attached and no default), the
 // function still produces a tmpDir with an install.sh that is a no-op — the
@@ -46,7 +46,7 @@ func WriteLayer1Dotfiles(tmpDir string, char *Character) (*DotfilesResult, error
 	if tmpDir == "" {
 		return nil, fmt.Errorf("dotfiles: tmpDir is required")
 	}
-	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+	if err := os.MkdirAll(tmpDir, 0o700); err != nil {
 		return nil, fmt.Errorf("dotfiles: mkdir %s: %w", tmpDir, err)
 	}
 
@@ -136,7 +136,7 @@ func writeGitConfig(tmpDir string, char *Character) error {
 		fmt.Fprintf(&b, "[github]\n\tuser = %s\n", char.GithubUser)
 	}
 	path := filepath.Join(tmpDir, "gitconfig")
-	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
 		return fmt.Errorf("dotfiles: write gitconfig: %w", err)
 	}
 	return nil
@@ -187,12 +187,12 @@ func copySSHKey(tmpDir string, char *Character) error {
 		return fmt.Errorf("dotfiles: read ssh key %s: %w", char.SSHKeyPath, err)
 	}
 	keyOut := filepath.Join(tmpDir, "ssh_id")
-	if err := os.WriteFile(keyOut, data, 0o600); err != nil {
+	if err := os.WriteFile(keyOut, data, 0o600); err != nil { //nolint:gosec // G703: tmpDir is server-controlled, not user input.
 		return fmt.Errorf("dotfiles: write ssh_id: %w", err)
 	}
 	cfg := "Host *\n\tIdentityFile ~/.ssh/id_drift\n\tIdentitiesOnly yes\n"
 	cfgOut := filepath.Join(tmpDir, "ssh_config")
-	if err := os.WriteFile(cfgOut, []byte(cfg), 0o644); err != nil {
+	if err := os.WriteFile(cfgOut, []byte(cfg), 0o600); err != nil {
 		return fmt.Errorf("dotfiles: write ssh_config: %w", err)
 	}
 	return nil
@@ -244,7 +244,7 @@ func writeInstallScript(tmpDir string, res *DotfilesResult, char *Character) (st
 	_ = char
 
 	path := filepath.Join(tmpDir, "install.sh")
-	if err := os.WriteFile(path, []byte(b.String()), 0o755); err != nil {
+	if err := os.WriteFile(path, []byte(b.String()), 0o700); err != nil { //nolint:gosec // G306: install.sh needs the owner exec bit; 0700 is the minimum.
 		return "", fmt.Errorf("dotfiles: write install.sh: %w", err)
 	}
 	return path, nil

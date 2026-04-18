@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/rpc"
@@ -116,7 +117,8 @@ func wrapChestError(err error) error {
 	if err == nil {
 		return nil
 	}
-	if _, ok := err.(*rpcerr.Error); ok {
+	var rerr *rpcerr.Error
+	if errors.As(err, &rerr) {
 		return err
 	}
 	return rpcerr.Internal("chest: %v", err).Wrap(err)

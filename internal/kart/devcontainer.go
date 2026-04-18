@@ -32,7 +32,7 @@ func defaultDevcontainerFetcher(ctx context.Context, url string) ([]byte, error)
 	if err != nil {
 		return nil, fmt.Errorf("devcontainer: fetch %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("devcontainer: fetch %s: %s", url, resp.Status)
 	}
@@ -108,7 +108,7 @@ func writeDevcontainerFile(tmpDir string, body []byte) (string, func(), error) {
 	if tmpDir == "" {
 		return "", cleanup, fmt.Errorf("devcontainer: tmpDir is required")
 	}
-	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+	if err := os.MkdirAll(tmpDir, 0o700); err != nil {
 		return "", cleanup, fmt.Errorf("devcontainer: mkdir %s: %w", tmpDir, err)
 	}
 	path := filepath.Join(tmpDir, "devcontainer.json")

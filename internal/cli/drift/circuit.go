@@ -207,12 +207,12 @@ func runCircuitList(io IO, root *CLI, deps deps) int {
 func emitCircuitAdd(io IO, root *CLI, circuitName string, cfg *config.Client, manageSSH bool, probe *probeResult, probeErr error) int {
 	if root.Output == "json" {
 		payload := struct {
-			Circuit       string       `json:"circuit"`
-			Host          string       `json:"host"`
-			Default       bool         `json:"default"`
-			ManagedSSH    bool         `json:"managed_ssh_config"`
-			Probe         *probeResult `json:"probe,omitempty"`
-			ProbeError    string       `json:"probe_error,omitempty"`
+			Circuit    string       `json:"circuit"`
+			Host       string       `json:"host"`
+			Default    bool         `json:"default"`
+			ManagedSSH bool         `json:"managed_ssh_config"`
+			Probe      *probeResult `json:"probe,omitempty"`
+			ProbeError string       `json:"probe_error,omitempty"`
 		}{
 			Circuit:    circuitName,
 			Host:       cfg.Circuits[circuitName].Host,

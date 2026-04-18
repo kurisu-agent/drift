@@ -70,12 +70,12 @@ func NewCompatChecker(c *Client) *CompatChecker {
 func (c *CompatChecker) Check(ctx context.Context, circuit string, warnWriter io.Writer) error {
 	key := compatKey{circuit: circuit}
 	onceAny, _ := c.once.LoadOrStore(key, &sync.Once{})
-	once := onceAny.(*sync.Once)
+	once, _ := onceAny.(*sync.Once)
 	once.Do(func() {
 		c.results.Store(key, c.runProbe(ctx, circuit))
 	})
 	outcomeAny, _ := c.results.Load(key)
-	out := outcomeAny.(*compatOutcome)
+	out, _ := outcomeAny.(*compatOutcome)
 	if out.warn != "" && warnWriter != nil {
 		fmt.Fprintln(warnWriter, out.warn)
 	}

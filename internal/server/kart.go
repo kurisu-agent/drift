@@ -380,4 +380,3 @@ func containerFromConfig(cfg KartConfig) *KartContainer {
 		Image:   cfg.Image,
 	}
 }
-

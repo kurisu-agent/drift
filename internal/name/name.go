@@ -63,4 +63,3 @@ func Validate(kind, s string) error {
 	}
 	return nil
 }
-

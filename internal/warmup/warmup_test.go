@@ -120,10 +120,10 @@ func TestRun_NonTTY_ReturnsUserError(t *testing.T) {
 func TestRun_FirstRun_CircuitOnlySkipsCharacters(t *testing.T) {
 	s := &fakeState{cfg: &config.Client{}}
 	in := strings.NewReader(strings.Join([]string{
-		"y",                   // add circuit?
-		"lab",                 // circuit name
-		"alice@lab.example",   // ssh target
-		"n",                   // add another circuit?
+		"y",                 // add circuit?
+		"lab",               // circuit name
+		"alice@lab.example", // ssh target
+		"n",                 // add another circuit?
 	}, "\n") + "\n")
 	var out bytes.Buffer
 	err := Run(context.Background(), Options{IsTTY: true, SkipCharacters: true}, s.deps(), in, &out)
@@ -198,15 +198,15 @@ func TestRun_SkipCircuits_GoesStraightToCharacters(t *testing.T) {
 		},
 	}
 	in := strings.NewReader(strings.Join([]string{
-		"y",                  // add a character?
-		"me",                 // character name
-		"Alice",              // git name
-		"alice@example.com",  // git email
-		"",                   // github user (optional)
-		"",                   // ssh key path (optional)
-		"n",                  // stage PAT?
-		"y",                  // set as default?
-		"n",                  // add another?
+		"y",                 // add a character?
+		"me",                // character name
+		"Alice",             // git name
+		"alice@example.com", // git email
+		"",                  // github user (optional)
+		"",                  // ssh key path (optional)
+		"n",                 // stage PAT?
+		"y",                 // set as default?
+		"n",                 // add another?
 	}, "\n") + "\n")
 	var out bytes.Buffer
 	err := Run(context.Background(), Options{IsTTY: true, SkipCircuits: true, NoProbe: true}, s.deps(), in, &out)
@@ -243,10 +243,10 @@ func TestRun_CharacterPATStagesChestSet(t *testing.T) {
 	in := strings.NewReader(strings.Join([]string{
 		"y",
 		"me", "Alice", "alice@example.com", "", "",
-		"y",           // stage PAT
-		"gh_abcdef",   // PAT value
-		"n",           // set as default
-		"n",           // add another
+		"y",         // stage PAT
+		"gh_abcdef", // PAT value
+		"n",         // set as default
+		"n",         // add another
 	}, "\n") + "\n")
 	var out bytes.Buffer
 	err := Run(context.Background(), Options{IsTTY: true, SkipCircuits: true, NoProbe: true}, s.deps(), in, &out)
@@ -282,7 +282,7 @@ func TestRun_InvalidCircuitName_Continues(t *testing.T) {
 	s := &fakeState{cfg: &config.Client{}}
 	in := strings.NewReader(strings.Join([]string{
 		"y", "BadName", "alice@lab", // validation fails → error printed → loop resumes
-		"n",                          // add another? no
+		"n", // add another? no
 	}, "\n") + "\n")
 	var out bytes.Buffer
 	err := Run(context.Background(), Options{IsTTY: true, SkipCharacters: true, NoProbe: true}, s.deps(), in, &out)
