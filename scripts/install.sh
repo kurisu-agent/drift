@@ -78,4 +78,4 @@ case ":$PATH:" in
   *":$DRIFT_INSTALL_DIR:"*) ;;
   *) log "note: $DRIFT_INSTALL_DIR is not on PATH — add it to your shell rc." ;;
 esac
-"$DRIFT_INSTALL_DIR/drift" version || true
+"$DRIFT_INSTALL_DIR/drift" --version 2>/dev/null || true

@@ -4,7 +4,7 @@ Execution checklist derived from [`plans/archive/01-original-plan.md`](./plans/a
 contract/spec; this file is the ordered punch list to MVP.
 
 **MVP definition.** A user can: install lakitu on a Linux circuit, install
-drift on a workstation, run `drift warmup` to register the circuit + a
+drift on a workstation, run `drift init` to register the circuit + a
 character, run `drift new <name> --clone <url>`, and `drift connect <name>`
 into a devcontainer over mosh. All commands in [CLI design](./plans/archive/01-original-plan.md#cli-design)
 work end-to-end. Everything in [Future](./plans/archive/01-original-plan.md#future) is explicitly
