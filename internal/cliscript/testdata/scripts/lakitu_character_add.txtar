@@ -1,5 +1,5 @@
 # `lakitu character add` writes a character yaml under the garage and the
-# list/show/rm flow round-trips. See plans/PLAN.md § Character file.
+# list/show/rm flow round-trips.
 
 lakitu init
 ! stderr .

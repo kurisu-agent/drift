@@ -1,5 +1,4 @@
 # `lakitu config show` / `config set` exercises the server-config RPC path.
-# See plans/PLAN.md § Server state layout.
 
 lakitu init
 ! stderr .

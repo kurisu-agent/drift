@@ -1,6 +1,6 @@
 # kart.delete on a kart that exists in neither devpod nor the garage is the
-# one lifecycle verb that errors on missing (plans/PLAN.md § Idempotency):
-# code:3 kart_not_found. This test proves:
+# one lifecycle verb that errors on missing: code:3 kart_not_found. This
+# test proves:
 #   - kart.delete is registered (no method_not_found)
 #   - param binding works (name required)
 #   - the not_found path fires when both sides are empty

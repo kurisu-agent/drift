@@ -129,6 +129,6 @@
   # Manual install (buildGoModule output is now a first-class flake package —
   # `nix build .#drift`, `.#lakitu`, `.#devpod` — but the tarball flow from
   # GoReleaser remains the documented production path until the NixOS module
-  # lands. See plans/archive/01-original-plan.md § Future and § Bootstrap / install.
+  # lands.
   # ---------------------------------------------------------------------------
 }

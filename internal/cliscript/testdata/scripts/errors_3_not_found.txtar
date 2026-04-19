@@ -1,6 +1,4 @@
-# Golden test for the human CLI stderr format on code 3 (not_found).
-# plans/PLAN.md § "stderr format (human CLI path)" specifies:
-#
+# Golden test for the human CLI stderr format on code 3 (not_found):
 #   line 1: error: <message>
 #   followed by indented `  key: value` lines (type + data fields)
 #   exit code: Code  (3 for not_found)

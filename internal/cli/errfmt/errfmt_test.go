@@ -97,8 +97,6 @@ func TestEmit_WrappedRPCErrorStillRenderedTyped(t *testing.T) {
 }
 
 func TestEmit_EachCodeCategoryRoundTrips(t *testing.T) {
-	// One test case per PLAN.md § "code values" row so a future code
-	// renumber trips a clear assertion rather than a distant golden test.
 	cases := []struct {
 		name string
 		err  *rpcerr.Error

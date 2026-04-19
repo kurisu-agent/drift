@@ -1,6 +1,5 @@
 # `lakitu init` is idempotent — second run reports "already initialized",
-# doesn't touch user-edited config, and never errors. See plans/archive/01-original-plan.md
-# § Bootstrap / install.
+# doesn't touch user-edited config, and never errors.
 
 lakitu init
 stdout 'initialized garage at'

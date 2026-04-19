@@ -1,5 +1,4 @@
 # `lakitu init` bootstraps ~/.drift/garage on a fresh HOME.
-# See plans/PLAN.md § Server state layout and § Bootstrap / install.
 
 # Sanity: garage doesn't exist yet.
 ! exists $HOME/.drift/garage

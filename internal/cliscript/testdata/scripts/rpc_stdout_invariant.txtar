@@ -1,6 +1,6 @@
 # stdout invariant: every `lakitu rpc` invocation that runs to completion
 # writes exactly one newline-terminated JSON object to stdout and nothing
-# to stderr. See plans/PLAN.md § Critical invariants.
+# to stderr.
 
 # Case 1: valid request, unknown method → one error envelope on stdout.
 # `nonexistent.method` stays unregistered across phases so this assertion

@@ -119,8 +119,6 @@ func initEphemeralGitRepo(dir string) error {
 	return nil
 }
 
-// writeGitConfig produces a minimal gitconfig — only the fields PLAN.md
-// specifies for layer 1 (user.name, user.email, github.user).
 func writeGitConfig(tmpDir string, char *Character) error {
 	var b strings.Builder
 	if char.GitName != "" || char.GitEmail != "" {

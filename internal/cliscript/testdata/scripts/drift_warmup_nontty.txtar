@@ -1,6 +1,5 @@
 # `drift warmup` requires a TTY on stdin — testscript pipes stdin, so the
-# wizard must refuse with a user_error (exit code 2) per plans/archive/01-original-plan.md
-# § drift warmup.
+# wizard must refuse with a user_error (exit code 2).
 
 ! drift warmup
 stderr 'requires a TTY'
