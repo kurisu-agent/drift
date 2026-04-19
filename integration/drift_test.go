@@ -27,15 +27,20 @@ func TestDriftInitAndServerVersion(t *testing.T) {
 	if err := integration.SSHCommand(ctx, c, "lakitu", "init"); err != nil {
 		t.Fatalf("lakitu init: %v", err)
 	}
+	// Name the circuit explicitly — the default hostname-derived name is
+	// an unpredictable Docker container id.
+	if err := integration.SSHCommand(ctx, c, "lakitu", "config", "set", "name", "test"); err != nil {
+		t.Fatalf("lakitu config set name: %v", err)
+	}
 
 	// Register the circuit from the workstation side. --no-ssh-config
 	// keeps us from touching ~/.ssh/config beyond what the harness
-	// already set up; --no-probe runs the add without the usual version
-	// probe so we can assert it explicitly below.
-	stdout, stderr, code := c.Drift(ctx, "circuit", "add", "test",
-		"--host", c.Target(),
+	// already set up. The probe runs as part of `circuit add` itself
+	// (it's how we learn the canonical name); no separate assertion
+	// is needed — the exit code is the probe's verdict.
+	stdout, stderr, code := c.Drift(ctx, "circuit", "add",
+		c.Target(),
 		"--no-ssh-config",
-		"--no-probe",
 	)
 	if code != 0 {
 		t.Fatalf("drift circuit add exit=%d stderr=%q", code, stderr)

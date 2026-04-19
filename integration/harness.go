@@ -334,6 +334,11 @@ func (c *Circuit) writeSSHConfig() {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		c.t.Fatalf("mkdir .ssh: %v", err)
 	}
+	// The `Host 127.0.0.1` block covers `drift circuit add`'s raw probe:
+	// it ssh's directly to `user@127.0.0.1` (no drift.<name> alias yet)
+	// so we need a matching block that supplies the identity file and
+	// turns off strict host checking — without it the probe hangs on the
+	// host-key prompt.
 	body := fmt.Sprintf(`Host drift.*.*
   ProxyCommand drift ssh-proxy %%h %%p
   User %[3]s
@@ -346,6 +351,12 @@ Match host "drift.*,!drift.*.*"
   HostName 127.0.0.1
   Port %[2]d
   User %[3]s
+  IdentityFile %[4]s
+  IdentitiesOnly yes
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+
+Host 127.0.0.1
   IdentityFile %[4]s
   IdentitiesOnly yes
   StrictHostKeyChecking no
@@ -716,16 +727,26 @@ func (c *Circuit) SSH(ctx context.Context, args ...string) (stdout, stderr strin
 	return "", "", 1
 }
 
-// RegisterCircuit records the container as a drift circuit and makes it
-// the default. The appended Host drift.<name> block exists so drift
-// ssh-proxy's inner hop (`ssh drift.<circuit>`) resolves against a single
-// matching block without stepping on the Host drift.*.* ProxyCommand.
+// RegisterCircuit records the container as a drift circuit named `name`
+// and makes it the default.
+//
+// The circuit's canonical name now comes from the server, so the harness
+// first pushes `name` via `lakitu config set name <name>` (the container's
+// hostname is an unpredictable Docker ID and would fall back to
+// "circuit"). Then `drift circuit add <target>` probes server.info,
+// discovers the name we just set, and writes the local config under it.
+//
+// The appended Host drift.<name> block exists so drift ssh-proxy's inner
+// hop (`ssh drift.<circuit>`) resolves against a single matching block
+// without stepping on the Host drift.*.* ProxyCommand.
 func (c *Circuit) RegisterCircuit(ctx context.Context, name string) {
 	c.t.Helper()
-	_, stderr, code := c.Drift(ctx, "circuit", "add", name,
-		"--host", c.Target(),
+	if err := SSHCommand(ctx, c, "lakitu", "config", "set", "name", name); err != nil {
+		c.t.Fatalf("lakitu config set name: %v", err)
+	}
+	_, stderr, code := c.Drift(ctx, "circuit", "add",
+		c.Target(),
 		"--no-ssh-config",
-		"--no-probe",
 		"--default",
 	)
 	if code != 0 {

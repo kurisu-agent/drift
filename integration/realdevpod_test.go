@@ -90,7 +90,9 @@ func TestRealDevpodUpAndDelete(t *testing.T) {
 
 	// Delete via drift — devpod should tear down every workspace container
 	// that drift new brought up, returning the population to baseline.
-	_, stderr, code = c.Drift(ctx, "delete", kart)
+	// `-y` is required on non-TTY stdin so the destructive prompt doesn't
+	// block the test harness.
+	_, stderr, code = c.Drift(ctx, "delete", "-y", kart)
 	if code != 0 {
 		t.Fatalf("drift delete: code=%d stderr=%q", code, stderr)
 	}

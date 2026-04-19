@@ -113,7 +113,9 @@ func TestRealDevpodCloneAndDelete(t *testing.T) {
 		t.Errorf(".git/ not preserved in workspace %s at %s: err=%v out=%q", wcID, gitDir, err, out)
 	}
 
-	_, stderr, code = c.Drift(ctx, "delete", kart)
+	// `-y` skips the destructive confirmation prompt (required on
+	// non-TTY stdin).
+	_, stderr, code = c.Drift(ctx, "delete", "-y", kart)
 	if code != 0 {
 		t.Fatalf("drift delete: code=%d stderr=%q", code, stderr)
 	}
