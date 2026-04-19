@@ -6,10 +6,6 @@ import (
 	"path/filepath"
 )
 
-// GarageSubdirs is the canonical set of subdirectories created under
-// ~/.drift/garage by `lakitu init`. Order is not significant — MkdirAll is
-// idempotent — but the list is declared once so the testscripts and the
-// init handler agree on what a freshly bootstrapped garage looks like.
 var GarageSubdirs = []string{
 	"tunes",
 	"characters",
@@ -17,23 +13,15 @@ var GarageSubdirs = []string{
 	"karts",
 }
 
-// InitResult describes what InitGarage did. It is returned by both the
-// named `lakitu init` subcommand and the `server.init` RPC handler so
-// callers can report created / preserved paths to the user.
 type InitResult struct {
 	GarageDir string `json:"garage_dir"`
-	// Created lists garage-relative paths that this call brought into
-	// existence (directories and/or the config file). Empty on a re-run
-	// of an already-initialized garage.
+	// Created lists garage-relative paths brought into existence by this
+	// call. Empty on a re-run of an initialized garage.
 	Created []string `json:"created,omitempty"`
 }
 
-// InitGarage bootstraps ~/.drift/garage at root so that the server-side
-// file layout exists. It is idempotent: re-running reports no new Created
-// entries.
-//
-// The chest directory is created with mode 0700 because the MVP yamlfile
-// backend keeps plain-text secrets under it. Other directories use 0755.
+// InitGarage is idempotent. The chest directory is 0700 because the MVP
+// yamlfile backend keeps plain-text secrets under it.
 func InitGarage(root string) (*InitResult, error) {
 	res := &InitResult{GarageDir: root}
 
@@ -61,10 +49,9 @@ func InitGarage(root string) (*InitResult, error) {
 	return res, nil
 }
 
-// ensureDir creates dir with mode if missing, tracking garage-relative
-// rel-paths in the InitResult. Existing directories are left untouched,
-// even if their permissions drift from mode — this keeps the init safe to
-// re-run on a garage the user has tightened manually.
+// ensureDir leaves existing directories untouched — even if their
+// permissions drift from mode — so init stays safe to re-run on a garage
+// the user tightened manually.
 func ensureDir(dir string, mode os.FileMode, created *[]string, rel string) error {
 	info, err := os.Stat(dir)
 	if err == nil {
@@ -79,8 +66,8 @@ func ensureDir(dir string, mode os.FileMode, created *[]string, rel string) erro
 	if err := os.MkdirAll(dir, mode); err != nil {
 		return fmt.Errorf("config: create %s: %w", dir, err)
 	}
-	// MkdirAll obeys umask; force the requested mode explicitly so the
-	// chest directory always ends up 0700 regardless of the user's umask.
+	// MkdirAll obeys umask; force the requested mode so the chest dir
+	// ends up 0700 regardless of the user's umask.
 	if err := os.Chmod(dir, mode); err != nil {
 		return fmt.Errorf("config: chmod %s: %w", dir, err)
 	}
@@ -90,9 +77,8 @@ func ensureDir(dir string, mode os.FileMode, created *[]string, rel string) erro
 	return nil
 }
 
-// ensureDefaultServerConfig writes DefaultServer() to path when path is
-// absent. A pre-existing file is left untouched so a user who has edited
-// their config never has their changes clobbered by a `lakitu init` rerun.
+// ensureDefaultServerConfig leaves a pre-existing file untouched so a
+// user's edits never get clobbered by a `lakitu init` rerun.
 func ensureDefaultServerConfig(path string) (bool, error) {
 	if _, err := os.Stat(path); err == nil {
 		return false, nil

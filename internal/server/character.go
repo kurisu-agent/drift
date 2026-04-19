@@ -17,9 +17,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Character is the on-disk schema for `characters/<name>.yaml`. Only
-// git_name and git_email are required; `pat_secret` always carries a
-// `chest:<name>` reference (literal tokens are rejected at add time).
+// Character: git_name + git_email required. pat_secret always carries a
+// `chest:<name>` reference — literal tokens are rejected at add time.
 type Character struct {
 	GitName    string `yaml:"git_name" json:"git_name"`
 	GitEmail   string `yaml:"git_email" json:"git_email"`
@@ -28,7 +27,6 @@ type Character struct {
 	PATSecret  string `yaml:"pat_secret,omitempty" json:"pat_secret,omitempty"`
 }
 
-// CharacterAddParams is the RPC param shape for `character.add`.
 type CharacterAddParams struct {
 	Name       string `json:"name"`
 	GitName    string `json:"git_name"`
@@ -38,23 +36,20 @@ type CharacterAddParams struct {
 	PATSecret  string `json:"pat_secret,omitempty"`
 }
 
-// CharacterResult is returned by add/show — the on-disk character plus its
-// name for easy table rendering on the client.
+// CharacterResult bundles the name with the character yaml for easy
+// table rendering on the client.
 type CharacterResult struct {
 	Name string `json:"name"`
 	Character
 }
 
-// CharacterNameOnly is the param shape for show/remove.
 type CharacterNameOnly struct {
 	Name string `json:"name"`
 }
 
 const chestRefPrefix = "chest:"
 
-// CharacterAddHandler writes a new character yaml. A name collision is a
-// `code:4 name_collision` error — `character.add` is create-only; edits go
-// through `character.remove` + `character.add` for now.
+// CharacterAddHandler is create-only — edits go through remove + add.
 func (d *Deps) CharacterAddHandler(_ context.Context, params json.RawMessage) (any, error) {
 	var p CharacterAddParams
 	if err := rpc.BindParams(params, &p); err != nil {
@@ -100,10 +95,8 @@ func (d *Deps) CharacterAddHandler(_ context.Context, params json.RawMessage) (a
 	return CharacterResult{Name: p.Name, Character: c}, nil
 }
 
-// CharacterListHandler enumerates `garage/characters/*.yaml` and returns a
-// summary record per file. The full character file (including pat_secret)
-// is surfaced so `drift character list --output json` is useful; human
-// rendering on the CLI side can choose which columns to show.
+// CharacterListHandler surfaces the full yaml (incl. pat_secret) so
+// `--output json` is useful; the CLI picks columns for humans.
 func (d *Deps) CharacterListHandler(_ context.Context, params json.RawMessage) (any, error) {
 	var p struct{}
 	if err := rpc.BindParams(params, &p); err != nil {
@@ -133,8 +126,8 @@ func (d *Deps) CharacterListHandler(_ context.Context, params json.RawMessage) (
 	return out, nil
 }
 
-// CharacterShowHandler returns a single character. pat_secret is surfaced
-// verbatim — it's a chest reference, never a literal secret.
+// CharacterShowHandler: pat_secret surfaced verbatim — it's a chest
+// reference, never a literal secret.
 func (d *Deps) CharacterShowHandler(_ context.Context, params json.RawMessage) (any, error) {
 	var p CharacterNameOnly
 	if err := rpc.BindParams(params, &p); err != nil {
@@ -150,10 +143,8 @@ func (d *Deps) CharacterShowHandler(_ context.Context, params json.RawMessage) (
 	return CharacterResult{Name: p.Name, Character: *c}, nil
 }
 
-// CharacterRemoveHandler deletes a character yaml. Removal is rejected if
-// any kart references the character — scanning `garage/karts/*/config.yaml`
-// is sufficient because per-kart config is the only place a character is
-// pinned.
+// CharacterRemoveHandler rejects removal when any kart references the
+// character — per-kart config is the only place a character is pinned.
 func (d *Deps) CharacterRemoveHandler(_ context.Context, params json.RawMessage) (any, error) {
 	var p CharacterNameOnly
 	if err := rpc.BindParams(params, &p); err != nil {
@@ -211,10 +202,8 @@ func (d *Deps) loadCharacter(n string) (*Character, error) {
 	return &c, nil
 }
 
-// kartsReferencing returns the names of karts whose config.yaml has
-// `<field>: <value>`. The scan is deliberately tolerant — we only read the
-// fields we care about — so a malformed kart config doesn't prevent
-// character/tune removal elsewhere.
+// kartsReferencing is tolerant — reads only the fields we care about —
+// so a malformed kart config doesn't block character/tune removal.
 func (d *Deps) kartsReferencing(field, value string) ([]string, error) {
 	g, _ := d.garageDir()
 	kartsDir := filepath.Join(g, "karts")
@@ -238,8 +227,8 @@ func (d *Deps) kartsReferencing(field, value string) ([]string, error) {
 			}
 			return nil, rpcerr.Internal("karts: read %s: %v", cfg, err).Wrap(err)
 		}
-		// The per-kart config is owned by Phase 8; we don't have a typed
-		// schema yet. Use a permissive map so we survive additive changes.
+		// Permissive map — we survive additive changes to the per-kart
+		// config schema.
 		var raw map[string]any
 		if err := yaml.Unmarshal(buf, &raw); err != nil {
 			return nil, rpcerr.Internal("karts: decode %s: %v", cfg, err).Wrap(err)
