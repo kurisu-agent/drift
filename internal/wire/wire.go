@@ -1,7 +1,6 @@
-// Package wire defines the JSON-RPC 2.0 types exchanged between drift and lakitu.
-//
-// The protocol is one-shot: drift writes a single [Request] to lakitu's stdin,
-// reads a single [Response] from its stdout, and SSH exits.
+// Package wire defines the JSON-RPC 2.0 types. The protocol is one-shot:
+// drift writes one [Request] to lakitu's stdin, reads one [Response] from
+// stdout, SSH exits.
 package wire
 
 import (
@@ -12,11 +11,10 @@ import (
 	"io"
 )
 
-// Version is the only value the "jsonrpc" field may take.
 const Version = "2.0"
 
-// Request is a JSON-RPC 2.0 request. drift always sends requests with an
-// integer id and a named-parameter object; notifications are not used.
+// Request: drift always sends integer id + named-param object.
+// Notifications are not used.
 type Request struct {
 	JSONRPC string          `json:"jsonrpc"`
 	Method  string          `json:"method"`
@@ -24,7 +22,7 @@ type Request struct {
 	ID      json.RawMessage `json:"id"`
 }
 
-// Response is a JSON-RPC 2.0 response. Exactly one of Result or Error is set.
+// Response: exactly one of Result or Error is set.
 type Response struct {
 	JSONRPC string          `json:"jsonrpc"`
 	Result  json.RawMessage `json:"result,omitempty"`
@@ -32,7 +30,6 @@ type Response struct {
 	ID      json.RawMessage `json:"id"`
 }
 
-// Error is the JSON-RPC 2.0 error object.
 type Error struct {
 	Code    int             `json:"code"`
 	Message string          `json:"message"`
@@ -46,9 +43,8 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("jsonrpc: code=%d %s", e.Code, e.Message)
 }
 
-// DecodeRequest reads one JSON value from r and returns it as a [Request].
-// It rejects requests that omit jsonrpc/method/id, use positional params,
-// or use a jsonrpc version other than "2.0".
+// DecodeRequest rejects missing jsonrpc/method/id, positional params, and
+// non-"2.0" versions.
 func DecodeRequest(r io.Reader) (*Request, error) {
 	dec := json.NewDecoder(r)
 	dec.DisallowUnknownFields()
@@ -62,7 +58,6 @@ func DecodeRequest(r io.Reader) (*Request, error) {
 	return &req, nil
 }
 
-// DecodeResponse reads one JSON value from r and returns it as a [Response].
 func DecodeResponse(r io.Reader) (*Response, error) {
 	dec := json.NewDecoder(r)
 	dec.DisallowUnknownFields()
@@ -79,8 +74,8 @@ func DecodeResponse(r io.Reader) (*Response, error) {
 	return &resp, nil
 }
 
-// EncodeResponse writes resp to w as a single newline-terminated JSON object.
-// stdout carries exactly one JSON object per lakitu rpc invocation.
+// EncodeResponse writes a single newline-terminated JSON object — stdout
+// carries exactly one per lakitu rpc invocation.
 func EncodeResponse(w io.Writer, resp *Response) error {
 	if resp.JSONRPC == "" {
 		resp.JSONRPC = Version
@@ -96,7 +91,6 @@ func EncodeResponse(w io.Writer, resp *Response) error {
 	return nil
 }
 
-// EncodeRequest writes req to w as a single newline-terminated JSON object.
 func EncodeRequest(w io.Writer, req *Request) error {
 	if req.JSONRPC == "" {
 		req.JSONRPC = Version

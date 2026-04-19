@@ -10,28 +10,26 @@ import (
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 )
 
-// ChestSetParams is the RPC param shape for `chest.set`. value rides inside
-// the JSON-RPC body so the secret never appears on argv.
+// ChestSetParams.Value rides in the JSON-RPC body so the secret never
+// appears on argv.
 type ChestSetParams struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
 }
 
-// ChestNameOnly is the param shape for chest.get / chest.remove.
 type ChestNameOnly struct {
 	Name string `json:"name"`
 }
 
-// ChestGetResult wraps the secret value so the shape is stable when we
-// eventually add provenance (backend, write timestamp).
+// ChestGetResult wraps the value so the shape can grow (provenance, write
+// timestamp) without breaking clients.
 type ChestGetResult struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
 }
 
-// ChestSetHandler stores a secret. Name validation reuses the shared
-// identifier regex — chest keys share the kart-name shape so a character
-// yaml's `chest:<name>` reference can be validated offline.
+// ChestSetHandler: chest keys share the kart-name shape so character
+// yaml's `chest:<name>` references validate offline.
 func (d *Deps) ChestSetHandler(_ context.Context, params json.RawMessage) (any, error) {
 	var p ChestSetParams
 	if err := rpc.BindParams(params, &p); err != nil {
@@ -50,7 +48,6 @@ func (d *Deps) ChestSetHandler(_ context.Context, params json.RawMessage) (any, 
 	return ChestNameOnly{Name: p.Name}, nil
 }
 
-// ChestGetHandler returns a stored secret.
 func (d *Deps) ChestGetHandler(_ context.Context, params json.RawMessage) (any, error) {
 	var p ChestNameOnly
 	if err := rpc.BindParams(params, &p); err != nil {
@@ -70,8 +67,7 @@ func (d *Deps) ChestGetHandler(_ context.Context, params json.RawMessage) (any, 
 	return ChestGetResult{Name: p.Name, Value: string(v)}, nil
 }
 
-// ChestListHandler returns the set of stored names. Values are never
-// returned.
+// ChestListHandler never returns values.
 func (d *Deps) ChestListHandler(_ context.Context, params json.RawMessage) (any, error) {
 	var p struct{}
 	if err := rpc.BindParams(params, &p); err != nil {
@@ -91,7 +87,6 @@ func (d *Deps) ChestListHandler(_ context.Context, params json.RawMessage) (any,
 	return names, nil
 }
 
-// ChestRemoveHandler deletes a secret.
 func (d *Deps) ChestRemoveHandler(_ context.Context, params json.RawMessage) (any, error) {
 	var p ChestNameOnly
 	if err := rpc.BindParams(params, &p); err != nil {
@@ -110,8 +105,8 @@ func (d *Deps) ChestRemoveHandler(_ context.Context, params json.RawMessage) (an
 	return ChestNameOnly{Name: p.Name}, nil
 }
 
-// wrapChestError passes structured backend errors through and wraps anything
-// else as an internal error so the client still gets a typed envelope.
+// wrapChestError: structured backend errors pass through; anything else
+// becomes internal so the client still gets a typed envelope.
 func wrapChestError(err error) error {
 	if err == nil {
 		return nil

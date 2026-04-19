@@ -17,9 +17,6 @@ import (
 	"github.com/kurisu-agent/drift/internal/version"
 )
 
-// updateCmd is `drift update`. It queries the project's GitHub releases, and
-// if a newer tag is published, downloads the matching tarball and atomically
-// replaces the running binary.
 type updateCmd struct {
 	Check   bool   `help:"Check for an update without downloading."`
 	Repo    string `name:"repo" hidden:"" default:"kurisu-agent/drift"`
@@ -111,9 +108,8 @@ func fetchLatestRelease(ctx context.Context, apiBase, repo string) (*ghRelease, 
 	return &rel, nil
 }
 
-// pickAsset finds the archive matching goos/goarch. GoReleaser names assets
-// as drift_<ver>_<os>_<arch>.tar.gz — we match the trailing os_arch suffix
-// rather than the version so the logic survives the version changing.
+// pickAsset matches the trailing _<os>_<arch>.tar.gz suffix rather than
+// the version, so the logic survives version bumps.
 func pickAsset(assets []ghAsset, goos, goarch string) (*ghAsset, error) {
 	suffix := fmt.Sprintf("_%s_%s.tar.gz", goos, goarch)
 	for i := range assets {
@@ -124,10 +120,9 @@ func pickAsset(assets []ghAsset, goos, goarch string) (*ghAsset, error) {
 	return nil, fmt.Errorf("no release asset for %s/%s", goos, goarch)
 }
 
-// downloadAndReplace streams the tarball, extracts the drift entry to a
-// sibling tempfile of dst, then os.Rename's it into place. On Linux (and
-// Android) rename(2) over a running executable is safe — the kernel keeps
-// the old inode live for the current process.
+// downloadAndReplace uses rename(2) over the running executable — safe
+// on Linux (incl. Android): the kernel keeps the old inode live for the
+// current process.
 func downloadAndReplace(ctx context.Context, url, dst string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

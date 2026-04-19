@@ -5,25 +5,20 @@ import (
 	"regexp"
 )
 
-// Client is the workstation-side config.
 type Client struct {
 	DefaultCircuit  string                   `yaml:"default_circuit"`
 	ManageSSHConfig *bool                    `yaml:"manage_ssh_config,omitempty"`
 	Circuits        map[string]ClientCircuit `yaml:"circuits,omitempty"`
 }
 
-// ClientCircuit is a single entry under `circuits:` in the client config.
 type ClientCircuit struct {
 	Host string `yaml:"host"`
 }
 
-// circuitNameRE matches lowercase alphanumeric + hyphen, 1–63 chars, starting
-// with a letter — circuit names share the kart-name shape.
+// Circuit names share the kart-name shape.
 var circuitNameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
-// ManagesSSHConfig reports whether drift should write to the user's
-// ~/.ssh/config + ~/.config/drift/ssh_config. It defaults to true when the
-// field is absent.
+// ManagesSSHConfig defaults to true when the field is absent.
 func (c *Client) ManagesSSHConfig() bool {
 	if c.ManageSSHConfig == nil {
 		return true
@@ -31,9 +26,6 @@ func (c *Client) ManagesSSHConfig() bool {
 	return *c.ManageSSHConfig
 }
 
-// Validate enforces the schema invariants that the YAML shape alone cannot
-// express: non-empty SSH target per circuit, circuit-name syntax, and that
-// any default_circuit refers to a real circuit.
 func (c *Client) Validate() error {
 	for name, circuit := range c.Circuits {
 		if !circuitNameRE.MatchString(name) {
@@ -51,9 +43,7 @@ func (c *Client) Validate() error {
 	return nil
 }
 
-// LoadClient decodes a client config from path. Missing files are not an
-// error; the returned Client is the zero value (empty circuits, SSH config
-// management enabled by default).
+// LoadClient: missing files return the zero-value Client, not an error.
 func LoadClient(path string) (*Client, error) {
 	var c Client
 	found, err := loadYAMLStrict(path, &c)
@@ -69,9 +59,7 @@ func LoadClient(path string) (*Client, error) {
 	return &c, nil
 }
 
-// SaveClient atomically writes c to path after validating it. Parent
-// directories are created with mode 0755 if absent; the file itself is 0600
-// since it records SSH usernames and hostnames.
+// SaveClient writes 0600 — records SSH usernames and hostnames.
 func SaveClient(path string, c *Client) error {
 	if err := c.Validate(); err != nil {
 		return err

@@ -1,4 +1,4 @@
-// Package drift contains the Kong CLI definition for the drift client binary.
+// Package drift is the Kong CLI for the drift client binary.
 package drift
 
 import (
@@ -11,7 +11,6 @@ import (
 	"github.com/kurisu-agent/drift/internal/version"
 )
 
-// CLI is the root argument parser for drift.
 type CLI struct {
 	Debug            bool   `help:"Verbose output." env:"DRIFT_DEBUG"`
 	SkipVersionCheck bool   `name:"skip-version-check" help:"Bypass drift↔lakitu semver check."`
@@ -43,21 +42,16 @@ type CLI struct {
 
 type versionCmd struct{}
 
-// IO bundles the stdio streams so tests can inject buffers.
 type IO struct {
 	Stdout io.Writer
 	Stderr io.Writer
 	Stdin  io.Reader
 }
 
-// Run parses argv and dispatches. It returns a process exit code rather than
-// calling os.Exit so tests and in-process harnesses can drive it.
 func Run(ctx context.Context, argv []string, io IO) int {
 	return run(ctx, argv, io, defaultDeps())
 }
 
-// run is the testable entry point — deps is threaded in so tests can stub the
-// RPC client and filesystem paths.
 func run(ctx context.Context, argv []string, io IO, deps deps) int {
 	var cli CLI
 	parser, err := kong.New(&cli,
@@ -67,16 +61,14 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		kong.Exit(func(int) {}),
 	)
 	if err != nil {
-		// Kong's own construction failures aren't command-level errors — they
-		// indicate a programming mistake in the CLI struct, so we keep the
-		// low-level prefix and don't route through errfmt.
+		// Kong construction failures indicate a programmer mistake in the
+		// CLI struct — don't route through errfmt.
 		fmt.Fprintf(io.Stderr, "drift: %v\n", err)
 		return 1
 	}
 	kctx, err := parser.Parse(argv)
 	if err != nil {
-		// Kong prints its own help/usage when Parse returns; leave its output
-		// alone rather than wrapping it in the errfmt two-line format.
+		// Kong prints its own usage on Parse error — don't wrap in errfmt.
 		fmt.Fprintf(io.Stderr, "drift: %v\n", err)
 		return 2
 	}

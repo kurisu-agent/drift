@@ -11,8 +11,7 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// Local mirrors of the server's kart.logs wire shape. Kept here so the CLI
-// does not take a compile-time dependency on internal/server.
+// Local mirrors keep the CLI off a compile-time dep on internal/server.
 type logsParams struct {
 	Name  string        `json:"name"`
 	Tail  int           `json:"tail,omitempty"`
@@ -32,8 +31,8 @@ const (
 	logFormatText  = "text"
 )
 
-// logsCmd is `drift logs <kart>`. Filters are pushed down to the server so
-// the one-shot response stays small. Streaming (`-f`) is deferred.
+// logsCmd pushes filters down to the server so the one-shot response
+// stays small. Streaming (`-f`) is deferred.
 type logsCmd struct {
 	Name  string        `arg:"" help:"Kart name."`
 	Tail  int           `name:"tail" short:"n" help:"Show the last N lines (0 = server default)."`
@@ -64,10 +63,8 @@ func runKartLogs(ctx context.Context, io IO, root *CLI, cmd logsCmd, deps deps) 
 	return 0
 }
 
-// renderLogLevel resolves the minimum level the CLI should render. The
-// --level flag wins; otherwise --debug drops the floor to Debug; otherwise
-// the default is Info so Debug records captured by the server don't spam
-// normal users. Explicit user intent > convenience flag > default.
+// renderLogLevel precedence: --level > --debug > default Info. Info is
+// the default so server-captured Debug records don't spam normal users.
 func renderLogLevel(root *CLI, flagLevel string) slog.Level {
 	if flagLevel != "" {
 		return slogfmt.ParseLevel(flagLevel)
@@ -78,10 +75,9 @@ func renderLogLevel(root *CLI, flagLevel string) slog.Level {
 	return slog.LevelInfo
 }
 
-// renderLogs is the shared rendering path for both formats. JSONL lines are
-// decoded and rendered as-is; text lines are wrapped into a synthetic INFO
-// record stamped with the current wall clock (the server has no per-line
-// emission time for unstructured sources).
+// renderLogs wraps text lines into synthetic INFO records with the
+// current wall clock — the server has no per-line emission time for
+// unstructured sources.
 func renderLogs(w stdoutWriter, res logsResult, min slog.Level, now func() time.Time) {
 	for _, line := range res.Lines {
 		switch res.Format {
@@ -91,8 +87,8 @@ func renderLogs(w stdoutWriter, res logsResult, min slog.Level, now func() time.
 				slogfmt.Emit(w, slogfmt.DecodeRecord(raw), min)
 				continue
 			}
-			// Bad JSONL line — fall through and render as text so the user
-			// still sees it instead of the server silently dropping it.
+			// Bad JSONL line — render as text so the user still sees it
+			// instead of silently dropping.
 			slogfmt.Emit(w, slogfmt.Record{Time: now(), Level: "info", Msg: line}, min)
 		default:
 			slogfmt.Emit(w, slogfmt.Record{Time: now(), Level: "info", Msg: line}, min)
@@ -100,8 +96,7 @@ func renderLogs(w stdoutWriter, res logsResult, min slog.Level, now func() time.
 	}
 }
 
-// stdoutWriter matches the subset of io.Writer we need — kept as a local
-// alias so renderLogs's signature doesn't pull in io just for this.
+// stdoutWriter avoids pulling io into renderLogs's signature.
 type stdoutWriter interface {
 	Write([]byte) (int, error)
 }

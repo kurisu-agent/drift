@@ -1,6 +1,5 @@
-// Package version surfaces build metadata to the CLI. Values are injected at
-// release time via -ldflags; outside of release builds, debug.ReadBuildInfo
-// provides a best-effort fallback.
+// Package version surfaces build metadata. Values are injected by the
+// release build via -ldflags; debug.ReadBuildInfo provides the fallback.
 package version
 
 import (
@@ -8,18 +7,13 @@ import (
 	"sync"
 )
 
+// Injected via -X internal/version.Version=... at release build time.
 var (
-	// Version is the semver build tag (e.g. "1.4.2"). Release builds set it
-	// via -X github.com/kurisu-agent/drift/internal/version.Version=...
 	Version = ""
-	// Commit is the VCS revision the binary was built from.
-	Commit = ""
-	// Date is the commit timestamp in RFC 3339 form, used for reproducible
-	// builds (GoReleaser's mod_timestamp: {{.CommitTimestamp}}).
-	Date = ""
+	Commit  = ""
+	Date    = ""
 
-	// APISchema is the integer JSON-RPC surface version — bumped only on
-	// breaking wire changes.
+	// APISchema: bumped only on breaking JSON-RPC surface changes.
 	APISchema = 1
 )
 
@@ -64,5 +58,4 @@ var readInfo = sync.OnceValue(func() Info {
 	return info
 })
 
-// Get returns the resolved build info, memoized on first call.
 func Get() Info { return readInfo() }

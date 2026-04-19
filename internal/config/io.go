@@ -10,10 +10,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// loadYAMLStrict decodes the file at path into dst with KnownFields enabled —
-// any YAML key not present in the Go struct produces an error. Returns
-// (false, nil) when the file does not exist so callers can distinguish a
-// missing config from a malformed one.
+// loadYAMLStrict uses KnownFields so unknown keys error. Returns
+// (false, nil) for missing files so callers can distinguish absent from
+// malformed.
 func loadYAMLStrict(path string, dst any) (bool, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -32,9 +31,6 @@ func loadYAMLStrict(path string, dst any) (bool, error) {
 	return true, nil
 }
 
-// marshalAndWrite serializes src to YAML and hands off to WriteFileAtomic.
-// Parent directories are created with mode 0755 so the first write on a
-// fresh machine succeeds without a separate MkdirAll dance.
 func marshalAndWrite(path string, src any, mode os.FileMode) error {
 	buf, err := yaml.Marshal(src)
 	if err != nil {
@@ -43,10 +39,8 @@ func marshalAndWrite(path string, src any, mode os.FileMode) error {
 	return WriteFileAtomic(path, buf, mode)
 }
 
-// WriteFileAtomic writes data to path atomically: a sibling temp file is
-// written, fsync'd, and renamed into place. Callers observe either the old
-// content or the new content, never a partial write. Parent directories are
-// created with mode 0755 if absent.
+// WriteFileAtomic: tmp + fsync + rename, so readers never see a partial
+// write. Parent dirs created at 0700 if absent.
 func WriteFileAtomic(path string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -58,7 +52,6 @@ func WriteFileAtomic(path string, data []byte, mode os.FileMode) error {
 		return fmt.Errorf("config: create temp in %s: %w", dir, err)
 	}
 	tmpPath := tmp.Name()
-	// If anything past this point fails, remove the orphan temp file.
 	cleanup := func() { _ = os.Remove(tmpPath) }
 
 	if _, err := tmp.Write(data); err != nil {
