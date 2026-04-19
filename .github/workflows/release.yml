@@ -25,7 +25,10 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@main
 
       - name: Set up Nix cache
-        uses: DeterminateSystems/flakehub-cache-action@main
+        uses: cachix/cachix-action@v15
+        with:
+          name: kurisu
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       # `nix develop` gives us the exact toolchain pinned in flake.nix
       # (go 1.26, golangci-lint, govulncheck, devpod, make, git) so local
@@ -50,16 +53,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
-
-      - name: Set up Nix cache
-        uses: DeterminateSystems/flakehub-cache-action@main
-
-      # GoReleaser runs outside the devShell: its config embeds ldflags
-      # and mod_timestamp that the nix devShell doesn't wire. The action
-      # pins its own goreleaser binary; the devShell's goreleaser is for
-      # local dry-runs (`make release` equivalent, if we add one).
+      # goreleaser-action bundles its own Go matrix handling, so we skip
+      # Nix here — no devShell needed, no cachix step needed. Keep this
+      # job minimal to shorten tag→release latency.
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
