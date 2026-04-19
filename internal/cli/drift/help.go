@@ -19,7 +19,6 @@ func runHelp(io IO, parser *kong.Kong) int {
 		App:   parser,
 		Intro: driftHelpIntro,
 		Sections: []clihelp.Section{
-			clihelp.RPCMethodsSection(),
 			clihelp.ExitCodesSection(),
 		},
 	}

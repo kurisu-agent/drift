@@ -1,11 +1,14 @@
 package drift
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
@@ -44,11 +47,16 @@ type circuitListCmd struct{}
 // circuitSetCmd namespaces `drift circuit set <key> <value>` so we can
 // extend to more mutable fields later without growing new subcommands.
 type circuitSetCmd struct {
-	Name circuitSetNameCmd `cmd:"" help:"Rename the target circuit (rewrites server config + local alias)."`
+	Name    circuitSetNameCmd    `cmd:"" help:"Rename the target circuit (rewrites server config + local alias)."`
+	Default circuitSetDefaultCmd `cmd:"" help:"Choose which configured circuit is the default (interactive picker when no name given)."`
 }
 
 type circuitSetNameCmd struct {
 	NewName string `arg:"" name:"new-name" help:"New circuit name."`
+}
+
+type circuitSetDefaultCmd struct {
+	Name string `arg:"" optional:"" help:"Circuit name to set as default. Omit for an interactive picker."`
 }
 
 // runCircuitAdd probes the raw SSH target for the canonical circuit name,
@@ -389,6 +397,120 @@ func runCircuitSetName(ctx context.Context, io IO, root *CLI, cmd circuitSetName
 	}
 	fmt.Fprintf(io.Stdout, "renamed circuit %q → %q\n", oldName, cmd.NewName)
 	return 0
+}
+
+// runCircuitSetDefault flips which circuit in the local config is
+// treated as default. Name-arg form is scriptable; no-arg form launches a
+// picker (TTY-only) so users don't have to type the name.
+func runCircuitSetDefault(io IO, root *CLI, cmd circuitSetDefaultCmd, deps deps) int {
+	cfgPath, err := deps.clientConfigPath()
+	if err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+	cfg, err := config.LoadClient(cfgPath)
+	if err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+	if len(cfg.Circuits) == 0 {
+		return errfmt.Emit(io.Stderr, rpcerr.UserError(rpcerr.TypeInvalidFlag,
+			"no circuits configured — try `drift circuit add user@host` first"))
+	}
+
+	target := cmd.Name
+	if target == "" {
+		picked, ok, err := pickCircuitDefault(io, cfg)
+		if err != nil {
+			return errfmt.Emit(io.Stderr, err)
+		}
+		if !ok {
+			fmt.Fprintln(io.Stderr, "aborted")
+			return 1
+		}
+		target = picked
+	}
+	if _, ok := cfg.Circuits[target]; !ok {
+		return errfmt.Emit(io.Stderr, rpcerr.NotFound(rpcerr.TypeKartNotFound,
+			"circuit %q not found", target).With("circuit", target))
+	}
+	if cfg.DefaultCircuit == target {
+		fmt.Fprintf(io.Stdout, "%q is already the default circuit\n", target)
+		return 0
+	}
+	cfg.DefaultCircuit = target
+	if err := config.SaveClient(cfgPath, cfg); err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+
+	if root.Output == "json" {
+		buf, err := json.Marshal(struct {
+			DefaultCircuit string `json:"default_circuit"`
+		}{DefaultCircuit: target})
+		if err != nil {
+			return errfmt.Emit(io.Stderr, err)
+		}
+		fmt.Fprintln(io.Stdout, string(buf))
+		return 0
+	}
+	p := style.For(io.Stdout, false)
+	fmt.Fprintf(io.Stdout, "default circuit → %s\n", p.Accent(target))
+	return 0
+}
+
+// pickCircuitDefault renders a numbered list on stderr, reads a choice on
+// stdin, and returns the picked name. Non-TTY stdin is a user error —
+// scripted callers should pass the name as an argument.
+func pickCircuitDefault(io IO, cfg *config.Client) (string, bool, error) {
+	if !stdinIsTTY(io.Stdin) {
+		return "", false, rpcerr.UserError(rpcerr.TypeInvalidFlag,
+			"circuit set default: name arg required on non-interactive stdin")
+	}
+	names := make([]string, 0, len(cfg.Circuits))
+	for n := range cfg.Circuits {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+
+	p := style.For(io.Stderr, false)
+	fmt.Fprintln(io.Stderr, p.Bold("circuits:"))
+	rows := make([][]string, 0, len(names))
+	defaultRow := -1
+	for i, n := range names {
+		marker := ""
+		if n == cfg.DefaultCircuit {
+			marker = p.Dim("(current default)")
+			defaultRow = i
+		}
+		rows = append(rows, []string{
+			fmt.Sprintf("[%d]", i+1),
+			n,
+			cfg.Circuits[n].Host,
+			marker,
+		})
+	}
+	_ = defaultRow
+	writeTable(io.Stderr, p, []string{"", "NAME", "HOST", ""}, rows,
+		func(_, col int, _ *style.Palette) lipgloss.Style {
+			if col == 1 {
+				return lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+			}
+			return lipgloss.NewStyle()
+		})
+
+	br := bufio.NewReader(io.Stdin)
+	fmt.Fprint(io.Stderr, "pick (number, empty to cancel): ")
+	line, err := br.ReadString('\n')
+	if err != nil && !strings.HasSuffix(err.Error(), "EOF") {
+		return "", false, err
+	}
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return "", false, nil
+	}
+	idx, err := strconv.Atoi(line)
+	if err != nil || idx < 1 || idx > len(names) {
+		return "", false, fmt.Errorf("invalid pick %q (expected 1..%d)", line, len(names))
+	}
+	return names[idx-1], true, nil
 }
 
 func sshManagerFor(cfgPath string) (*sshconf.Manager, error) {

@@ -87,12 +87,28 @@ func runStatus(ctx context.Context, io IO, root *CLI, cmd statusCmd, deps deps) 
 		fmt.Fprintln(io.Stdout, p.Dim("no circuits configured (try `drift init` or `drift circuit add`)"))
 		return 0
 	}
+	// Promote the default to a prominent line under the banner so it's
+	// not buried in a column. The picker hint nudges users with >1
+	// circuit toward the set-default command.
+	if res.DefaultCircuit != "" {
+		fmt.Fprintf(io.Stdout, "%s %s\n",
+			p.Dim("default:"), p.Accent(res.DefaultCircuit))
+	} else {
+		fmt.Fprintln(io.Stdout, p.Warn("no default circuit set (run `drift circuit set default`)"))
+	}
+	if len(res.Circuits) > 1 {
+		fmt.Fprintln(io.Stdout, p.Dim("  (change with `drift circuit set default [name]`)"))
+	}
 	fmt.Fprintln(io.Stdout)
 
-	headers := []string{"CIRCUIT", "HOST", "LAKITU", "API", "LATENCY", "KARTS", "DEFAULT"}
+	// Prefix the default row with a chevron so the eye finds it even
+	// when the table has scrolled off the top of the terminal. The
+	// DEFAULT column is gone — one visual indicator is enough.
+	headers := []string{"", "CIRCUIT", "HOST", "LAKITU", "API", "LATENCY", "KARTS"}
 	rows := make([][]string, 0, len(res.Circuits))
 	probeFailed := make([]bool, 0, len(res.Circuits))
-	for _, sc := range res.Circuits {
+	defaultRow := -1
+	for i, sc := range res.Circuits {
 		lakitu := sc.Lakitu
 		api := ""
 		latency := ""
@@ -112,18 +128,27 @@ func runStatus(ctx context.Context, io IO, root *CLI, cmd statusCmd, deps deps) 
 			latency = fmt.Sprintf("%dms", sc.LatencyMS)
 			karts = fmt.Sprintf("%d/%d", sc.Running, sc.Karts)
 		}
-		def := ""
+		marker := " "
 		if sc.Default {
-			def = "*"
+			marker = "→"
+			defaultRow = i
 		}
-		rows = append(rows, []string{sc.Name, sc.Host, lakitu, api, latency, karts, def})
+		rows = append(rows, []string{marker, sc.Name, sc.Host, lakitu, api, latency, karts})
 		probeFailed = append(probeFailed, sc.ProbeError != "")
 	}
 	writeTable(io.Stdout, p, headers, rows, func(row, col int, _ *style.Palette) lipgloss.Style {
 		switch col {
-		case 0: // CIRCUIT name
-			return lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-		case 2, 3, 4, 5: // LAKITU / API / LATENCY / KARTS
+		case 0: // chevron marker
+			if row == defaultRow {
+				return lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true)
+			}
+		case 1: // CIRCUIT name
+			base := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+			if row == defaultRow {
+				return base.Bold(true)
+			}
+			return base
+		case 3, 4, 5, 6: // LAKITU / API / LATENCY / KARTS
 			if row >= 0 && row < len(probeFailed) && probeFailed[row] {
 				return lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 			}

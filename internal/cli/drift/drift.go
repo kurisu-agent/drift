@@ -102,6 +102,8 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runCircuitList(io, &cli, deps)
 	case "circuit set name <new-name>":
 		return runCircuitSetName(ctx, io, &cli, cli.Circuit_.Set.Name, deps)
+	case "circuit set default", "circuit set default <name>":
+		return runCircuitSetDefault(io, &cli, cli.Circuit_.Set.Default, deps)
 	case "new <name>":
 		return runNew(ctx, io, &cli, cli.New, deps)
 	case "list":
