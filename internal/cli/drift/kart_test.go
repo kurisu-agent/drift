@@ -75,7 +75,9 @@ func TestRunKartDelete_NotFoundBubblesUp(t *testing.T) {
 	io := IO{Stdout: &stdout, Stderr: &stderr}
 	cli := &CLI{}
 
-	rc := runKartDelete(context.Background(), io, cli, deleteCmd{Name: "ghost"}, d)
+	// Force:true skips the interactive confirmation so this test exercises
+	// the RPC-error pass-through, not the prompt.
+	rc := runKartDelete(context.Background(), io, cli, deleteCmd{Name: "ghost", Force: true}, d)
 	if rc == 0 {
 		t.Fatal("expected nonzero rc")
 	}

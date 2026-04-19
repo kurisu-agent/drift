@@ -1,11 +1,11 @@
-# `drift warmup` requires a TTY on stdin — testscript pipes stdin, so the
+# `drift init` requires a TTY on stdin — testscript pipes stdin, so the
 # wizard must refuse with a user_error (exit code 2).
 
-! drift warmup
+! drift init
 stderr 'requires a TTY'
 
 # Re-check with --skip-circuits alone — still a TTY-gated flow.
-! drift warmup --skip-circuits
+! drift init --skip-circuits
 stderr 'requires a TTY'
 
 # Client config must NOT have been created or mutated by the refusal path.

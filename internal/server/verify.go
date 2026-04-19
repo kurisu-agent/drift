@@ -10,7 +10,7 @@ import (
 )
 
 // VerifyResult is the "heavy" setup-time probe — includes a devpod
-// subprocess call, so hit it only from drift warmup / lakitu init rather
+// subprocess call, so hit it only from drift init / lakitu init rather
 // than every RPC round-trip.
 type VerifyResult struct {
 	// Lakitu duplicates server.version's payload so verify is a drop-in

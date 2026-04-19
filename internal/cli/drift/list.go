@@ -109,16 +109,84 @@ func runKartInfo(ctx context.Context, io IO, root *CLI, cmd infoCmd, deps deps) 
 	if err := deps.call(ctx, circuit, wire.MethodKartInfo, map[string]string{"name": cmd.Name}, &raw); err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
-	// Always pretty-print — info's nested sub-objects don't flatten into
-	// a readable table.
-	var v any
-	if err := json.Unmarshal(raw, &v); err != nil {
+	if root != nil && root.Output == "json" {
+		var v any
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return errfmt.Emit(io.Stderr, err)
+		}
+		pretty, err := json.MarshalIndent(v, "", "  ")
+		if err != nil {
+			return errfmt.Emit(io.Stderr, err)
+		}
+		fmt.Fprintln(io.Stdout, string(pretty))
+		return 0
+	}
+	return renderInfoText(io, raw)
+}
+
+// renderInfoText prints a key/value block keyed off the stable fields in
+// kart.info. Anything the server adds that we don't know how to lay out
+// is rendered compact at the bottom via json.MarshalIndent so users still
+// see it on `--output text`.
+func renderInfoText(io IO, raw json.RawMessage) int {
+	p := style.For(io.Stdout, false)
+	var info struct {
+		Name      string `json:"name"`
+		Status    string `json:"status"`
+		CreatedAt string `json:"created_at,omitempty"`
+		Source    struct {
+			Mode string `json:"mode"`
+			URL  string `json:"url,omitempty"`
+		} `json:"source"`
+		Tune      string `json:"tune,omitempty"`
+		Character string `json:"character,omitempty"`
+		Autostart bool   `json:"autostart"`
+		Stale     bool   `json:"stale,omitempty"`
+		Container *struct {
+			Image string `json:"image,omitempty"`
+		} `json:"container,omitempty"`
+		Devpod *struct {
+			WorkspaceID string `json:"workspace_id,omitempty"`
+			Provider    string `json:"provider,omitempty"`
+		} `json:"devpod,omitempty"`
+	}
+	if err := json.Unmarshal(raw, &info); err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
-	pretty, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return errfmt.Emit(io.Stderr, err)
+
+	status := info.Status
+	if info.Stale {
+		status += " (stale)"
 	}
-	fmt.Fprintln(io.Stdout, string(pretty))
+	fmt.Fprintf(io.Stdout, "%s %s\n", p.Bold(p.Accent(info.Name)), p.Dim("("+status+")"))
+
+	printIf := func(label, value string) {
+		if value == "" {
+			return
+		}
+		fmt.Fprintf(io.Stdout, "  %s %s\n", p.Dim(label+":"), value)
+	}
+	src := info.Source.Mode
+	if info.Source.URL != "" {
+		src = info.Source.Mode + " " + info.Source.URL
+	}
+	printIf("source", src)
+	printIf("tune", info.Tune)
+	printIf("character", info.Character)
+	printIf("created", info.CreatedAt)
+	if info.Autostart {
+		printIf("autostart", "enabled")
+	}
+	if info.Container != nil {
+		printIf("image", info.Container.Image)
+	}
+	if info.Devpod != nil {
+		if info.Devpod.WorkspaceID != "" {
+			printIf("workspace", info.Devpod.WorkspaceID)
+		}
+		if info.Devpod.Provider != "" {
+			printIf("provider", info.Devpod.Provider)
+		}
+	}
 	return 0
 }

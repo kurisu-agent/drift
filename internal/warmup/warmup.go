@@ -1,7 +1,7 @@
-// Package warmup is the `drift warmup` interactive wizard: register
-// circuits, create characters, print a summary. Re-runnable, non-destructive.
-// All external effects go through Deps so tests can exercise the flow
-// without real SSH.
+// Package warmup is the library behind the `drift init` interactive
+// wizard: register circuits, create characters, print a summary.
+// Re-runnable, non-destructive. All external effects go through Deps so
+// tests can exercise the flow without real SSH.
 package warmup
 
 import (
@@ -53,7 +53,7 @@ type Deps struct {
 func Run(ctx context.Context, opts Options, deps Deps, stdin io.Reader, stdout io.Writer) error {
 	if !opts.IsTTY {
 		return rpcerr.UserError(rpcerr.TypeInvalidFlag,
-			"drift warmup requires a TTY on stdin (scripted equivalents: drift circuit add, drift character add, drift chest set)")
+			"drift init requires a TTY on stdin (scripted equivalents: drift circuit add, drift character add, drift chest set)")
 	}
 
 	p := style.For(stdout, false)
@@ -416,7 +416,7 @@ func listCharactersFor(ctx context.Context, deps Deps, w io.Writer, circuit stri
 func printInstallHints(w io.Writer, circuit string) {
 	fmt.Fprintf(w, "  lakitu may not be installed (or may be the wrong version) on %q.\n", circuit)
 	fmt.Fprintln(w, "  install via the Nix module or the manual tarball — see the README for bootstrap instructions.")
-	fmt.Fprintln(w, "  re-run `drift warmup` after installing to re-probe.")
+	fmt.Fprintln(w, "  re-run `drift init` after installing to re-probe.")
 }
 
 // promptLine reads one line. EOF before any input surfaces io.EOF so the

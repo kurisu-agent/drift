@@ -13,15 +13,17 @@ import (
 	"github.com/kurisu-agent/drift/internal/warmup"
 )
 
-type warmupCmd struct {
+type initCmd struct {
 	SkipCircuits   bool `name:"skip-circuits" help:"Skip the circuit phase (assume already configured)."`
 	SkipCharacters bool `name:"skip-characters" help:"Skip the character phase."`
 	NoProbe        bool `name:"no-probe" help:"Skip the server.version probe (offline setup)."`
 }
 
-// runWarmup decides TTY-ness here so the library takes a plain bool —
-// tests exercise both modes without spoofing fds.
-func runWarmup(ctx context.Context, io IO, root *CLI, cmd warmupCmd, deps deps) int {
+// runInit decides TTY-ness here so the library takes a plain bool —
+// tests exercise both modes without spoofing fds. The underlying wizard
+// library still lives in internal/warmup; only the user-facing CLI verb
+// is `init`.
+func runInit(ctx context.Context, io IO, root *CLI, cmd initCmd, deps deps) int {
 	isTTY := stdinIsTTY(io.Stdin)
 	opts := warmup.Options{
 		SkipCircuits:   cmd.SkipCircuits,
@@ -82,7 +84,7 @@ func runWarmup(ctx context.Context, io IO, root *CLI, cmd warmupCmd, deps deps) 
 
 // stdinIsTTY: avoid pulling golang.org/x/term for one call — *os.File
 // mode check covers files/pipes/TTYs. Non-*os.File readers (bytes.Buffer
-// in unit tests) are treated as non-TTY; those tests drive warmup.Run
+// in unit tests) are treated as non-TTY; those tests drive the library
 // directly with IsTTY set explicitly.
 func stdinIsTTY(r any) bool {
 	f, ok := r.(*os.File)

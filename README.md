@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/kurisu-agent/drift/actions/workflows/ci.yml/badge.svg)](https://github.com/kurisu-agent/drift/actions)
 
-<!-- TODO: demo GIF / asciinema cast of `drift warmup` → `drift new` → `drift connect` -->
+<!-- TODO: demo GIF / asciinema cast of `drift init` → `drift new` → `drift connect` -->
 
 drift is a stateless client for remote devcontainer workspaces. It pairs with
 `lakitu`, a server-side binary on each remote host (a *circuit*). Together
@@ -80,12 +80,12 @@ lakitu init
 ## Quickstart
 
 ```bash
-drift warmup                                    # register a circuit + character
+drift init                                      # register a circuit + character
 drift new myproj --clone git@github.com:u/myproj.git --character kurisu
 drift connect myproj
 ```
 
-`warmup` is an interactive wizard (circuit SSH target, managed
+`init` is an interactive wizard (circuit SSH target, managed
 `~/.config/drift/ssh_config`, git identity, optional PAT into the chest). It's
 re-runnable; each phase has a `--skip-*` flag. Non-TTY stdin exits
 `code:2 user_error` — script with `drift circuit add`, `drift character add`,

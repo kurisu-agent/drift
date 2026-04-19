@@ -1,12 +1,18 @@
-# Both binaries print a non-empty version string.
-drift version
+# `drift -v` prints a version line; the dedicated `version` subcommand was
+# removed in favor of the conventional flag.
+drift -v
 stdout '^drift '
 ! stderr .
 
+drift --version
+stdout '^drift '
+
+# --output json pairs with -v so CI/automation can read the structured form.
+drift -v --output json
+stdout '"Version"'
+
+# lakitu keeps its `version` subcommand — it runs on the circuit and is
+# invoked non-interactively; a flag-only UX is less useful there.
 lakitu version
 stdout '^lakitu '
 ! stderr .
-
-# --output json produces parseable JSON with a Version field.
-drift version --output json
-stdout '"Version"'

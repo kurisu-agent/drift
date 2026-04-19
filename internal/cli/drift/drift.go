@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 
 	"github.com/alecthomas/kong"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
@@ -14,18 +16,24 @@ import (
 
 type CLI struct {
 	Debug            bool   `help:"Verbose output." env:"DRIFT_DEBUG"`
-	SkipVersionCheck bool   `name:"skip-version-check" help:"Bypass drift↔lakitu semver check."`
+	SkipVersionCheck bool   `name:"skip-version-check" hidden:"" env:"DRIFT_SKIP_VERSION_CHECK" help:"Bypass drift↔lakitu semver check."`
+	NoColor          bool   `name:"no-color" env:"NO_COLOR" help:"Disable ANSI colors in text output."`
 	Circuit          string `short:"c" help:"Target circuit (overrides default)."`
-	Output           string `name:"output" help:"Output format for structured commands." enum:"text,json" default:"text"`
+	Output           string `name:"output" short:"o" help:"Output format for structured commands." enum:"text,json" default:"text"`
 
-	Version  versionCmd `cmd:"" help:"Print drift version."`
+	// Version is scanned out of argv before Kong parses, so this field is
+	// never read — it exists purely to register `-v` / `--version` in the
+	// help output Kong auto-generates. See maybeVersionExit.
+	Version bool `short:"v" help:"Print drift version and exit."`
+
 	Help     helpCmd    `cmd:"" help:"Print an LLM-friendly command + protocol reference."`
 	Circuit_ circuitCmd `cmd:"" name:"circuit" help:"Manage circuits (client-side config + SSH config)."`
-	Warmup   warmupCmd  `cmd:"" name:"warmup" help:"Interactive first-time setup wizard (circuits + characters)."`
+	Init     initCmd    `cmd:"" name:"init" help:"Interactive first-time setup wizard (circuits + characters)."`
+	Status   statusCmd  `cmd:"" name:"status" help:"Show configured circuits + their lakitu health and kart counts."`
 	New      newCmd     `cmd:"" name:"new" help:"Create a new kart (from starter or existing repo)."`
 
 	List    listCmd    `cmd:"" help:"List karts on the target circuit."`
-	Info    infoCmd    `cmd:"" help:"Show a single kart's info (JSON)."`
+	Info    infoCmd    `cmd:"" help:"Show a single kart's info."`
 	Start   startCmd   `cmd:"" help:"Start a kart (idempotent)."`
 	Stop    stopCmd    `cmd:"" help:"Stop a kart (idempotent)."`
 	Restart restartCmd `cmd:"" help:"Restart a kart."`
@@ -41,8 +49,6 @@ type CLI struct {
 	SshProxy sshProxyCmd `cmd:"" name:"ssh-proxy" hidden:"" help:"ProxyCommand helper for drift.<circuit>.<kart> aliases (invoked by OpenSSH)."`
 }
 
-type versionCmd struct{}
-
 type IO struct {
 	Stdout io.Writer
 	Stderr io.Writer
@@ -54,6 +60,13 @@ func Run(ctx context.Context, argv []string, io IO) int {
 }
 
 func run(ctx context.Context, argv []string, io IO, deps deps) int {
+	// Intercept -v / --version before Kong's command-required parser rejects
+	// a flag-only invocation. Output format is scraped from the same argv so
+	// `drift -v --output json` still produces machine output.
+	if rc, handled := maybeVersionExit(argv, io); handled {
+		return rc
+	}
+
 	var cli CLI
 	parser, err := kong.New(&cli,
 		kong.Name("drift"),
@@ -62,20 +75,23 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		kong.Exit(func(int) {}),
 	)
 	if err != nil {
-		// Kong construction failures indicate a programmer mistake in the
-		// CLI struct — don't route through errfmt.
 		fmt.Fprintf(io.Stderr, "drift: %v\n", err)
 		return 1
 	}
 	kctx, err := parser.Parse(argv)
 	if err != nil {
-		// Kong prints its own usage on Parse error — don't wrap in errfmt.
 		fmt.Fprintf(io.Stderr, "drift: %v\n", err)
 		return 2
 	}
+
+	// --no-color / NO_COLOR disable colors globally by forcing the env var
+	// our style package already respects. Done once at dispatch so every
+	// subsequent style.For call sees the override.
+	if cli.NoColor {
+		_ = os.Setenv("NO_COLOR", "1")
+	}
+
 	switch kctx.Command() {
-	case "version":
-		return runVersion(io, cli.Output)
 	case "help":
 		return runHelp(io, parser)
 	case "circuit add <name>":
@@ -90,8 +106,10 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runKartList(ctx, io, &cli, cli.List, deps)
 	case "info <name>":
 		return runKartInfo(ctx, io, &cli, cli.Info, deps)
-	case "warmup":
-		return runWarmup(ctx, io, &cli, cli.Warmup, deps)
+	case "init":
+		return runInit(ctx, io, &cli, cli.Init, deps)
+	case "status":
+		return runStatus(ctx, io, &cli, cli.Status, deps)
 	case "start <name>":
 		return runKartStart(ctx, io, &cli, cli.Start, deps)
 	case "stop <name>":
@@ -119,17 +137,62 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 	}
 }
 
-func runVersion(io IO, outputFormat string) int {
+// maybeVersionExit handles `drift -v` / `drift --version` without needing a
+// subcommand. Returns (exitCode, true) when the version flag was handled,
+// (_, false) otherwise so normal Kong parsing proceeds.
+func maybeVersionExit(argv []string, io IO) (int, bool) {
+	hasVersion := false
+	for _, a := range argv {
+		if a == "--" {
+			break
+		}
+		if a == "-v" || a == "--version" {
+			hasVersion = true
+			break
+		}
+	}
+	if !hasVersion {
+		return 0, false
+	}
+	return emitVersion(io, outputFromArgv(argv)), true
+}
+
+func emitVersion(io IO, outputFormat string) int {
 	info := version.Get()
-	switch outputFormat {
-	case "json":
+	if outputFormat == "json" {
 		buf, err := json.Marshal(info)
 		if err != nil {
 			return errfmt.Emit(io.Stderr, err)
 		}
 		fmt.Fprintln(io.Stdout, string(buf))
-	default:
-		fmt.Fprintf(io.Stdout, "drift %s\n", info.Version)
+		return 0
 	}
+	fmt.Fprintf(io.Stdout, "drift %s\n", info.Version)
 	return 0
+}
+
+// outputFromArgv mirrors Kong's --output / -o parsing closely enough to pick
+// the right format when we short-circuit the version flag before Kong runs.
+// Unknown values fall through to "text" so a bad --output=foo on `drift -v`
+// still prints something.
+func outputFromArgv(argv []string) string {
+	for i := 0; i < len(argv); i++ {
+		a := argv[i]
+		if a == "--" {
+			break
+		}
+		if a == "--output" || a == "-o" {
+			if i+1 < len(argv) {
+				return argv[i+1]
+			}
+			continue
+		}
+		if v, ok := strings.CutPrefix(a, "--output="); ok {
+			return v
+		}
+		if v, ok := strings.CutPrefix(a, "-o="); ok {
+			return v
+		}
+	}
+	return "text"
 }

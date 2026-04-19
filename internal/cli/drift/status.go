@@ -1,0 +1,182 @@
+package drift
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sort"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/kurisu-agent/drift/internal/cli/errfmt"
+	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/config"
+	"github.com/kurisu-agent/drift/internal/version"
+	"github.com/kurisu-agent/drift/internal/wire"
+)
+
+type statusCmd struct {
+	NoProbe bool `name:"no-probe" help:"Skip the server.version + kart.list round-trips (show client state only)."`
+}
+
+// statusCircuit is the per-circuit payload in both text and JSON modes.
+// Probe and kart-count fields are zero/empty when --no-probe or the probe
+// failed; ProbeError carries the error string so JSON consumers can branch.
+type statusCircuit struct {
+	Name       string `json:"name"`
+	Host       string `json:"host"`
+	Default    bool   `json:"default"`
+	Lakitu     string `json:"lakitu_version,omitempty"`
+	API        int    `json:"api,omitempty"`
+	LatencyMS  int64  `json:"latency_ms,omitempty"`
+	Karts      int    `json:"karts,omitempty"`
+	Running    int    `json:"running,omitempty"`
+	ProbeError string `json:"probe_error,omitempty"`
+}
+
+type statusResult struct {
+	Drift          string          `json:"drift_version"`
+	DefaultCircuit string          `json:"default_circuit,omitempty"`
+	Circuits       []statusCircuit `json:"circuits"`
+}
+
+func runStatus(ctx context.Context, io IO, root *CLI, cmd statusCmd, deps deps) int {
+	cfgPath, err := deps.clientConfigPath()
+	if err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+	cfg, err := config.LoadClient(cfgPath)
+	if err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+
+	names := make([]string, 0, len(cfg.Circuits))
+	for n := range cfg.Circuits {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+
+	res := statusResult{
+		Drift:          version.Get().Version,
+		DefaultCircuit: cfg.DefaultCircuit,
+		Circuits:       make([]statusCircuit, 0, len(names)),
+	}
+	for _, n := range names {
+		sc := statusCircuit{
+			Name:    n,
+			Host:    cfg.Circuits[n].Host,
+			Default: n == cfg.DefaultCircuit,
+		}
+		if !cmd.NoProbe {
+			fillProbe(ctx, deps, n, &sc)
+		}
+		res.Circuits = append(res.Circuits, sc)
+	}
+
+	if root != nil && root.Output == "json" {
+		buf, err := json.Marshal(res)
+		if err != nil {
+			return errfmt.Emit(io.Stderr, err)
+		}
+		fmt.Fprintln(io.Stdout, string(buf))
+		return 0
+	}
+
+	p := style.For(io.Stdout, false)
+	fmt.Fprintf(io.Stdout, "%s %s\n", p.Bold("drift"), res.Drift)
+	if len(res.Circuits) == 0 {
+		fmt.Fprintln(io.Stdout, p.Dim("no circuits configured (try `drift init` or `drift circuit add`)"))
+		return 0
+	}
+	fmt.Fprintln(io.Stdout)
+
+	headers := []string{"CIRCUIT", "HOST", "LAKITU", "API", "LATENCY", "KARTS", "DEFAULT"}
+	rows := make([][]string, 0, len(res.Circuits))
+	probeFailed := make([]bool, 0, len(res.Circuits))
+	for _, sc := range res.Circuits {
+		lakitu := sc.Lakitu
+		api := ""
+		latency := ""
+		karts := ""
+		switch {
+		case sc.ProbeError != "":
+			lakitu = "?"
+			api = "?"
+			latency = "unreachable"
+		case cmd.NoProbe:
+			lakitu = "-"
+			api = "-"
+			latency = "-"
+			karts = "-"
+		default:
+			api = fmt.Sprintf("%d", sc.API)
+			latency = fmt.Sprintf("%dms", sc.LatencyMS)
+			karts = fmt.Sprintf("%d/%d", sc.Running, sc.Karts)
+		}
+		def := ""
+		if sc.Default {
+			def = "*"
+		}
+		rows = append(rows, []string{sc.Name, sc.Host, lakitu, api, latency, karts, def})
+		probeFailed = append(probeFailed, sc.ProbeError != "")
+	}
+	writeTable(io.Stdout, p, headers, rows, func(row, col int, _ *style.Palette) lipgloss.Style {
+		switch col {
+		case 0: // CIRCUIT name
+			return lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+		case 2, 3, 4, 5: // LAKITU / API / LATENCY / KARTS
+			if row >= 0 && row < len(probeFailed) && probeFailed[row] {
+				return lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+			}
+		}
+		return lipgloss.NewStyle()
+	})
+
+	// Emit any probe errors as dim hints below the table so they don't
+	// crowd the row layout but still give the user a "why."
+	for _, sc := range res.Circuits {
+		if sc.ProbeError == "" {
+			continue
+		}
+		fmt.Fprintf(io.Stdout, "%s\n", p.Dim(fmt.Sprintf("  %s: %s", sc.Name, sc.ProbeError)))
+	}
+	return 0
+}
+
+// fillProbe populates sc.Lakitu / API / LatencyMS, plus Karts / Running
+// when the kart.list round-trip succeeds. Any failure lands in
+// ProbeError — status is a read-only overview, never aborts.
+func fillProbe(ctx context.Context, deps deps, circuit string, sc *statusCircuit) {
+	if deps.probe == nil {
+		sc.ProbeError = "probe not configured"
+		return
+	}
+	pr, err := deps.probe(ctx, circuit)
+	if err != nil {
+		sc.ProbeError = err.Error()
+		return
+	}
+	sc.Lakitu = pr.Version
+	sc.API = pr.API
+	sc.LatencyMS = pr.LatencyMS
+
+	var raw json.RawMessage
+	if err := deps.call(ctx, circuit, wire.MethodKartList, struct{}{}, &raw); err != nil {
+		sc.ProbeError = fmt.Sprintf("kart.list: %v", err)
+		return
+	}
+	var lr struct {
+		Karts []struct {
+			Status string `json:"status"`
+		} `json:"karts"`
+	}
+	if err := json.Unmarshal(raw, &lr); err != nil {
+		sc.ProbeError = fmt.Sprintf("parse kart.list: %v", err)
+		return
+	}
+	sc.Karts = len(lr.Karts)
+	for _, k := range lr.Karts {
+		if k.Status == "running" {
+			sc.Running++
+		}
+	}
+}
