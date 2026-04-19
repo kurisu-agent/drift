@@ -10,17 +10,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/kurisu-agent/drift/internal/model"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 )
 
-// Tune duplicates internal/server.Tune to keep kart below server in the
-// dep graph (server imports kart).
-type Tune struct {
-	Starter      string
-	Devcontainer string
-	DotfilesRepo string
-	Features     string
-}
+// Tune is an alias for model.Tune — shared with internal/server to avoid
+// a cycle (server imports kart).
+type Tune = model.Tune
 
 type Character struct {
 	GitName    string

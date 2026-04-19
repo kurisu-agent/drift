@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
@@ -21,11 +22,11 @@ func runKartStart(ctx context.Context, io IO, root *CLI, cmd startCmd, deps deps
 func runKartLifecycle(ctx context.Context, io IO, root *CLI, name, method, verb string, deps deps) int {
 	circuit, err := resolveCircuit(root, deps)
 	if err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	var raw json.RawMessage
 	if err := deps.call(ctx, circuit, method, map[string]string{"name": name}, &raw); err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	return emitKartResult(io, root, verb, raw)
 }

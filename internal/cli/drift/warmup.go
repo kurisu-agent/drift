@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/warmup"
@@ -31,7 +32,7 @@ func runWarmup(ctx context.Context, io IO, root *CLI, cmd warmupCmd, deps deps) 
 
 	cfgPath, err := deps.clientConfigPath()
 	if err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 
 	wdeps := warmup.Deps{
@@ -76,7 +77,7 @@ func runWarmup(ctx context.Context, io IO, root *CLI, cmd warmupCmd, deps deps) 
 		fmt.Fprintf(io.Stderr, "error: %s\n", re.Message)
 		return int(re.Code)
 	}
-	return emitError(io, err)
+	return errfmt.Emit(io.Stderr, err)
 }
 
 // stdinIsTTY: avoid pulling golang.org/x/term for one call — *os.File

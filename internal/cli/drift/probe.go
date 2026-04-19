@@ -15,14 +15,9 @@ type probeResult struct {
 	LatencyMS int64         `json:"latency_ms"`
 }
 
-type versionResult struct {
-	Version string `json:"version"`
-	API     int    `json:"api"`
-}
-
 func defaultProbe(c *client.Client) func(ctx context.Context, circuit string) (*probeResult, error) {
 	return func(ctx context.Context, circuit string) (*probeResult, error) {
-		var vr versionResult
+		var vr wire.ServerVersion
 		start := time.Now()
 		if err := c.Call(ctx, circuit, wire.MethodServerVersion, nil, &vr); err != nil {
 			return nil, err

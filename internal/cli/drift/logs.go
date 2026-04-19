@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/slogfmt"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
@@ -44,12 +45,12 @@ type logsCmd struct {
 func runKartLogs(ctx context.Context, io IO, root *CLI, cmd logsCmd, deps deps) int {
 	circuit, err := resolveCircuit(root, deps)
 	if err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	params := logsParams(cmd)
 	var raw json.RawMessage
 	if err := deps.call(ctx, circuit, wire.MethodKartLogs, params, &raw); err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	if root != nil && root.Output == "json" {
 		fmt.Fprintln(io.Stdout, string(raw))
@@ -57,7 +58,7 @@ func runKartLogs(ctx context.Context, io IO, root *CLI, cmd logsCmd, deps deps) 
 	}
 	var res logsResult
 	if err := json.Unmarshal(raw, &res); err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	renderLogs(io.Stdout, res, renderLogLevel(root, cmd.Level), time.Now)
 	return 0

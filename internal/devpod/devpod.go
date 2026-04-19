@@ -43,24 +43,10 @@ func tagOrLatest(ver string) string {
 
 const DefaultBinary = "devpod"
 
-// Runner is the execution seam — tests substitute a fake that returns
-// canned stdout/stderr without spawning a real process.
-type Runner interface {
-	Run(ctx context.Context, cmd driftexec.Cmd) (driftexec.Result, error)
-}
-
-type RunnerFunc func(ctx context.Context, cmd driftexec.Cmd) (driftexec.Result, error)
-
-func (f RunnerFunc) Run(ctx context.Context, cmd driftexec.Cmd) (driftexec.Result, error) {
-	return f(ctx, cmd)
-}
-
-var ExecRunner Runner = RunnerFunc(driftexec.Run)
-
 // Client is the typed interface to the devpod CLI. The zero value is usable.
 type Client struct {
 	Binary string
-	Runner Runner
+	Runner driftexec.Runner
 	// Env: nil inherits the parent env (the usual lakitu case on a circuit).
 	Env []string
 }
@@ -72,9 +58,9 @@ func (c *Client) binary() string {
 	return c.Binary
 }
 
-func (c *Client) runner() Runner {
+func (c *Client) runner() driftexec.Runner {
 	if c == nil || c.Runner == nil {
-		return ExecRunner
+		return driftexec.DefaultRunner
 	}
 	return c.Runner
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 
 	"github.com/alecthomas/kong"
+	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/version"
 )
 
@@ -114,7 +115,7 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 	case "ssh-proxy <alias>", "ssh-proxy <alias> <port>":
 		return runSSHProxy(ctx, io, &cli, cli.SshProxy, deps)
 	default:
-		return emitError(io, fmt.Errorf("unknown command %q", kctx.Command()))
+		return errfmt.Emit(io.Stderr, fmt.Errorf("unknown command %q", kctx.Command()))
 	}
 }
 
@@ -124,7 +125,7 @@ func runVersion(io IO, outputFormat string) int {
 	case "json":
 		buf, err := json.Marshal(info)
 		if err != nil {
-			return emitError(io, err)
+			return errfmt.Emit(io.Stderr, err)
 		}
 		fmt.Fprintln(io.Stdout, string(buf))
 	default:

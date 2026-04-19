@@ -15,6 +15,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/kurisu-agent/drift/internal/config"
 )
 
 // IncludeDirective must match byte-for-byte so [EnsureInclude] can detect
@@ -214,7 +216,7 @@ func (m *Manager) WriteCircuitBlock(name, host, user string) error {
 	if wildcard != nil {
 		mf.Blocks = append(mf.Blocks, *wildcard)
 	}
-	return writeFile(m.Paths.ManagedSSHConfig, mf.bytes(), 0o600)
+	return config.WriteFileAtomic(m.Paths.ManagedSSHConfig, mf.bytes(), 0o600)
 }
 
 func (m *Manager) RemoveCircuitBlock(name string) error {
@@ -231,7 +233,7 @@ func (m *Manager) RemoveCircuitBlock(name string) error {
 	if !mf.removeBlock(CircuitHostName(name)) {
 		return nil
 	}
-	return writeFile(m.Paths.ManagedSSHConfig, mf.bytes(), 0o600)
+	return config.WriteFileAtomic(m.Paths.ManagedSSHConfig, mf.bytes(), 0o600)
 }
 
 func (m *Manager) EnsureWildcardBlock() error {
@@ -253,7 +255,7 @@ func (m *Manager) EnsureWildcardBlock() error {
 	}
 	mf.removeBlock(WildcardHost)
 	mf.Blocks = append(mf.Blocks, want)
-	return writeFile(m.Paths.ManagedSSHConfig, mf.bytes(), 0o600)
+	return config.WriteFileAtomic(m.Paths.ManagedSSHConfig, mf.bytes(), 0o600)
 }
 
 // ListCircuits returns circuit short-names (no `drift.` prefix). Missing
@@ -303,7 +305,7 @@ func (m *Manager) EnsureInclude(path string) error {
 	data, err := os.ReadFile(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return writeFile(path, []byte(IncludeDirective+"\n"), 0o600)
+		return config.WriteFileAtomic(path, []byte(IncludeDirective+"\n"), 0o600)
 	case err != nil:
 		return fmt.Errorf("sshconf: read %s: %w", path, err)
 	}
@@ -314,7 +316,7 @@ func (m *Manager) EnsureInclude(path string) error {
 	buf.WriteString(IncludeDirective)
 	buf.WriteByte('\n')
 	buf.Write(data)
-	return writeFile(path, buf.Bytes(), 0o600)
+	return config.WriteFileAtomic(path, buf.Bytes(), 0o600)
 }
 
 func hasIncludeAtTop(data []byte) bool {
@@ -377,34 +379,6 @@ func wildcardBlock() HostBlock {
 			"  ControlPersist 10m",
 		},
 	}
-}
-
-// writeFile writes atomically via rename from a temp file in the same
-// directory, so an interrupted write can't leave a half-written file that
-// ssh would refuse to parse on the next invocation.
-func writeFile(path string, data []byte, mode os.FileMode) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".drift-sshconf-*")
-	if err != nil {
-		return fmt.Errorf("sshconf: create temp in %s: %w", dir, err)
-	}
-	tmpPath := tmp.Name()
-	defer func() { _ = os.Remove(tmpPath) }()
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("sshconf: write %s: %w", tmpPath, err)
-	}
-	if err := tmp.Chmod(mode); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("sshconf: chmod %s: %w", tmpPath, err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("sshconf: close %s: %w", tmpPath, err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("sshconf: rename %s -> %s: %w", tmpPath, path, err)
-	}
-	return nil
 }
 
 func ensureParentDir(path string) error {

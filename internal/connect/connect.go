@@ -10,9 +10,9 @@ import (
 	"fmt"
 	"io"
 	osexec "os/exec"
-	"syscall"
 	"time"
 
+	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
@@ -183,25 +183,18 @@ func pollUntilRunning(ctx context.Context, d Deps, opts Options) error {
 	}
 }
 
-// execStdio wires stdio straight through so the child owns the TTY.
-// internal/exec.Run is deliberately bypassed because it buffers — wrong for
-// an interactive session. Cancel/WaitDelay reproduce the discipline inline.
+// execStdio routes the interactive child through driftexec.Interactive so
+// the Cancel/WaitDelay discipline matches the rest of drift. A non-zero
+// exit surfaces as *ExitError so callers can propagate the remote session's
+// status without the errfmt "error:" prefix.
 func execStdio(ctx context.Context, bin string, argv []string, stdio Stdio) error {
-	c := osexec.CommandContext(ctx, bin, argv...)
-	c.Stdin = stdio.Stdin
-	c.Stdout = stdio.Stdout
-	c.Stderr = stdio.Stderr
-	c.Cancel = func() error { return c.Process.Signal(syscall.SIGTERM) }
-	c.WaitDelay = 5 * time.Second
-	err := c.Run()
+	err := driftexec.Interactive(ctx, bin, argv, stdio.Stdin, stdio.Stdout, stdio.Stderr)
 	if err == nil {
 		return nil
 	}
-	var ee *osexec.ExitError
+	var ee *driftexec.Error
 	if errors.As(err, &ee) {
-		// Propagate the child's exit code so the shell sees what the remote
-		// session produced, rather than a drift-level failure.
-		return &ExitError{Code: ee.ExitCode()}
+		return &ExitError{Code: ee.ExitCode}
 	}
 	return err
 }

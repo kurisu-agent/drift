@@ -4,13 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	osexec "os/exec"
 	"strings"
-	"syscall"
-	"time"
 
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/config"
+	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 )
@@ -68,27 +66,19 @@ func parseKartAlias(alias string) (circuit, kart string, err error) {
 	return circuit, kart, nil
 }
 
-// execSSHProxy wires stdio directly (internal/exec.Run buffers, which
-// breaks ProxyCommand semantics) and reproduces the Cancel/WaitDelay
-// ladder inline.
+// execSSHProxy routes the interactive ssh child through driftexec.Interactive
+// (Run buffers, which breaks ProxyCommand semantics). Non-zero ssh exits
+// propagate as the process exit code; anything else is a transport failure
+// and we log + exit 1 (OpenSSH treats any non-zero as ProxyCommand failure).
 func execSSHProxy(ctx context.Context, io IO, bin string, argv []string) int {
-	c := osexec.CommandContext(ctx, bin, argv...)
-	c.Stdin = io.Stdin
-	c.Stdout = io.Stdout
-	c.Stderr = io.Stderr
-	c.Cancel = func() error { return c.Process.Signal(syscall.SIGTERM) }
-	c.WaitDelay = 5 * time.Second
-
-	err := c.Run()
+	err := driftexec.Interactive(ctx, bin, argv, io.Stdin, io.Stdout, io.Stderr)
 	if err == nil {
 		return 0
 	}
-	var ee *osexec.ExitError
+	var ee *driftexec.Error
 	if errors.As(err, &ee) {
-		return ee.ExitCode()
+		return ee.ExitCode
 	}
-	// Transport failure before ssh produced an exit (e.g. binary missing).
-	// OpenSSH treats any non-zero as ProxyCommand failure anyway.
 	fmt.Fprintln(io.Stderr, "drift ssh-proxy:", err.Error())
 	return 1
 }

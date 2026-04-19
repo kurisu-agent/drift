@@ -39,23 +39,23 @@ type circuitListCmd struct{}
 // runCircuitAdd: probe failures are reported but don't abort — user retries.
 func runCircuitAdd(ctx context.Context, io IO, root *CLI, cmd circuitAddCmd, deps deps) int {
 	if err := name.Validate("circuit", cmd.Name); err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	if strings.TrimSpace(cmd.Host) == "" {
-		return emitError(io, errors.New("--host is required"))
+		return errfmt.Emit(io.Stderr, errors.New("--host is required"))
 	}
-	userPart, hostPart, err := splitUserHost(cmd.Host)
+	userPart, hostPart, err := name.SplitUserHost(cmd.Host)
 	if err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 
 	cfgPath, err := deps.clientConfigPath()
 	if err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	cfg, err := config.LoadClient(cfgPath)
 	if err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	if cfg.Circuits == nil {
 		cfg.Circuits = make(map[string]config.ClientCircuit)
@@ -65,26 +65,26 @@ func runCircuitAdd(ctx context.Context, io IO, root *CLI, cmd circuitAddCmd, dep
 		cfg.DefaultCircuit = cmd.Name
 	}
 	if err := config.SaveClient(cfgPath, cfg); err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 
 	manageSSH := cfg.ManagesSSHConfig() && !cmd.NoSSHConfig
 	if manageSSH {
 		mgr, err := sshManagerFor(cfgPath)
 		if err != nil {
-			return emitError(io, err)
+			return errfmt.Emit(io.Stderr, err)
 		}
 		if err := mgr.EnsureInclude(userSSHConfigPath()); err != nil {
-			return emitError(io, err)
+			return errfmt.Emit(io.Stderr, err)
 		}
 		if err := mgr.EnsureSocketsDir(); err != nil {
-			return emitError(io, err)
+			return errfmt.Emit(io.Stderr, err)
 		}
 		if err := mgr.WriteCircuitBlock(cmd.Name, hostPart, userPart); err != nil {
-			return emitError(io, err)
+			return errfmt.Emit(io.Stderr, err)
 		}
 		if err := mgr.EnsureWildcardBlock(); err != nil {
-			return emitError(io, err)
+			return errfmt.Emit(io.Stderr, err)
 		}
 	}
 
@@ -101,34 +101,34 @@ func runCircuitAdd(ctx context.Context, io IO, root *CLI, cmd circuitAddCmd, dep
 // may still need it.
 func runCircuitRm(io IO, root *CLI, cmd circuitRmCmd, deps deps) int {
 	if err := name.Validate("circuit", cmd.Name); err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	cfgPath, err := deps.clientConfigPath()
 	if err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	cfg, err := config.LoadClient(cfgPath)
 	if err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	if _, ok := cfg.Circuits[cmd.Name]; !ok {
-		return emitError(io, fmt.Errorf("circuit %q not found", cmd.Name))
+		return errfmt.Emit(io.Stderr, fmt.Errorf("circuit %q not found", cmd.Name))
 	}
 	delete(cfg.Circuits, cmd.Name)
 	if cfg.DefaultCircuit == cmd.Name {
 		cfg.DefaultCircuit = ""
 	}
 	if err := config.SaveClient(cfgPath, cfg); err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 
 	if cfg.ManagesSSHConfig() {
 		mgr, err := sshManagerFor(cfgPath)
 		if err != nil {
-			return emitError(io, err)
+			return errfmt.Emit(io.Stderr, err)
 		}
 		if err := mgr.RemoveCircuitBlock(cmd.Name); err != nil {
-			return emitError(io, err)
+			return errfmt.Emit(io.Stderr, err)
 		}
 	}
 
@@ -138,11 +138,11 @@ func runCircuitRm(io IO, root *CLI, cmd circuitRmCmd, deps deps) int {
 func runCircuitList(io IO, root *CLI, deps deps) int {
 	cfgPath, err := deps.clientConfigPath()
 	if err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	cfg, err := config.LoadClient(cfgPath)
 	if err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 
 	names := make([]string, 0, len(cfg.Circuits))
@@ -172,7 +172,7 @@ func runCircuitList(io IO, root *CLI, deps deps) int {
 		}{Circuits: entries, Default: cfg.DefaultCircuit}
 		buf, err := json.Marshal(payload)
 		if err != nil {
-			return emitError(io, err)
+			return errfmt.Emit(io.Stderr, err)
 		}
 		fmt.Fprintln(io.Stdout, string(buf))
 		return 0
@@ -216,7 +216,7 @@ func emitCircuitAdd(io IO, root *CLI, circuitName string, cfg *config.Client, ma
 		}
 		buf, err := json.Marshal(payload)
 		if err != nil {
-			return emitError(io, err)
+			return errfmt.Emit(io.Stderr, err)
 		}
 		fmt.Fprintln(io.Stdout, string(buf))
 		return 0
@@ -246,17 +246,13 @@ func emitCircuitRm(io IO, root *CLI, circuitName string) int {
 		}{Circuit: circuitName, Removed: true}
 		buf, err := json.Marshal(payload)
 		if err != nil {
-			return emitError(io, err)
+			return errfmt.Emit(io.Stderr, err)
 		}
 		fmt.Fprintln(io.Stdout, string(buf))
 		return 0
 	}
 	fmt.Fprintf(io.Stdout, "removed circuit %q\n", circuitName)
 	return 0
-}
-
-func emitError(io IO, err error) int {
-	return errfmt.Emit(io.Stderr, err)
 }
 
 func sshManagerFor(cfgPath string) (*sshconf.Manager, error) {
@@ -276,22 +272,4 @@ func userSSHConfigPath() string {
 		return ""
 	}
 	return filepath.Join(home, ".ssh", "config")
-}
-
-// splitUserHost: host may include a colon+port; sshconf records verbatim.
-func splitUserHost(target string) (user, host string, err error) {
-	target = strings.TrimSpace(target)
-	if target == "" {
-		return "", "", errors.New("--host is required")
-	}
-	at := strings.LastIndex(target, "@")
-	if at < 0 {
-		return "", target, nil
-	}
-	user = target[:at]
-	host = target[at+1:]
-	if user == "" || host == "" {
-		return "", "", fmt.Errorf("invalid --host %q: expected user@host", target)
-	}
-	return user, host, nil
 }

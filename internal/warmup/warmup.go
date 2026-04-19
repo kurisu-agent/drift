@@ -124,7 +124,7 @@ func addOneCircuit(ctx context.Context, opts Options, deps Deps, br *bufio.Reade
 	if err != nil {
 		return err
 	}
-	userPart, hostPart, err := splitUserHost(host)
+	userPart, hostPart, err := name.SplitUserHost(host)
 	if err != nil {
 		return err
 	}
@@ -444,23 +444,4 @@ func sortedKeys(m map[string]config.ClientCircuit) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// splitUserHost duplicates the circuit.go helper to avoid importing the
-// CLI package from this library.
-func splitUserHost(target string) (user, host string, err error) {
-	target = strings.TrimSpace(target)
-	if target == "" {
-		return "", "", errors.New("SSH target is required")
-	}
-	at := strings.LastIndex(target, "@")
-	if at < 0 {
-		return "", target, nil
-	}
-	user = target[:at]
-	host = target[at+1:]
-	if user == "" || host == "" {
-		return "", "", fmt.Errorf("invalid SSH target %q: expected user@host", target)
-	}
-	return user, host, nil
 }

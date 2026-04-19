@@ -14,7 +14,7 @@ import (
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 )
 
-// recorder is a devpod.Runner that captures every invocation so tests can
+// recorder is a driftexec.Runner that captures every invocation so tests can
 // assert on argv without needing a real devpod binary on PATH.
 type recorder struct {
 	calls []driftexec.Cmd
@@ -61,7 +61,7 @@ func TestNewRejectsCollision(t *testing.T) {
 	rec := &recorder{listStdout: `[{"id":"dup"}]`}
 	deps := NewDeps{
 		GarageDir: garage,
-		Devpod:    &devpod.Client{Runner: devpod.RunnerFunc(rec.Run)},
+		Devpod:    &devpod.Client{Runner: driftexec.RunnerFunc(rec.Run)},
 		Resolver: &Resolver{
 			LoadTune:      func(string) (*Tune, error) { return &Tune{}, nil },
 			LoadCharacter: func(string) (*Character, error) { return &Character{}, nil },
@@ -85,7 +85,7 @@ func TestNewDetectsStaleGarageCorpse(t *testing.T) {
 	rec := &recorder{} // default listStdout "" → recorder returns "[]"
 	deps := NewDeps{
 		GarageDir: garage,
-		Devpod:    &devpod.Client{Runner: devpod.RunnerFunc(rec.Run)},
+		Devpod:    &devpod.Client{Runner: driftexec.RunnerFunc(rec.Run)},
 		Resolver: &Resolver{
 			LoadTune:      func(string) (*Tune, error) { return &Tune{}, nil },
 			LoadCharacter: func(string) (*Character, error) { return &Character{}, nil },
@@ -122,7 +122,7 @@ func TestNewClonePathAndConfig(t *testing.T) {
 
 	deps := NewDeps{
 		GarageDir: garage,
-		Devpod:    &devpod.Client{Runner: devpod.RunnerFunc(rec.Run)},
+		Devpod:    &devpod.Client{Runner: driftexec.RunnerFunc(rec.Run)},
 		Resolver: &Resolver{
 			Defaults:      ServerDefaults{DefaultTune: "default", DefaultCharacter: "kurisu"},
 			LoadTune:      func(string) (*Tune, error) { return &Tune{}, nil },
@@ -189,7 +189,7 @@ func TestNewDevpodFailureLeavesStaleMarker(t *testing.T) {
 	rec := &failingRecorder{fail: true}
 	deps := NewDeps{
 		GarageDir: garage,
-		Devpod:    &devpod.Client{Runner: devpod.RunnerFunc(rec.Run)},
+		Devpod:    &devpod.Client{Runner: driftexec.RunnerFunc(rec.Run)},
 		Resolver: &Resolver{
 			LoadTune:      func(string) (*Tune, error) { return &Tune{}, nil },
 			LoadCharacter: func(string) (*Character, error) { return nil, nil },

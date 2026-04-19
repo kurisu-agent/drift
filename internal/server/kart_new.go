@@ -7,6 +7,7 @@ import (
 
 	"github.com/kurisu-agent/drift/internal/chest"
 	"github.com/kurisu-agent/drift/internal/kart"
+	"github.com/kurisu-agent/drift/internal/model"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/wire"
@@ -61,17 +62,8 @@ func (kd KartNewDeps) kartNewHandler(ctx context.Context, params json.RawMessage
 			DefaultTune:      srv.DefaultTune,
 			DefaultCharacter: srv.DefaultCharacter,
 		},
-		LoadTune: func(name string) (*kart.Tune, error) {
-			t, err := kd.Deps.loadTune(name)
-			if err != nil {
-				return nil, err
-			}
-			return &kart.Tune{
-				Starter:      t.Starter,
-				Devcontainer: t.Devcontainer,
-				DotfilesRepo: t.DotfilesRepo,
-				Features:     t.Features,
-			}, nil
+		LoadTune: func(name string) (*model.Tune, error) {
+			return kd.Deps.loadTune(name)
 		},
 		LoadCharacter: func(name string) (*kart.Character, error) {
 			c, err := kd.Deps.loadCharacter(name)

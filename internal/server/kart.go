@@ -10,6 +10,7 @@ import (
 	"sort"
 
 	"github.com/kurisu-agent/drift/internal/devpod"
+	"github.com/kurisu-agent/drift/internal/model"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/wire"
@@ -41,10 +42,9 @@ type KartConfig struct {
 	CreatedAt  string `yaml:"created_at,omitempty"`
 }
 
-type KartSource struct {
-	Mode string `json:"mode"`
-	URL  string `json:"url,omitempty"`
-}
+// KartSource is aliased to model.KartSource so server and kart packages
+// share one type while existing server.KartSource callers still compile.
+type KartSource = model.KartSource
 
 // KartContainer is absent (nil) when the kart is not running.
 type KartContainer struct {

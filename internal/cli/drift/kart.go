@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/config"
 )
 
@@ -40,7 +41,7 @@ func emitKartResult(io IO, root *CLI, verb string, raw json.RawMessage) int {
 		Status string `json:"status"`
 	}
 	if err := json.Unmarshal(raw, &res); err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	fmt.Fprintf(io.Stdout, "%s kart %q (status %s)\n", verb, res.Name, res.Status)
 	return 0

@@ -38,7 +38,7 @@ func (f *fakeRunner) Run(_ context.Context, cmd driftexec.Cmd) (driftexec.Result
 	return res, r.err
 }
 
-func newClient(runner devpod.Runner) *devpod.Client {
+func newClient(runner driftexec.Runner) *devpod.Client {
 	return &devpod.Client{Binary: "devpod", Runner: runner}
 }
 

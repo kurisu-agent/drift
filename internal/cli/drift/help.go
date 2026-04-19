@@ -2,6 +2,7 @@ package drift
 
 import (
 	"github.com/alecthomas/kong"
+	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/clihelp"
 )
 
@@ -23,7 +24,7 @@ func runHelp(io IO, parser *kong.Kong) int {
 		},
 	}
 	if err := clihelp.Render(io.Stdout, doc); err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	return 0
 }

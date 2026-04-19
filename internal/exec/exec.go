@@ -50,6 +50,68 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("exec: %s exited %d", e.Name, e.ExitCode)
 }
 
+// Runner is the subprocess seam callers plumb through Deps/Client structs so
+// tests can substitute a fake without spawning a real process. Production
+// code binds DefaultRunner.
+type Runner interface {
+	Run(ctx context.Context, cmd Cmd) (Result, error)
+}
+
+// RunnerFunc adapts a plain function to Runner.
+type RunnerFunc func(ctx context.Context, cmd Cmd) (Result, error)
+
+func (f RunnerFunc) Run(ctx context.Context, cmd Cmd) (Result, error) { return f(ctx, cmd) }
+
+// DefaultRunner is the production binding — a direct passthrough to Run.
+var DefaultRunner Runner = RunnerFunc(Run)
+
+// Interactive runs bin with argv and stdio wired straight through so the
+// child owns the TTY. Uses the same Cancel/WaitDelay discipline as Run
+// without buffering. Non-zero exit returns *Error (same type Run uses);
+// startup failures return a plain error.
+func Interactive(ctx context.Context, bin string, argv []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	if bin == "" {
+		return errors.New("exec: Interactive: bin is required")
+	}
+
+	c := osexec.CommandContext(ctx, bin, argv...)
+	c.Stdin = stdin
+	c.Stdout = stdout
+	c.Stderr = stderr
+
+	c.Cancel = func() error {
+		if c.Process == nil {
+			return errors.New("exec: Cancel called before process started")
+		}
+		return c.Process.Signal(syscall.SIGTERM)
+	}
+	c.WaitDelay = DefaultWaitDelay
+
+	runErr := c.Run()
+
+	// Context cancellation wins over the child's signal-killed exit status
+	// so callers can branch via errors.Is(err, context.Canceled).
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return fmt.Errorf("exec: %s: %w", bin, ctxErr)
+	}
+
+	if runErr == nil {
+		return nil
+	}
+
+	var exitErr *osexec.ExitError
+	if errors.As(runErr, &exitErr) {
+		return &Error{
+			Name:     bin,
+			Args:     append([]string(nil), argv...),
+			ExitCode: exitErr.ExitCode(),
+		}
+	}
+
+	// Startup failures (binary missing, exec permission denied) land here.
+	return fmt.Errorf("exec: %s: %w", bin, runErr)
+}
+
 func Run(ctx context.Context, cmd Cmd) (Result, error) {
 	if cmd.Name == "" {
 		return Result{}, errors.New("exec: Cmd.Name is required")

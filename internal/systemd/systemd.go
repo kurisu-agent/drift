@@ -20,8 +20,9 @@ func UnitFor(kart string) string { return UnitTemplate + kart + ".service" }
 
 type Client struct {
 	Binary string
-	// Runner overrides the subprocess layer for tests. Nil uses driftexec.
-	Runner func(ctx context.Context, cmd driftexec.Cmd) (driftexec.Result, error)
+	// Runner overrides the subprocess layer for tests. Nil uses
+	// driftexec.DefaultRunner.
+	Runner driftexec.Runner
 }
 
 func (c *Client) bin() string {
@@ -34,9 +35,9 @@ func (c *Client) bin() string {
 func (c *Client) run(ctx context.Context, args []string) (driftexec.Result, error) {
 	cmd := driftexec.Cmd{Name: c.bin(), Args: args}
 	if c.Runner != nil {
-		return c.Runner(ctx, cmd)
+		return c.Runner.Run(ctx, cmd)
 	}
-	return driftexec.Run(ctx, cmd)
+	return driftexec.DefaultRunner.Run(ctx, cmd)
 }
 
 func (c *Client) Enable(ctx context.Context, kart string) error {

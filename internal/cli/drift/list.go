@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"text/tabwriter"
 
+	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
@@ -36,11 +37,11 @@ type listResult struct {
 func runKartList(ctx context.Context, io IO, root *CLI, _ listCmd, deps deps) int {
 	circuit, err := resolveCircuit(root, deps)
 	if err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	var raw json.RawMessage
 	if err := deps.call(ctx, circuit, wire.MethodKartList, struct{}{}, &raw); err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	if root.Output == "json" {
 		fmt.Fprintln(io.Stdout, string(raw))
@@ -48,7 +49,7 @@ func runKartList(ctx context.Context, io IO, root *CLI, _ listCmd, deps deps) in
 	}
 	var res listResult
 	if err := json.Unmarshal(raw, &res); err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	if len(res.Karts) == 0 {
 		fmt.Fprintln(io.Stdout, "no karts on this circuit")
@@ -82,21 +83,21 @@ func runKartList(ctx context.Context, io IO, root *CLI, _ listCmd, deps deps) in
 func runKartInfo(ctx context.Context, io IO, root *CLI, cmd infoCmd, deps deps) int {
 	circuit, err := resolveCircuit(root, deps)
 	if err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	var raw json.RawMessage
 	if err := deps.call(ctx, circuit, wire.MethodKartInfo, map[string]string{"name": cmd.Name}, &raw); err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	// Always pretty-print — info's nested sub-objects don't flatten into
 	// a readable table.
 	var v any
 	if err := json.Unmarshal(raw, &v); err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	pretty, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	fmt.Fprintln(io.Stdout, string(pretty))
 	return 0

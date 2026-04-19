@@ -13,13 +13,6 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// ServerVersion duplicates the server.version RPC shape rather than
-// importing internal/server — drift stays independent of server layout.
-type ServerVersion struct {
-	Version string `json:"version"`
-	API     int    `json:"api"`
-}
-
 type compatKey struct{ circuit string }
 
 // CompatChecker runs the probe at most once per circuit. Safe for
@@ -63,7 +56,7 @@ func (c *CompatChecker) Check(ctx context.Context, circuit string, warnWriter io
 }
 
 func (c *CompatChecker) runProbe(ctx context.Context, circuit string) *compatOutcome {
-	var remote ServerVersion
+	var remote wire.ServerVersion
 	if err := c.client.Call(ctx, circuit, wire.MethodServerVersion, nil, &remote); err != nil {
 		return &compatOutcome{err: err}
 	}

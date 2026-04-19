@@ -3,13 +3,12 @@ package drift
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	osexec "os/exec"
-	"syscall"
-	"time"
 
+	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/connect"
+	driftexec "github.com/kurisu-agent/drift/internal/exec"
 )
 
 // aiCmd mosh/ssh's into the circuit and execs claude from $HOME/.drift,
@@ -27,7 +26,7 @@ const remoteAICmd = `cd "$HOME/.drift" && exec claude --dangerously-skip-permiss
 func runAI(ctx context.Context, io IO, root *CLI, cmd aiCmd, deps deps) int {
 	circuit, err := resolveCircuit(root, deps)
 	if err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	useMosh := !cmd.SSH && moshOnPath()
 	bin, argv := buildAIArgv(useMosh, circuit, cmd.ForwardAgent)
@@ -41,7 +40,7 @@ func runAI(ctx context.Context, io IO, root *CLI, cmd aiCmd, deps deps) int {
 	if errors.As(err, &ee) {
 		return ee.Code
 	}
-	return emitError(io, err)
+	return errfmt.Emit(io.Stderr, err)
 }
 
 // buildAIArgv: ssh uses -t to force a pty since claude is interactive.
@@ -65,21 +64,17 @@ func moshOnPath() bool {
 	return err == nil
 }
 
-// execAI wires stdio straight through so claude owns the TTY.
+// execAI routes the interactive claude child through driftexec.Interactive
+// and surfaces the child's exit code as connect.ExitError so runAI can
+// propagate it without errfmt's "error:" prefix.
 func execAI(ctx context.Context, bin string, argv []string, stdio connect.Stdio) error {
-	c := osexec.CommandContext(ctx, bin, argv...)
-	c.Stdin = stdio.Stdin
-	c.Stdout = stdio.Stdout
-	c.Stderr = stdio.Stderr
-	c.Cancel = func() error { return c.Process.Signal(syscall.SIGTERM) }
-	c.WaitDelay = 5 * time.Second
-	err := c.Run()
+	err := driftexec.Interactive(ctx, bin, argv, stdio.Stdin, stdio.Stdout, stdio.Stderr)
 	if err == nil {
 		return nil
 	}
-	var ee *osexec.ExitError
+	var ee *driftexec.Error
 	if errors.As(err, &ee) {
-		return &connect.ExitError{Code: ee.ExitCode()}
+		return &connect.ExitError{Code: ee.ExitCode}
 	}
-	return fmt.Errorf("exec %s: %w", bin, err)
+	return err
 }

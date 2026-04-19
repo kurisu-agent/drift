@@ -14,8 +14,15 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/kurisu-agent/drift/internal/cli/errfmt"
+	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/version"
 )
+
+// maxUpdateTarEntry caps the in-memory buffer for a single tar entry
+// during self-update. drift binaries are ~10 MB; 200 MiB is a generous
+// ceiling that still refuses obviously-hostile payloads.
+const maxUpdateTarEntry = 200 << 20
 
 type updateCmd struct {
 	Check   bool   `help:"Check for an update without downloading."`
@@ -39,7 +46,7 @@ func runUpdate(ctx context.Context, ioStreams IO, cmd updateCmd) int {
 	cur := version.Get().Version
 	latest, err := fetchLatestRelease(ctx, cmd.APIBase, cmd.Repo)
 	if err != nil {
-		return emitError(ioStreams, fmt.Errorf("check failed: %w", err))
+		return errfmt.Emit(ioStreams.Stderr, fmt.Errorf("check failed: %w", err))
 	}
 	latestClean := strings.TrimPrefix(latest.TagName, "v")
 	curClean := strings.TrimPrefix(cur, "v")
@@ -54,23 +61,23 @@ func runUpdate(ctx context.Context, ioStreams IO, cmd updateCmd) int {
 		return 0
 	}
 	if cur == "devel" || cur == "" {
-		return emitError(ioStreams, errors.New("refusing to self-update a development build; rebuild from source or install a tagged release"))
+		return errfmt.Emit(ioStreams.Stderr, errors.New("refusing to self-update a development build; rebuild from source or install a tagged release"))
 	}
 
 	asset, err := pickAsset(latest.Assets, runtime.GOOS, runtime.GOARCH)
 	if err != nil {
-		return emitError(ioStreams, err)
+		return errfmt.Emit(ioStreams.Stderr, err)
 	}
 	exe, err := os.Executable()
 	if err != nil {
-		return emitError(ioStreams, err)
+		return errfmt.Emit(ioStreams.Stderr, err)
 	}
 	exe, err = filepath.EvalSymlinks(exe)
 	if err != nil {
-		return emitError(ioStreams, err)
+		return errfmt.Emit(ioStreams.Stderr, err)
 	}
 	if err := downloadAndReplace(ctx, asset.BrowserDownloadURL, exe); err != nil {
-		return emitError(ioStreams, err)
+		return errfmt.Emit(ioStreams.Stderr, err)
 	}
 	fmt.Fprintf(ioStreams.Stdout, "updated to %s\n", latestClean)
 	return 0
@@ -144,7 +151,7 @@ func downloadAndReplace(ctx context.Context, url, dst string) error {
 	tr := tar.NewReader(gz)
 	for {
 		hdr, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return errors.New("tarball did not contain a drift binary")
 		}
 		if err != nil {
@@ -153,34 +160,13 @@ func downloadAndReplace(ctx context.Context, url, dst string) error {
 		if hdr.Typeflag != tar.TypeReg || filepath.Base(hdr.Name) != "drift" {
 			continue
 		}
-		return writeAtomic(dst, tr)
+		data, err := io.ReadAll(io.LimitReader(tr, maxUpdateTarEntry+1))
+		if err != nil {
+			return fmt.Errorf("tar: read drift entry: %w", err)
+		}
+		if int64(len(data)) > maxUpdateTarEntry {
+			return fmt.Errorf("tar: drift entry exceeds %d byte limit", maxUpdateTarEntry)
+		}
+		return config.WriteFileAtomic(dst, data, 0o755)
 	}
-}
-
-func writeAtomic(dst string, src io.Reader) error {
-	tmp, err := os.CreateTemp(filepath.Dir(dst), ".drift-update-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	cleanup := func() { _ = os.Remove(tmpName) }
-	if _, err := io.Copy(tmp, src); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return err
-	}
-	if err := tmp.Chmod(0o755); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		cleanup()
-		return err
-	}
-	if err := os.Rename(tmpName, dst); err != nil {
-		cleanup()
-		return err
-	}
-	return nil
 }

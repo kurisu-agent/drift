@@ -7,7 +7,7 @@ import (
 )
 
 // deleteCmd errors on missing (unlike start/stop/restart); not_found
-// flows through emitError like any other rpcerr.
+// flows through errfmt.Emit like any other rpcerr.
 type deleteCmd struct {
 	Name string `arg:"" help:"Kart name."`
 }

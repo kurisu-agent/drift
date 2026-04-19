@@ -12,18 +12,17 @@ import (
 	"strings"
 
 	"github.com/kurisu-agent/drift/internal/config"
+	"github.com/kurisu-agent/drift/internal/model"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"gopkg.in/yaml.v3"
 )
 
-// Tune: all fields optional — tunes compose defaults at `drift new` time.
-type Tune struct {
-	Starter      string `yaml:"starter,omitempty" json:"starter,omitempty"`
-	Devcontainer string `yaml:"devcontainer,omitempty" json:"devcontainer,omitempty"`
-	DotfilesRepo string `yaml:"dotfiles_repo,omitempty" json:"dotfiles_repo,omitempty"`
-	Features     string `yaml:"features,omitempty" json:"features,omitempty"`
-}
+// Tune is the on-disk tune shape. Kept as a local alias of model.Tune
+// so external callers (tests, CLI glue) that reference server.Tune
+// continue to compile. All fields optional — tunes compose defaults at
+// `drift new` time.
+type Tune = model.Tune
 
 // TuneResult splices the name in so renderers don't need to key the map.
 type TuneResult struct {

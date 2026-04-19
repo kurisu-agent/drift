@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 
+	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/connect"
 	"github.com/kurisu-agent/drift/internal/rpc/client"
 )
@@ -18,7 +19,7 @@ type connectCmd struct {
 func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps) int {
 	circuit, err := resolveCircuit(root, deps)
 	if err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	rpcClient := client.New()
 	d := connect.Deps{
@@ -42,5 +43,5 @@ func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps
 	if errors.As(err, &ee) {
 		return ee.Code
 	}
-	return emitError(io, err)
+	return errfmt.Emit(io.Stderr, err)
 }

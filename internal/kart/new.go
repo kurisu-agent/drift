@@ -11,6 +11,7 @@ import (
 
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/devpod"
+	"github.com/kurisu-agent/drift/internal/model"
 	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	yaml "gopkg.in/yaml.v3"
@@ -205,12 +206,10 @@ type Result struct {
 	Warning   string          `json:"warning,omitempty"`
 }
 
-// KartSource duplicates server.KartSource to keep this package under server
-// in the dep graph.
-type KartSource struct {
-	Mode string `json:"mode"`
-	URL  string `json:"url,omitempty"`
-}
+// KartSource is an alias for model.KartSource — shared with
+// internal/server so kart.new's Result and server's kart.info response
+// carry identical JSON.
+type KartSource = model.KartSource
 
 func writeKartConfig(kartDir string, r *Resolved, now time.Time) error {
 	if err := os.MkdirAll(kartDir, 0o700); err != nil {

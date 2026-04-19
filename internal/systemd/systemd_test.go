@@ -17,7 +17,7 @@ type stubRunner struct {
 	err    error
 }
 
-func (s *stubRunner) run(ctx context.Context, cmd driftexec.Cmd) (driftexec.Result, error) {
+func (s *stubRunner) Run(ctx context.Context, cmd driftexec.Cmd) (driftexec.Result, error) {
 	s.args = append([]string{cmd.Name}, cmd.Args...)
 	return s.result, s.err
 }
@@ -30,7 +30,7 @@ func TestUnitFor(t *testing.T) {
 
 func TestEnableBuildsCorrectArgv(t *testing.T) {
 	r := &stubRunner{}
-	c := &systemd.Client{Runner: r.run}
+	c := &systemd.Client{Runner: r}
 	if err := c.Enable(context.Background(), "alpha"); err != nil {
 		t.Fatalf("Enable returned %v", err)
 	}
@@ -42,7 +42,7 @@ func TestEnableBuildsCorrectArgv(t *testing.T) {
 
 func TestDisableBuildsCorrectArgv(t *testing.T) {
 	r := &stubRunner{}
-	c := &systemd.Client{Runner: r.run}
+	c := &systemd.Client{Runner: r}
 	if err := c.Disable(context.Background(), "alpha"); err != nil {
 		t.Fatalf("Disable returned %v", err)
 	}
@@ -67,7 +67,7 @@ func TestIsEnabledReadsStdoutToken(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.stdout, func(t *testing.T) {
 			r := &stubRunner{result: driftexec.Result{Stdout: []byte(tc.stdout)}}
-			c := &systemd.Client{Runner: r.run}
+			c := &systemd.Client{Runner: r}
 			got, err := c.IsEnabled(context.Background(), "alpha")
 			if err != nil {
 				t.Fatalf("IsEnabled returned %v", err)
@@ -88,7 +88,7 @@ func TestEnableMapsDenialStderrToDenialError(t *testing.T) {
 			FirstStderrLine: "Failed to connect to user bus: No such file or directory",
 		},
 	}
-	c := &systemd.Client{Runner: r.run}
+	c := &systemd.Client{Runner: r}
 	err := c.Enable(context.Background(), "alpha")
 	if err == nil {
 		t.Fatal("Enable returned nil err, want DenialError")
@@ -111,7 +111,7 @@ func TestEnableGenericExecErrorNotDenial(t *testing.T) {
 			FirstStderrLine: "Unit lakitu-kart@alpha.service not found.",
 		},
 	}
-	c := &systemd.Client{Runner: r.run}
+	c := &systemd.Client{Runner: r}
 	err := c.Enable(context.Background(), "alpha")
 	if err == nil {
 		t.Fatal("Enable returned nil err")

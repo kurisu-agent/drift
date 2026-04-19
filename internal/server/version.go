@@ -6,18 +6,14 @@ import (
 
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/version"
+	"github.com/kurisu-agent/drift/internal/wire"
 )
-
-type VersionResult struct {
-	Version string `json:"version"`
-	API     int    `json:"api"`
-}
 
 // Version is shared between the RPC handler and `lakitu version` so both
 // surfaces emit the same payload.
-func Version() VersionResult {
+func Version() wire.ServerVersion {
 	info := version.Get()
-	return VersionResult{Version: info.Version, API: info.APISchema}
+	return wire.ServerVersion{Version: info.Version, API: info.APISchema}
 }
 
 func VersionHandler(_ context.Context, params json.RawMessage) (any, error) {

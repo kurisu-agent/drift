@@ -43,7 +43,7 @@ func newAutostartDeps(t *testing.T) (server.KartAutostartDeps, *stubSystemdRunne
 		GarageDir: garage,
 		Systemd: &systemd.Client{
 			Binary: "systemctl",
-			Runner: runner.Run,
+			Runner: runner,
 		},
 	}
 	return deps, runner

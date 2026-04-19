@@ -41,7 +41,7 @@ func (f *fakeDevpod) Run(_ context.Context, cmd driftexec.Cmd) (driftexec.Result
 	return driftexec.Result{Stdout: []byte(r.stdout)}, r.err
 }
 
-func newKartDeps(t *testing.T, runner devpod.Runner) server.KartDeps {
+func newKartDeps(t *testing.T, runner driftexec.Runner) server.KartDeps {
 	t.Helper()
 	garage := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(garage, "karts"), 0o755); err != nil {

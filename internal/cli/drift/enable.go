@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
@@ -21,11 +22,11 @@ func runKartEnable(ctx context.Context, io IO, root *CLI, cmd enableCmd, deps de
 func runKartAutostart(ctx context.Context, io IO, root *CLI, name, method, verb string, deps deps) int {
 	circuit, err := resolveCircuit(root, deps)
 	if err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	var raw json.RawMessage
 	if err := deps.call(ctx, circuit, method, map[string]string{"name": name}, &raw); err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	return emitAutostartResult(io, root, verb, raw)
 }
@@ -40,7 +41,7 @@ func emitAutostartResult(io IO, root *CLI, verb string, raw json.RawMessage) int
 		Enabled bool   `json:"enabled"`
 	}
 	if err := json.Unmarshal(raw, &res); err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 	fmt.Fprintf(io.Stdout, "%s autostart for kart %q (enabled=%t)\n", verb, res.Name, res.Enabled)
 	return 0

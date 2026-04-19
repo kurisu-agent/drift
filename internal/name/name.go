@@ -3,7 +3,10 @@
 package name
 
 import (
+	"errors"
+	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 )
@@ -50,4 +53,24 @@ func Validate(kind, s string) error {
 			With("pattern", Pattern)
 	}
 	return nil
+}
+
+// SplitUserHost parses a "user@host[:port]" SSH target. host may include a
+// colon+port; the caller forwards it verbatim. An empty target returns
+// an error; a target without an @ returns (user="", host=target, nil).
+func SplitUserHost(target string) (user, host string, err error) {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return "", "", errors.New("SSH target is required")
+	}
+	at := strings.LastIndex(target, "@")
+	if at < 0 {
+		return "", target, nil
+	}
+	user = target[:at]
+	host = target[at+1:]
+	if user == "" || host == "" {
+		return "", "", fmt.Errorf("invalid SSH target %q: expected user@host", target)
+	}
+	return user, host, nil
 }

@@ -27,12 +27,12 @@ type newCmd struct {
 
 func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 	if cmd.Clone != "" && cmd.Starter != "" {
-		return emitError(io, errors.New("--clone and --starter are mutually exclusive"))
+		return errfmt.Emit(io.Stderr, errors.New("--clone and --starter are mutually exclusive"))
 	}
 
 	circuit, err := resolveCircuit(root, deps)
 	if err != nil {
-		return emitError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 
 	params := map[string]any{"name": cmd.Name}
@@ -64,13 +64,13 @@ func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 	rpcc := client.New()
 	var result kart.Result
 	if err := rpcc.Call(ctx, circuit, wire.MethodKartNew, params, &result); err != nil {
-		return emitRPCError(io, err)
+		return errfmt.Emit(io.Stderr, err)
 	}
 
 	if root.Output == "json" {
 		buf, mErr := json.Marshal(result)
 		if mErr != nil {
-			return emitError(io, mErr)
+			return errfmt.Emit(io.Stderr, mErr)
 		}
 		fmt.Fprintln(io.Stdout, string(buf))
 		return 0
@@ -92,8 +92,4 @@ func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 		fmt.Fprintf(io.Stderr, "warning: %s\n", result.Warning)
 	}
 	return 0
-}
-
-func emitRPCError(io IO, err error) int {
-	return errfmt.Emit(io.Stderr, err)
 }

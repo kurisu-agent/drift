@@ -12,28 +12,14 @@ import (
 const fallbackAuthorName = "drift"
 const fallbackAuthorEmail = "noreply@drift.local"
 
-// StarterRunner is the execution seam; tests substitute a fake that
-// records argv without touching git on disk.
-type StarterRunner interface {
-	Run(ctx context.Context, cmd driftexec.Cmd) (driftexec.Result, error)
-}
-
-type starterRunnerFunc func(ctx context.Context, cmd driftexec.Cmd) (driftexec.Result, error)
-
-func (f starterRunnerFunc) Run(ctx context.Context, cmd driftexec.Cmd) (driftexec.Result, error) {
-	return f(ctx, cmd)
-}
-
-var defaultStarterRunner StarterRunner = starterRunnerFunc(driftexec.Run)
-
 // Starter runs the history-strip flow: clone → rm .git → git init →
 // add+commit with character as author. The final directory path is what
 // kart.new passes to `devpod up` as the positional source.
 type Starter struct {
-	Runner StarterRunner
+	Runner driftexec.Runner
 }
 
-func NewStarter() *Starter { return &Starter{Runner: defaultStarterRunner} }
+func NewStarter() *Starter { return &Starter{Runner: driftexec.DefaultRunner} }
 
 // Strip clones url into destDir and rewrites the history to a single
 // "Initial commit from starter <url>" authored by char. destDir must be
@@ -51,7 +37,7 @@ func (s *Starter) Strip(ctx context.Context, url, destDir string, char *Characte
 
 	runner := s.Runner
 	if runner == nil {
-		runner = defaultStarterRunner
+		runner = driftexec.DefaultRunner
 	}
 
 	if _, err := runner.Run(ctx, driftexec.Cmd{

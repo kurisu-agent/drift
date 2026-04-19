@@ -6,6 +6,7 @@ import (
 
 	"github.com/kurisu-agent/drift/internal/devpod"
 	"github.com/kurisu-agent/drift/internal/rpc"
+	"github.com/kurisu-agent/drift/internal/wire"
 )
 
 // VerifyResult is the "heavy" setup-time probe — includes a devpod
@@ -14,7 +15,7 @@ import (
 type VerifyResult struct {
 	// Lakitu duplicates server.version's payload so verify is a drop-in
 	// superset in one round-trip.
-	Lakitu VersionResult `json:"lakitu"`
+	Lakitu wire.ServerVersion `json:"lakitu"`
 	// DevpodActual: empty means the probe failed; see DevpodError.
 	DevpodActual string `json:"devpod_actual,omitempty"`
 	// DevpodExpected: "" means dev build, no pin.
