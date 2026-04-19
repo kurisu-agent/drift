@@ -12,7 +12,10 @@ out of scope.
 
 Legend: `[x]` done · `[ ]` open · `[~]` partial.
 
-Phases 0–13, 16, 17 are fully done — see [archive/DONE.md](./archive/DONE.md)
+When a phase goes fully `[x]`, move it to [plans/archive/DONE.md](./plans/archive/DONE.md)
+so this file only tracks open work.
+
+Phases 0–13, 16, 17 are fully done — see [plans/archive/DONE.md](./plans/archive/DONE.md)
 for the historical record. Only phases with open or partial items are tracked below.
 
 ---
@@ -46,3 +49,4 @@ Tracked here for "no, that's later" answers. See [PLAN.md § Future](./PLAN.md#f
 - IDE integration via devpod's `--ide`
 - Auto port detection
 - NixOS module for packaged install
+- `drift provision <host>` — one-shot circuit bootstrap over SSH. Default to the static-binary path: detect remote `uname -s -m`, pull matching `lakitu` + `devpod` assets from the latest drift release, install to `/usr/local/bin`, drop `packaging/systemd/lakitu-kart@.service` into `~/.config/systemd/user/`, `loginctl enable-linger`, run `lakitu init`. If `ssh host command -v nix` succeeds and flakes are enabled, prefer `nix profile install github:kurisu-agent/drift#lakitu`. Flags: `--no-nix` to force binary path, `--install-dir`, `--dry-run`.

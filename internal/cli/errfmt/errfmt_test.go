@@ -2,7 +2,6 @@ package errfmt_test
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -22,7 +21,7 @@ func TestEmit_NilErrorReturnsOK(t *testing.T) {
 	}
 }
 
-func TestEmit_RPCErrorFormatsTwoLinesAndReturnsCode(t *testing.T) {
+func TestEmit_RPCErrorRendersHeaderTypeAndDataLines(t *testing.T) {
 	re := rpcerr.NotFound(rpcerr.TypeKartNotFound, "kart %q not found", "ghost").
 		With("kart", "ghost")
 
@@ -32,31 +31,36 @@ func TestEmit_RPCErrorFormatsTwoLinesAndReturnsCode(t *testing.T) {
 	if rc != int(rpcerr.CodeNotFound) {
 		t.Errorf("rc = %d, want %d", rc, rpcerr.CodeNotFound)
 	}
+	want := "error: kart \"ghost\" not found\n  type: kart_not_found\n  kart: ghost\n"
+	if got := buf.String(); got != want {
+		t.Errorf("output = %q, want %q", got, want)
+	}
+}
+
+func TestEmit_DataKeysAreSortedForStableOutput(t *testing.T) {
+	re := rpcerr.Conflict(rpcerr.TypeStaleKart, "kart %q is stale", "x").
+		With("suggestion", "drift delete x").
+		With("kart", "x")
+
+	var buf bytes.Buffer
+	errfmt.Emit(&buf, re)
+
 	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("got %d lines, want 2: %q", len(lines), buf.String())
+	// Header, type line, then data keys in lexicographic order — "kart" before
+	// "suggestion".
+	want := []string{
+		`error: kart "x" is stale`,
+		`  type: stale_kart`,
+		`  kart: x`,
+		`  suggestion: drift delete x`,
 	}
-	want := `error: kart "ghost" not found`
-	if lines[0] != want {
-		t.Errorf("line 1 = %q, want %q", lines[0], want)
+	if len(lines) != len(want) {
+		t.Fatalf("got %d lines, want %d: %q", len(lines), len(want), buf.String())
 	}
-	// Line 2 must be valid single-line JSON of the error object.
-	var got map[string]any
-	if err := json.Unmarshal([]byte(lines[1]), &got); err != nil {
-		t.Fatalf("line 2 is not valid JSON: %v (%q)", err, lines[1])
-	}
-	if got["code"].(float64) != 3 {
-		t.Errorf("code = %v, want 3", got["code"])
-	}
-	if got["message"] != `kart "ghost" not found` {
-		t.Errorf("message = %v", got["message"])
-	}
-	data := got["data"].(map[string]any)
-	if data["type"] != "kart_not_found" || data["kart"] != "ghost" {
-		t.Errorf("data = %v", data)
-	}
-	if strings.Contains(lines[1], "\n") {
-		t.Errorf("line 2 must be single-line JSON: %q", lines[1])
+	for i := range want {
+		if lines[i] != want[i] {
+			t.Errorf("line[%d] = %q, want %q", i, lines[i], want[i])
+		}
 	}
 }
 
@@ -81,13 +85,14 @@ func TestEmit_WrappedRPCErrorStillRenderedTyped(t *testing.T) {
 	if rc != int(rpcerr.CodeConflict) {
 		t.Errorf("rc = %d, want %d", rc, rpcerr.CodeConflict)
 	}
-	// Both halves must be present — the JSON line proves the typed error
-	// survived errors.As and wasn't rendered as opaque text.
-	if !strings.Contains(buf.String(), `"code":4`) {
-		t.Errorf("missing code:4 in output: %q", buf.String())
+	out := buf.String()
+	// The typed error must survive errors.As and surface as an indented
+	// type: line — proves we didn't fall through to the untyped text path.
+	if !strings.Contains(out, "  type: name_collision\n") {
+		t.Errorf("missing type line in output: %q", out)
 	}
-	if !strings.Contains(buf.String(), `"type":"name_collision"`) {
-		t.Errorf("missing type in output: %q", buf.String())
+	if !strings.HasPrefix(out, `error: kart "x" already exists`+"\n") {
+		t.Errorf("wrong header line in output: %q", out)
 	}
 }
 

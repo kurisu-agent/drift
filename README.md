@@ -16,7 +16,15 @@ server-side binary on each remote host (a *circuit*). Together they wrap
 
 ## Install
 
-Circuit (Linux):
+Workstation (mac/linux/termux):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kurisu-agent/drift/main/scripts/install.sh | sh
+```
+
+Installs into `~/.local/bin` (or `/usr/local/bin` when run as root). `DRIFT_INSTALL_DIR=` overrides the target; `DRIFT_VERSION=v1.2.3` pins a tag. Later: `drift update` to pull the latest release.
+
+Circuit (Linux host):
 
 ```bash
 curl -fsSL https://github.com/kurisu-agent/drift/releases/latest/download/lakitu_linux_amd64.tar.gz \
@@ -30,13 +38,6 @@ mkdir -p ~/.config/systemd/user
 curl -fsSL https://raw.githubusercontent.com/kurisu-agent/drift/main/packaging/systemd/lakitu-kart@.service \
   > ~/.config/systemd/user/lakitu-kart@.service
 lakitu init
-```
-
-Workstation (mac/linux — drift shells out to `ssh`/`mosh` only):
-
-```bash
-curl -fsSL https://github.com/kurisu-agent/drift/releases/latest/download/drift_darwin_arm64.tar.gz \
-  | sudo tar -xz -C /usr/local/bin drift
 ```
 
 ## Quickstart

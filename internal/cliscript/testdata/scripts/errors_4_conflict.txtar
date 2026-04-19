@@ -11,7 +11,6 @@ lakitu character add kurisu --git-name 'Kurisu Makise' --git-email kurisu@exampl
 # Second add of the same name → code 4, name_collision.
 ! lakitu character add kurisu --git-name 'Kurisu Makise' --git-email kurisu@example.com
 stderr '^error: character "kurisu" already exists'
-stderr '"code":4'
-stderr '"type":"name_collision"'
-stderr '"name":"kurisu"'
+stderr '^  type: name_collision'
+stderr '^  name: kurisu'
 ! stdout .

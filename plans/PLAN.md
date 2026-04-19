@@ -697,10 +697,11 @@ SSH's own exit **255** is never used by drift or lakitu. When drift observes 255
 
 ```
 error: kart 'myproject' not found
-{"code":3,"message":"kart 'myproject' not found","data":{"type":"kart_not_found","kart":"myproject"}}
+  type: kart_not_found
+  kart: myproject
 ```
 
-Line 1: `error: ` + `message`. Line 2: the error object on a single line. **stdout stays reserved** for structured command output (table renderings of `lakitu list`, JSON for `--output json`, etc.) and never carries error payloads. Exit code mirrors `code`.
+Line 1: `error: ` + `message`. Following lines: `  <key>: <value>`, starting with `type` (the stable snake_case identifier scripts grep on) and then each entry in `data`, sorted by key for deterministic output. **stdout stays reserved** for structured command output (table renderings of `lakitu list`, JSON for `--output json`, etc.) and never carries error payloads. Exit code mirrors `code`.
 
 The RPC path uses the same error object but wraps it in a JSON-RPC response envelope on stdout instead — see [RPC protocol](#rpc-protocol).
 

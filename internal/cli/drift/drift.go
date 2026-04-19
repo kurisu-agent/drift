@@ -36,6 +36,8 @@ type CLI struct {
 	Connect connectCmd `cmd:"" help:"Connect to a kart via mosh (ssh fallback); auto-starts if stopped."`
 	AI      aiCmd      `cmd:"" name:"ai" help:"Launch claude --dangerously-skip-permissions on the circuit (mosh/ssh)."`
 
+	Update updateCmd `cmd:"" name:"update" help:"Check GitHub for a newer drift release and self-install."`
+
 	SshProxy sshProxyCmd `cmd:"" name:"ssh-proxy" hidden:"" help:"ProxyCommand helper for drift.<circuit>.<kart> aliases (invoked by OpenSSH)."`
 }
 
@@ -115,6 +117,8 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runConnect(ctx, io, &cli, cli.Connect, deps)
 	case "ai":
 		return runAI(ctx, io, &cli, cli.AI, deps)
+	case "update":
+		return runUpdate(ctx, io, cli.Update)
 	case "ssh-proxy <alias>", "ssh-proxy <alias> <port>":
 		return runSSHProxy(ctx, io, &cli, cli.SshProxy, deps)
 	default:

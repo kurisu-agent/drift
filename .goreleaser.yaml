@@ -30,9 +30,13 @@ builds:
     goos:
       - linux
       - darwin
+      - android
     goarch:
       - amd64
       - arm64
+    ignore:
+      - goos: android
+        goarch: amd64
 
   - id: lakitu
     main: ./cmd/lakitu
