@@ -4,19 +4,24 @@ import (
 	"fmt"
 
 	"github.com/alecthomas/kong"
+	"github.com/kurisu-agent/drift/internal/cli/errfmt"
+	"github.com/kurisu-agent/drift/internal/clihelp"
 )
 
-// helpCmd emits a curated catalog. Kong's --help covers per-command
-// flags; this is the one point an agent can invoke to see the full
-// command surface at a glance.
-type helpCmd struct{}
+// helpCmd emits a curated catalog by default. --full falls back to the
+// Kong-derived catalog (every leaf command + RPC methods + exit codes)
+// for when an agent or human wants the kitchen sink.
+type helpCmd struct {
+	Full bool `help:"Print the full Kong-derived catalog, including RPC methods."`
+}
 
 // driftHelp is hand-curated, not derived from Kong, so it can group
 // related kart/circuit verbs onto single lines and stay under ~20 lines.
-// Keep it in sync when adding or renaming commands.
+// Keep it in sync when adding or renaming commands; --full is the
+// auto-derived fallback that cannot drift.
 const driftHelp = `drift — stateless client for remote devcontainer workspaces.
 Shells out via ssh and invokes lakitu on a circuit over JSON-RPC 2.0.
-Run ` + "`drift <cmd> --help`" + ` for per-command flags. Output: -o text|json.
+Run ` + "`drift <cmd> --help`" + ` for per-command flags, ` + "`drift help --full`" + ` for all.
 
 circuit add|list|rm               Manage circuits (SSH config + client state).
 circuit set default|name          Set a circuit config field.
@@ -35,7 +40,25 @@ ai                                Launch claude on the circuit (mosh/ssh).
 Exit: 0 ok · 2 user error · 3 not-found · 4 conflict.
 `
 
-func runHelp(io IO, _ *kong.Kong) int {
-	fmt.Fprint(io.Stdout, driftHelp)
+const driftHelpFullIntro = `drift is the stateless workstation client. Every non-local call shells out
+to ssh and invokes lakitu on a circuit via JSON-RPC 2.0. Server state lives
+on the circuit under ~/.drift/garage/.`
+
+func runHelp(io IO, parser *kong.Kong, cmd helpCmd) int {
+	if !cmd.Full {
+		fmt.Fprint(io.Stdout, driftHelp)
+		return 0
+	}
+	doc := clihelp.Doc{
+		App:   parser,
+		Intro: driftHelpFullIntro,
+		Sections: []clihelp.Section{
+			clihelp.RPCMethodsSection(),
+			clihelp.ExitCodesSection(),
+		},
+	}
+	if err := clihelp.Render(io.Stdout, doc); err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
 	return 0
 }
