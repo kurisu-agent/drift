@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"regexp"
 )
 
 type Client struct {
@@ -15,9 +14,6 @@ type ClientCircuit struct {
 	Host string `yaml:"host"`
 }
 
-// Circuit names share the kart-name shape.
-var circuitNameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
-
 // ManagesSSHConfig defaults to true when the field is absent.
 func (c *Client) ManagesSSHConfig() bool {
 	if c.ManageSSHConfig == nil {
@@ -28,8 +24,8 @@ func (c *Client) ManagesSSHConfig() bool {
 
 func (c *Client) Validate() error {
 	for name, circuit := range c.Circuits {
-		if !circuitNameRE.MatchString(name) {
-			return fmt.Errorf("config: circuit name %q invalid (must match %s)", name, circuitNameRE.String())
+		if !CircuitNameRE.MatchString(name) {
+			return fmt.Errorf("config: circuit name %q invalid (must match %s)", name, CircuitNameRE.String())
 		}
 		if circuit.Host == "" {
 			return fmt.Errorf("config: circuit %q: host is required", name)

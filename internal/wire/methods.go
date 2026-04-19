@@ -4,6 +4,7 @@ package wire
 // compile time rather than on the wire.
 const (
 	MethodServerVersion = "server.version"
+	MethodServerInfo    = "server.info"
 	MethodServerInit    = "server.init"
 	MethodServerVerify  = "server.verify"
 
@@ -42,7 +43,7 @@ const (
 // consumers (cliscript, clihelp, docs) don't have to grep.
 func Methods() []string {
 	return []string{
-		MethodServerVersion, MethodServerInit, MethodServerVerify,
+		MethodServerVersion, MethodServerInfo, MethodServerInit, MethodServerVerify,
 		MethodKartNew, MethodKartStart, MethodKartStop, MethodKartRestart,
 		MethodKartDelete, MethodKartList, MethodKartInfo,
 		MethodKartEnable, MethodKartDisable, MethodKartLogs,

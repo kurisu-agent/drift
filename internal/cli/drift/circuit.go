@@ -3,32 +3,36 @@ package drift
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/cli/style"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/name"
+	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/sshconf"
+	"github.com/kurisu-agent/drift/internal/wire"
 )
 
 type circuitCmd struct {
-	Add  circuitAddCmd  `cmd:"" help:"Register a circuit (updates client config + SSH config)."`
+	Add  circuitAddCmd  `cmd:"" help:"Register a circuit (probes for name, updates client config + SSH config)."`
 	Rm   circuitRmCmd   `cmd:"" help:"Unregister a circuit."`
 	List circuitListCmd `cmd:"" help:"List configured circuits."`
+	Set  circuitSetCmd  `cmd:"" help:"Set a config field on the target circuit (e.g. name)."`
 }
 
+// circuitAddCmd: the positional arg is the raw SSH destination. The
+// canonical circuit name is discovered via server.info — clients don't pick
+// names, circuits advertise them.
 type circuitAddCmd struct {
-	Name        string `arg:"" help:"Circuit name (lowercase, matches ^[a-z][a-z0-9-]{0,62}$)."`
-	Host        string `name:"host" help:"SSH destination, e.g. user@host or user@host:port." required:""`
+	// UserHost is optional when --tailscale is passed (the picker fills it).
+	UserHost    string `arg:"" name:"user@host" optional:"" help:"SSH destination, e.g. alice@devbox or alice@devbox:2222."`
+	Tailscale   bool   `name:"tailscale" help:"Pick the destination from online tailscale peers (mutually exclusive with user@host)."`
 	Default     bool   `name:"default" help:"Set as the default circuit."`
 	NoSSHConfig bool   `name:"no-ssh-config" help:"Skip writing ~/.ssh/config and ~/.config/drift/ssh_config."`
-	NoProbe     bool   `name:"no-probe" help:"Skip the server.version probe after writing config."`
 }
 
 type circuitRmCmd struct {
@@ -37,17 +41,63 @@ type circuitRmCmd struct {
 
 type circuitListCmd struct{}
 
-// runCircuitAdd: probe failures are reported but don't abort — user retries.
+// circuitSetCmd namespaces `drift circuit set <key> <value>` so we can
+// extend to more mutable fields later without growing new subcommands.
+type circuitSetCmd struct {
+	Name circuitSetNameCmd `cmd:"" help:"Rename the target circuit (rewrites server config + local alias)."`
+}
+
+type circuitSetNameCmd struct {
+	NewName string `arg:"" name:"new-name" help:"New circuit name."`
+}
+
+// runCircuitAdd probes the raw SSH target for the canonical circuit name,
+// then writes the client config + SSH block keyed off that name. An
+// already-present name pointing at a different host is a collision error —
+// rename on the server first.
 func runCircuitAdd(ctx context.Context, io IO, root *CLI, cmd circuitAddCmd, deps deps) int {
-	if err := name.Validate("circuit", cmd.Name); err != nil {
-		return errfmt.Emit(io.Stderr, err)
+	if cmd.Tailscale && cmd.UserHost != "" {
+		return errfmt.Emit(io.Stderr, rpcerr.UserError(rpcerr.TypeMutuallyExclusive,
+			"circuit add: --tailscale and user@host are mutually exclusive"))
 	}
-	if strings.TrimSpace(cmd.Host) == "" {
-		return errfmt.Emit(io.Stderr, errors.New("--host is required"))
+	if cmd.Tailscale {
+		target, ok, err := tailscalePicker(ctx, io.Stdin, io.Stderr)
+		if err != nil {
+			return errfmt.Emit(io.Stderr, err)
+		}
+		if !ok {
+			fmt.Fprintln(io.Stderr, "aborted")
+			return 1
+		}
+		cmd.UserHost = target
 	}
-	userPart, hostPart, err := name.SplitUserHost(cmd.Host)
+	if cmd.UserHost == "" {
+		return errfmt.Emit(io.Stderr, rpcerr.UserError(rpcerr.TypeInvalidFlag,
+			"circuit add: user@host is required (or pass --tailscale to pick from peers)"))
+	}
+	userPart, hostPart, err := name.SplitUserHost(cmd.UserHost)
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
+	}
+	if userPart == "" {
+		return errfmt.Emit(io.Stderr, rpcerr.UserError(rpcerr.TypeInvalidFlag,
+			"circuit add: user is required (use alice@host, not bare host)"))
+	}
+
+	sshArgs, err := name.SSHArgsFor(cmd.UserHost)
+	if err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+	if deps.probeInfo == nil {
+		return errfmt.Emit(io.Stderr, rpcerr.Internal("circuit add: probeInfo not configured"))
+	}
+	info, err := deps.probeInfo(ctx, sshArgs)
+	if err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+	if !config.CircuitNameRE.MatchString(info.Name) {
+		return errfmt.Emit(io.Stderr, rpcerr.Internal(
+			"server returned invalid circuit name %q (operator: set `drift circuit set name <slug>` on the circuit)", info.Name))
 	}
 
 	cfgPath, err := deps.clientConfigPath()
@@ -61,9 +111,14 @@ func runCircuitAdd(ctx context.Context, io IO, root *CLI, cmd circuitAddCmd, dep
 	if cfg.Circuits == nil {
 		cfg.Circuits = make(map[string]config.ClientCircuit)
 	}
-	cfg.Circuits[cmd.Name] = config.ClientCircuit{Host: cmd.Host}
+	if existing, ok := cfg.Circuits[info.Name]; ok && existing.Host != cmd.UserHost {
+		return errfmt.Emit(io.Stderr, rpcerr.Conflict(rpcerr.TypeNameCollision,
+			"circuit %q already configured for %s (rename the new server via `drift circuit set name <other-name>` or remove the existing entry with `drift circuit rm %s`)",
+			info.Name, existing.Host, info.Name).With("circuit", info.Name).With("existing_host", existing.Host))
+	}
+	cfg.Circuits[info.Name] = config.ClientCircuit{Host: cmd.UserHost}
 	if cmd.Default || cfg.DefaultCircuit == "" {
-		cfg.DefaultCircuit = cmd.Name
+		cfg.DefaultCircuit = info.Name
 	}
 	if err := config.SaveClient(cfgPath, cfg); err != nil {
 		return errfmt.Emit(io.Stderr, err)
@@ -81,7 +136,7 @@ func runCircuitAdd(ctx context.Context, io IO, root *CLI, cmd circuitAddCmd, dep
 		if err := mgr.EnsureSocketsDir(); err != nil {
 			return errfmt.Emit(io.Stderr, err)
 		}
-		if err := mgr.WriteCircuitBlock(cmd.Name, hostPart, userPart); err != nil {
+		if err := mgr.WriteCircuitBlock(info.Name, hostPart, userPart); err != nil {
 			return errfmt.Emit(io.Stderr, err)
 		}
 		if err := mgr.EnsureWildcardBlock(); err != nil {
@@ -89,13 +144,7 @@ func runCircuitAdd(ctx context.Context, io IO, root *CLI, cmd circuitAddCmd, dep
 		}
 	}
 
-	var probe *probeResult
-	var probeErr error
-	if !cmd.NoProbe && deps.probe != nil {
-		probe, probeErr = deps.probe(ctx, cmd.Name)
-	}
-
-	return emitCircuitAdd(io, root, cmd.Name, cfg, manageSSH, probe, probeErr)
+	return emitCircuitAdd(io, root, info, cfg, manageSSH)
 }
 
 // runCircuitRm leaves the ~/.ssh/config Include intact — other circuits
@@ -202,24 +251,22 @@ func runCircuitList(io IO, root *CLI, deps deps) int {
 	return 0
 }
 
-func emitCircuitAdd(io IO, root *CLI, circuitName string, cfg *config.Client, manageSSH bool, probe *probeResult, probeErr error) int {
+func emitCircuitAdd(io IO, root *CLI, info *wire.ServerInfo, cfg *config.Client, manageSSH bool) int {
 	if root.Output == "json" {
 		payload := struct {
-			Circuit    string       `json:"circuit"`
-			Host       string       `json:"host"`
-			Default    bool         `json:"default"`
-			ManagedSSH bool         `json:"managed_ssh_config"`
-			Probe      *probeResult `json:"probe,omitempty"`
-			ProbeError string       `json:"probe_error,omitempty"`
+			Circuit    string `json:"circuit"`
+			Host       string `json:"host"`
+			Default    bool   `json:"default"`
+			ManagedSSH bool   `json:"managed_ssh_config"`
+			Lakitu     string `json:"lakitu_version"`
+			API        int    `json:"api"`
 		}{
-			Circuit:    circuitName,
-			Host:       cfg.Circuits[circuitName].Host,
-			Default:    cfg.DefaultCircuit == circuitName,
+			Circuit:    info.Name,
+			Host:       cfg.Circuits[info.Name].Host,
+			Default:    cfg.DefaultCircuit == info.Name,
 			ManagedSSH: manageSSH,
-			Probe:      probe,
-		}
-		if probeErr != nil {
-			payload.ProbeError = probeErr.Error()
+			Lakitu:     info.Version,
+			API:        info.API,
 		}
 		buf, err := json.Marshal(payload)
 		if err != nil {
@@ -229,19 +276,16 @@ func emitCircuitAdd(io IO, root *CLI, circuitName string, cfg *config.Client, ma
 		return 0
 	}
 
-	fmt.Fprintf(io.Stdout, "registered circuit %q (host %s)\n", circuitName, cfg.Circuits[circuitName].Host)
-	if cfg.DefaultCircuit == circuitName {
-		fmt.Fprintln(io.Stdout, "  set as default circuit")
+	p := style.For(io.Stdout, false)
+	fmt.Fprintf(io.Stdout, "registered circuit %s (host %s)\n",
+		p.Accent(info.Name), cfg.Circuits[info.Name].Host)
+	if cfg.DefaultCircuit == info.Name {
+		fmt.Fprintln(io.Stdout, p.Dim("  set as default circuit"))
 	}
 	if manageSSH {
-		fmt.Fprintln(io.Stdout, "  wrote SSH config block drift."+circuitName)
+		fmt.Fprintln(io.Stdout, p.Dim("  wrote SSH config block drift."+info.Name))
 	}
-	switch {
-	case probe != nil:
-		fmt.Fprintf(io.Stdout, "  probe ok — lakitu %s (api %d, %dms)\n", probe.Version, probe.API, probe.LatencyMS)
-	case probeErr != nil:
-		fmt.Fprintf(io.Stderr, "warning: probe failed: %v\n", probeErr)
-	}
+	fmt.Fprintf(io.Stdout, "  %s lakitu %s (api %d)\n", p.Dim("probe ok —"), info.Version, info.API)
 	return 0
 }
 
@@ -259,6 +303,91 @@ func emitCircuitRm(io IO, root *CLI, circuitName string) int {
 		return 0
 	}
 	fmt.Fprintf(io.Stdout, "removed circuit %q\n", circuitName)
+	return 0
+}
+
+// runCircuitSetName renames the circuit end-to-end: it updates the server
+// via config.set, then rewrites the client-side config entry + SSH block
+// under the new name so the local alias tracks the server's truth.
+func runCircuitSetName(ctx context.Context, io IO, root *CLI, cmd circuitSetNameCmd, deps deps) int {
+	if err := name.Validate("circuit", cmd.NewName); err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+	oldName, err := resolveCircuit(root, deps)
+	if err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+	if oldName == cmd.NewName {
+		fmt.Fprintf(io.Stdout, "circuit %q is already named %q\n", oldName, cmd.NewName)
+		return 0
+	}
+
+	// Push the rename to the server first — if this fails, the client-side
+	// config still matches reality on disk.
+	if err := deps.call(ctx, oldName, wire.MethodConfigSet,
+		map[string]string{"key": "name", "value": cmd.NewName}, nil); err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+
+	// Update local config + SSH block to use the new name.
+	cfgPath, err := deps.clientConfigPath()
+	if err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+	cfg, err := config.LoadClient(cfgPath)
+	if err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+	entry, ok := cfg.Circuits[oldName]
+	if !ok {
+		return errfmt.Emit(io.Stderr, fmt.Errorf("circuit %q not found in local config", oldName))
+	}
+	if _, collides := cfg.Circuits[cmd.NewName]; collides {
+		return errfmt.Emit(io.Stderr, rpcerr.Conflict(rpcerr.TypeNameCollision,
+			"local circuit %q already exists; server rename succeeded but local rewrite blocked — remove the old entry with `drift circuit rm %s`",
+			cmd.NewName, cmd.NewName).With("circuit", cmd.NewName))
+	}
+	delete(cfg.Circuits, oldName)
+	cfg.Circuits[cmd.NewName] = entry
+	if cfg.DefaultCircuit == oldName {
+		cfg.DefaultCircuit = cmd.NewName
+	}
+	if err := config.SaveClient(cfgPath, cfg); err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+
+	if cfg.ManagesSSHConfig() {
+		mgr, err := sshManagerFor(cfgPath)
+		if err != nil {
+			return errfmt.Emit(io.Stderr, err)
+		}
+		userPart, hostPart, err := name.SplitUserHost(entry.Host)
+		if err != nil {
+			return errfmt.Emit(io.Stderr, err)
+		}
+		if err := mgr.RemoveCircuitBlock(oldName); err != nil {
+			return errfmt.Emit(io.Stderr, err)
+		}
+		if err := mgr.WriteCircuitBlock(cmd.NewName, hostPart, userPart); err != nil {
+			return errfmt.Emit(io.Stderr, err)
+		}
+		if err := mgr.EnsureWildcardBlock(); err != nil {
+			return errfmt.Emit(io.Stderr, err)
+		}
+	}
+
+	if root.Output == "json" {
+		buf, err := json.Marshal(struct {
+			Old string `json:"old_name"`
+			New string `json:"new_name"`
+		}{Old: oldName, New: cmd.NewName})
+		if err != nil {
+			return errfmt.Emit(io.Stderr, err)
+		}
+		fmt.Fprintln(io.Stdout, string(buf))
+		return 0
+	}
+	fmt.Fprintf(io.Stdout, "renamed circuit %q → %q\n", oldName, cmd.NewName)
 	return 0
 }
 

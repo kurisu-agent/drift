@@ -120,21 +120,37 @@ func buildRequest(id json.RawMessage, method string, params any) ([]byte, error)
 // drift-managed Host entry in ~/.config/drift/ssh_config.
 func SSHTransport() Transport {
 	return func(ctx context.Context, circuit string, request []byte) ([]byte, error) {
-		alias := "drift." + circuit
-		res, err := driftexec.Run(ctx, driftexec.Cmd{
-			Name:  "ssh",
-			Args:  []string{alias, "lakitu", "rpc"},
-			Stdin: bytes.NewReader(request),
-		})
-		if err != nil {
-			te := &TransportError{ExitCode: -1, Cause: err}
-			var ee *driftexec.Error
-			if errors.As(err, &ee) {
-				te.ExitCode = ee.ExitCode
-				te.Stderr = string(ee.Stderr)
-			}
-			return nil, te
-		}
-		return res.Stdout, nil
+		return runSSHRPC(ctx, []string{"drift." + circuit}, request)
 	}
+}
+
+// SSHTransportArgs ignores the circuit argument and prepends sshArgs before
+// the `lakitu rpc` invocation. Used during `drift circuit add` to probe
+// before a drift.<name> alias exists on disk — the caller passes e.g.
+// ["-p", "2222", "alice@host"] for a custom-port destination, or just
+// ["alice@host"] for the default port.
+func SSHTransportArgs(sshArgs []string) Transport {
+	frozen := append([]string(nil), sshArgs...)
+	return func(ctx context.Context, _ string, request []byte) ([]byte, error) {
+		return runSSHRPC(ctx, frozen, request)
+	}
+}
+
+func runSSHRPC(ctx context.Context, sshArgs []string, request []byte) ([]byte, error) {
+	args := append(append([]string(nil), sshArgs...), "lakitu", "rpc")
+	res, err := driftexec.Run(ctx, driftexec.Cmd{
+		Name:  "ssh",
+		Args:  args,
+		Stdin: bytes.NewReader(request),
+	})
+	if err != nil {
+		te := &TransportError{ExitCode: -1, Cause: err}
+		var ee *driftexec.Error
+		if errors.As(err, &ee) {
+			te.ExitCode = ee.ExitCode
+			te.Stderr = string(ee.Stderr)
+		}
+		return nil, te
+	}
+	return res.Stdout, nil
 }

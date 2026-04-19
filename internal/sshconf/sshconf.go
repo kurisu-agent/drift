@@ -353,8 +353,15 @@ func (m *Manager) EnsureSocketsDir() error {
 }
 
 func circuitBlock(name, host, user string) HostBlock {
+	// Accept host as either "example.com" or "example.com:2222"; the
+	// explicit `Port` directive matters because OpenSSH does not parse a
+	// colon-port inside HostName.
+	hostname, port := splitHostPort(host)
 	body := []string{
-		"  HostName " + host,
+		"  HostName " + hostname,
+	}
+	if port != "" {
+		body = append(body, "  Port "+port)
 	}
 	if user != "" {
 		body = append(body, "  User "+user)
@@ -367,6 +374,31 @@ func circuitBlock(name, host, user string) HostBlock {
 		"  ServerAliveCountMax 3",
 	)
 	return HostBlock{Name: CircuitHostName(name), Body: body}
+}
+
+// splitHostPort is a tiny local variant so sshconf doesn't import internal/name.
+// Bracketed IPv6 (`[::1]:22`) preserves the brackets in HostName; bare IPv6
+// with multiple colons is left intact with no port extraction.
+func splitHostPort(host string) (hostname, port string) {
+	if strings.HasPrefix(host, "[") {
+		end := strings.Index(host, "]")
+		if end < 0 {
+			return host, ""
+		}
+		hostname = host[:end+1]
+		rest := host[end+1:]
+		if strings.HasPrefix(rest, ":") {
+			return hostname, rest[1:]
+		}
+		return hostname, ""
+	}
+	if strings.Count(host, ":") > 1 {
+		return host, ""
+	}
+	if i := strings.IndexByte(host, ':'); i >= 0 {
+		return host[:i], host[i+1:]
+	}
+	return host, ""
 }
 
 func wildcardBlock() HostBlock {

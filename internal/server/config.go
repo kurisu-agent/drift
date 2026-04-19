@@ -18,6 +18,7 @@ type ConfigSetParams struct {
 // ServerConfig is the JSON mirror of config.Server (yaml on disk, snake_case
 // JSON on the wire).
 type ServerConfig struct {
+	Name             string      `json:"name,omitempty"`
 	DefaultTune      string      `json:"default_tune"`
 	DefaultCharacter string      `json:"default_character"`
 	NixCacheURL      string      `json:"nix_cache_url"`
@@ -30,6 +31,7 @@ type ChestConfig struct {
 
 func toServerConfig(s *config.Server) ServerConfig {
 	return ServerConfig{
+		Name:             s.ResolveName(),
 		DefaultTune:      s.DefaultTune,
 		DefaultCharacter: s.DefaultCharacter,
 		NixCacheURL:      s.NixCacheURL,
@@ -74,6 +76,8 @@ func (d *Deps) ConfigSetHandler(_ context.Context, params json.RawMessage) (any,
 
 func applyConfigKey(s *config.Server, key, value string) error {
 	switch key {
+	case "name":
+		s.Name = value
 	case "default_tune":
 		s.DefaultTune = value
 	case "default_character":

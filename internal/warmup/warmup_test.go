@@ -10,13 +10,21 @@ import (
 
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
+	"github.com/kurisu-agent/drift/internal/wire"
 )
 
 // newFakeDeps builds a Deps whose config is held in memory and whose RPC
-// calls are recorded. The caller mutates probeResults / probeErrs before
-// Run is invoked.
+// calls are recorded. The caller mutates probeInfos / probeErrs before
+// Run is invoked. probeInfos is keyed by the full SSH target string
+// (["alice@host"] joined by spaces) so tests can route different user@host
+// inputs to different canned responses.
 type fakeState struct {
 	cfg *config.Client
+
+	// probeInfos: result keyed by the SSH target string (e.g. "alice@lab.example").
+	probeInfos     map[string]*wire.ServerInfo
+	probeInfoErrs  map[string]error
+	probeInfoCalls []string
 
 	probes     map[string]*ProbeResult
 	probeErrs  map[string]error
@@ -62,6 +70,32 @@ func (s *fakeState) deps() Deps {
 				return pr, nil
 			}
 			return &ProbeResult{Version: "v0.1.0", API: 1, LatencyMS: 7}, nil
+		},
+		ProbeInfo: func(_ context.Context, sshArgs []string) (*wire.ServerInfo, error) {
+			target := strings.Join(sshArgs, " ")
+			s.probeInfoCalls = append(s.probeInfoCalls, target)
+			if err, ok := s.probeInfoErrs[target]; ok {
+				return nil, err
+			}
+			if info, ok := s.probeInfos[target]; ok {
+				return info, nil
+			}
+			// Default response — derive a name from the first SSH dest part
+			// after the '@' so tests that don't pre-register still work.
+			host := target
+			if i := strings.LastIndex(host, "@"); i >= 0 {
+				host = host[i+1:]
+			}
+			if i := strings.IndexByte(host, ':'); i >= 0 {
+				host = host[:i]
+			}
+			if i := strings.IndexByte(host, '.'); i >= 0 {
+				host = host[:i]
+			}
+			if host == "" || host == " " {
+				host = "lab"
+			}
+			return &wire.ServerInfo{Name: host, Version: "v0.1.0", API: 1}, nil
 		},
 		Call: func(_ context.Context, circuit, method string, params, out any) error {
 			s.calls = append(s.calls, rpcCall{circuit, method, params})
@@ -118,11 +152,15 @@ func TestRun_NonTTY_ReturnsUserError(t *testing.T) {
 }
 
 func TestRun_FirstRun_CircuitOnlySkipsCharacters(t *testing.T) {
-	s := &fakeState{cfg: &config.Client{}}
+	s := &fakeState{
+		cfg: &config.Client{},
+		probeInfos: map[string]*wire.ServerInfo{
+			"alice@lab.example": {Name: "lab", Version: "v0.1.0", API: 1},
+		},
+	}
 	in := strings.NewReader(strings.Join([]string{
 		"y",                 // add circuit?
-		"lab",               // circuit name
-		"alice@lab.example", // ssh target
+		"alice@lab.example", // ssh target — no more name prompt; server advertises it
 		"n",                 // add another circuit?
 	}, "\n") + "\n")
 	var out bytes.Buffer
@@ -139,8 +177,8 @@ func TestRun_FirstRun_CircuitOnlySkipsCharacters(t *testing.T) {
 	if len(s.sshBlocks) != 1 || s.sshBlocks[0] != [3]string{"lab", "lab.example", "alice"} {
 		t.Fatalf("ssh blocks = %v", s.sshBlocks)
 	}
-	if len(s.probeCalls) != 1 || s.probeCalls[0] != "lab" {
-		t.Fatalf("probe calls = %v", s.probeCalls)
+	if len(s.probeInfoCalls) != 1 || s.probeInfoCalls[0] != "alice@lab.example" {
+		t.Fatalf("probeInfo calls = %v", s.probeInfoCalls)
 	}
 	outStr := out.String()
 	for _, want := range []string{"== Circuits ==", "probe ok", "== Summary ==", "next: drift new"} {
@@ -152,11 +190,11 @@ func TestRun_FirstRun_CircuitOnlySkipsCharacters(t *testing.T) {
 
 func TestRun_ProbeFailure_PrintsInstallHints(t *testing.T) {
 	s := &fakeState{
-		cfg:       &config.Client{},
-		probeErrs: map[string]error{"lab": errors.New("ssh: no route")},
+		cfg:           &config.Client{},
+		probeInfoErrs: map[string]error{"alice@lab.example": errors.New("ssh: no route")},
 	}
 	in := strings.NewReader(strings.Join([]string{
-		"y", "lab", "alice@lab.example",
+		"y", "alice@lab.example",
 		"n",
 	}, "\n") + "\n")
 	var out bytes.Buffer
@@ -172,10 +210,18 @@ func TestRun_ProbeFailure_PrintsInstallHints(t *testing.T) {
 	}
 }
 
-func TestRun_NoProbe_SkipsProbeCall(t *testing.T) {
-	s := &fakeState{cfg: &config.Client{}}
+func TestRun_NoProbe_StillRunsIdentityProbe(t *testing.T) {
+	// --no-probe skips the DEEPER server.verify devpod check but NOT the
+	// identity probe — we can't write SSH blocks without knowing the
+	// server's canonical name.
+	s := &fakeState{
+		cfg: &config.Client{},
+		probeInfos: map[string]*wire.ServerInfo{
+			"alice@lab.example": {Name: "lab", Version: "v0.1.0", API: 1},
+		},
+	}
 	in := strings.NewReader(strings.Join([]string{
-		"y", "lab", "alice@lab.example",
+		"y", "alice@lab.example",
 		"n",
 	}, "\n") + "\n")
 	var out bytes.Buffer
@@ -183,8 +229,11 @@ func TestRun_NoProbe_SkipsProbeCall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(s.probeCalls) != 0 {
-		t.Fatalf("expected no probes, got %v", s.probeCalls)
+	// server.verify must not be called under --no-probe.
+	for _, c := range s.calls {
+		if c.method == "server.verify" {
+			t.Errorf("expected no server.verify calls, got %+v", s.calls)
+		}
 	}
 }
 
@@ -278,21 +327,57 @@ func TestRun_CharacterPATStagesChestSet(t *testing.T) {
 	}
 }
 
-func TestRun_InvalidCircuitName_Continues(t *testing.T) {
-	s := &fakeState{cfg: &config.Client{}}
+func TestRun_ServerReturnsInvalidName_Aborts(t *testing.T) {
+	// Name shape is enforced server-side in production, but the client
+	// still defends so a misconfigured server can't inject garbage into
+	// ~/.config/drift/ssh_config.
+	s := &fakeState{
+		cfg: &config.Client{},
+		probeInfos: map[string]*wire.ServerInfo{
+			"alice@lab": {Name: "Has Spaces", Version: "v0.1.0", API: 1},
+		},
+	}
 	in := strings.NewReader(strings.Join([]string{
-		"y", "BadName", "alice@lab", // validation fails → error printed → loop resumes
-		"n", // add another? no
+		"y", "alice@lab",
+		"n",
 	}, "\n") + "\n")
 	var out bytes.Buffer
-	err := Run(context.Background(), Options{IsTTY: true, SkipCharacters: true, NoProbe: true}, s.deps(), in, &out)
+	err := Run(context.Background(), Options{IsTTY: true, SkipCharacters: true}, s.deps(), in, &out)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(s.cfg.Circuits) != 0 {
-		t.Errorf("invalid name should not persist: %+v", s.cfg.Circuits)
+		t.Errorf("invalid server-reported name should not persist: %+v", s.cfg.Circuits)
 	}
-	if !strings.Contains(out.String(), "invalid") {
-		t.Errorf("expected validation message, got:\n%s", out.String())
+	if !strings.Contains(out.String(), "invalid circuit name") {
+		t.Errorf("expected invalid-name message, got:\n%s", out.String())
+	}
+}
+
+func TestRun_SkipsCharacterPhase_WhenServerHasDefault(t *testing.T) {
+	s := &fakeState{
+		cfg: &config.Client{},
+		probeInfos: map[string]*wire.ServerInfo{
+			"alice@lab.example": {Name: "lab", Version: "v0.1.0", API: 1, DefaultCharacter: "kurisu"},
+		},
+	}
+	in := strings.NewReader(strings.Join([]string{
+		"y", "alice@lab.example",
+		"n", // add another circuit
+		// Character phase should auto-skip and not read further input.
+	}, "\n") + "\n")
+	var out bytes.Buffer
+	err := Run(context.Background(), Options{IsTTY: true}, s.deps(), in, &out)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(out.String(), "already have a default_character") {
+		t.Errorf("expected skip message, got:\n%s", out.String())
+	}
+	// No character.add call should have been made.
+	for _, c := range s.calls {
+		if c.method == "character.add" {
+			t.Errorf("character.add called but a default was already set: %+v", s.calls)
+		}
 	}
 }

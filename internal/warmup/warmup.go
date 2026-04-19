@@ -45,9 +45,23 @@ type Deps struct {
 	// WriteSSHBlock: nil skips SSH integration (the --no-ssh-config case).
 	WriteSSHBlock func(circuit, hostPart, userPart string) error
 
-	Probe func(ctx context.Context, circuit string) (*ProbeResult, error)
-	Call  func(ctx context.Context, circuit, method string, params, out any) error
-	Now   func() time.Time
+	// Probe is the cheap post-add health probe used in the summary phase;
+	// shares the signature with cli/drift.defaultProbe. ProbeInfo is the
+	// pre-add identity probe — it ssh's directly to sshArgs (e.g.
+	// ["alice@host"] or ["-p","2222","alice@host"]) and returns the
+	// circuit's canonical name + default_character so init can skip
+	// phases that are already configured.
+	Probe     func(ctx context.Context, circuit string) (*ProbeResult, error)
+	ProbeInfo func(ctx context.Context, sshArgs []string) (*wire.ServerInfo, error)
+	Call      func(ctx context.Context, circuit, method string, params, out any) error
+
+	// TailscalePicker, when non-nil, is offered to the user at the start of
+	// the circuits phase as an alternative to typing user@host manually.
+	// Returning ok=false means the user declined or the picker was
+	// cancelled — the caller falls back to the manual prompt.
+	TailscalePicker func(ctx context.Context) (userHost string, ok bool, err error)
+
+	Now func() time.Time
 }
 
 func Run(ctx context.Context, opts Options, deps Deps, stdin io.Reader, stdout io.Writer) error {
@@ -69,15 +83,20 @@ func Run(ctx context.Context, opts Options, deps Deps, stdin io.Reader, stdout i
 	}
 
 	probes := make(map[string]*ProbeResult)
+	// circuitsWithDefaultChar is populated during circuit add (from the
+	// server.info response) so the character phase can skip circuits that
+	// are already configured. Init's whole design is "only prompt for what
+	// isn't already defined server-side."
+	circuitsWithDefaultChar := make(map[string]bool)
 
 	if !opts.SkipCircuits {
-		if err := runCircuitPhase(ctx, opts, deps, br, stdout, cfg, probes); err != nil {
+		if err := runCircuitPhase(ctx, opts, deps, br, stdout, cfg, probes, circuitsWithDefaultChar); err != nil {
 			return err
 		}
 	}
 
 	if !opts.SkipCharacters {
-		if err := runCharacterPhase(ctx, deps, br, stdout, cfg); err != nil {
+		if err := runCharacterPhase(ctx, deps, br, stdout, cfg, circuitsWithDefaultChar); err != nil {
 			return err
 		}
 	}
@@ -114,7 +133,7 @@ func sectionHeader(w io.Writer, p *style.Palette, title string) {
 	fmt.Fprintln(w, panel)
 }
 
-func runCircuitPhase(ctx context.Context, opts Options, deps Deps, br *bufio.Reader, w io.Writer, cfg *config.Client, probes map[string]*ProbeResult) error {
+func runCircuitPhase(ctx context.Context, opts Options, deps Deps, br *bufio.Reader, w io.Writer, cfg *config.Client, probes map[string]*ProbeResult, withDefaultChar map[string]bool) error {
 	sectionHeader(w, style.For(w, false), "Circuits")
 	if len(cfg.Circuits) > 0 {
 		fmt.Fprintln(w, "already configured:")
@@ -138,7 +157,7 @@ func runCircuitPhase(ctx context.Context, opts Options, deps Deps, br *bufio.Rea
 		if !more {
 			return nil
 		}
-		if err := addOneCircuit(ctx, opts, deps, br, w, cfg, probes); err != nil {
+		if err := addOneCircuit(ctx, opts, deps, br, w, cfg, probes, withDefaultChar); err != nil {
 			// Surface per-circuit errors inline; the loop continues so one
 			// bad entry doesn't abort the whole wizard.
 			fmt.Fprintf(w, "  error: %v\n", err)
@@ -146,21 +165,64 @@ func runCircuitPhase(ctx context.Context, opts Options, deps Deps, br *bufio.Rea
 	}
 }
 
-func addOneCircuit(ctx context.Context, opts Options, deps Deps, br *bufio.Reader, w io.Writer, cfg *config.Client, probes map[string]*ProbeResult) error {
-	circuitName, err := promptNonEmpty(br, w, "  circuit name: ")
+// addOneCircuit: user enters user@host; we probe directly, learn the
+// canonical circuit name from server.info, and write the config + SSH
+// block keyed by that name. The wizard never asks the user for a circuit
+// name — the circuit advertises its own identity.
+func addOneCircuit(ctx context.Context, opts Options, deps Deps, br *bufio.Reader, w io.Writer, cfg *config.Client, probes map[string]*ProbeResult, withDefaultChar map[string]bool) error {
+	if deps.ProbeInfo == nil {
+		return fmt.Errorf("ProbeInfo not configured")
+	}
+	var userHost string
+	// When tailscale is available, ask once — no sense prompting
+	// repeatedly for every addOneCircuit loop iteration.
+	if deps.TailscalePicker != nil {
+		useTS, err := promptYesNo(br, w, "  use tailscale peer picker?", true)
+		if err != nil {
+			return err
+		}
+		if useTS {
+			picked, ok, err := deps.TailscalePicker(ctx)
+			if err != nil {
+				fmt.Fprintf(w, "  tailscale picker failed: %v (falling back to manual entry)\n", err)
+			} else if ok {
+				userHost = picked
+			}
+		}
+	}
+	if userHost == "" {
+		var err error
+		userHost, err = promptNonEmpty(br, w, "  SSH target (user@host[:port]): ")
+		if err != nil {
+			return err
+		}
+	}
+	userPart, hostPart, err := name.SplitUserHost(userHost)
 	if err != nil {
 		return err
 	}
-	if err := name.Validate("circuit", circuitName); err != nil {
-		return err
+	if userPart == "" {
+		return fmt.Errorf("user is required (use alice@host, not bare host)")
 	}
-	host, err := promptNonEmpty(br, w, "  SSH target (user@host[:port]): ")
+
+	sshArgs, err := name.SSHArgsFor(userHost)
 	if err != nil {
 		return err
 	}
-	userPart, hostPart, err := name.SplitUserHost(host)
+	info, err := deps.ProbeInfo(ctx, sshArgs)
 	if err != nil {
-		return err
+		fmt.Fprintf(w, "  probe failed: %v\n", err)
+		printInstallHints(w, userHost)
+		return nil
+	}
+	if !config.CircuitNameRE.MatchString(info.Name) {
+		return fmt.Errorf("server returned invalid circuit name %q — operator must set `drift circuit set name <slug>`", info.Name)
+	}
+	circuitName := info.Name
+
+	if existing, ok := cfg.Circuits[circuitName]; ok && existing.Host != userHost {
+		return fmt.Errorf("circuit %q already registered for %s (rename the new server or `drift circuit rm %s`)",
+			circuitName, existing.Host, circuitName)
 	}
 
 	def := cfg.DefaultCircuit == ""
@@ -171,7 +233,7 @@ func addOneCircuit(ctx context.Context, opts Options, deps Deps, br *bufio.Reade
 		}
 	}
 
-	cfg.Circuits[circuitName] = config.ClientCircuit{Host: host}
+	cfg.Circuits[circuitName] = config.ClientCircuit{Host: userHost}
 	if def || cfg.DefaultCircuit == "" {
 		cfg.DefaultCircuit = circuitName
 	}
@@ -185,50 +247,60 @@ func addOneCircuit(ctx context.Context, opts Options, deps Deps, br *bufio.Reade
 		fmt.Fprintf(w, "  wrote SSH config block drift.%s\n", circuitName)
 	}
 
-	if !opts.NoProbe && deps.Probe != nil {
-		pr, err := deps.Probe(ctx, circuitName)
-		if err != nil {
-			fmt.Fprintf(w, "  probe failed: %v\n", err)
-			printInstallHints(w, circuitName)
-			return nil
-		}
-		probes[circuitName] = pr
-		fmt.Fprintf(w, "  probe ok — lakitu %s (api %d, %dms)\n", pr.Version, pr.API, pr.LatencyMS)
+	probes[circuitName] = &ProbeResult{Version: info.Version, API: info.API}
+	fmt.Fprintf(w, "  probe ok — lakitu %s (api %d)\n", info.Version, info.API)
+	if info.DefaultCharacter != "" {
+		withDefaultChar[circuitName] = true
+		fmt.Fprintf(w, "  default character already set (%s); skipping character phase\n", info.DefaultCharacter)
+	}
 
-		// Deeper one-shot check with live devpod version info. Scoped to
-		// setup rather than every RPC — kart lifecycle stays on the cheap
-		// server.version probe.
-		if deps.Call != nil {
-			var vr struct {
-				DevpodActual   string `json:"devpod_actual"`
-				DevpodExpected string `json:"devpod_expected"`
-				DevpodMatch    bool   `json:"devpod_match"`
-				DevpodError    string `json:"devpod_error"`
-			}
-			if err := deps.Call(ctx, circuitName, wire.MethodServerVerify, struct{}{}, &vr); err != nil {
-				fmt.Fprintf(w, "  devpod probe skipped: %v\n", err)
-			} else {
-				switch {
-				case vr.DevpodError != "":
-					fmt.Fprintf(w, "  devpod unreachable on circuit: %s\n", vr.DevpodError)
-				case vr.DevpodExpected == "":
-					fmt.Fprintf(w, "  devpod: %s (lakitu has no pin — dev build)\n", vr.DevpodActual)
-				case vr.DevpodMatch:
-					fmt.Fprintf(w, "  devpod: %s (matches pin)\n", vr.DevpodActual)
-				default:
-					fmt.Fprintf(w, "  devpod: %s — WARNING: lakitu expects %s\n",
-						vr.DevpodActual, vr.DevpodExpected)
-				}
+	// Deeper one-shot check with live devpod version info. Scoped to
+	// setup rather than every RPC — kart lifecycle stays on the cheap
+	// server.version probe.
+	if !opts.NoProbe && deps.Call != nil {
+		var vr struct {
+			DevpodActual   string `json:"devpod_actual"`
+			DevpodExpected string `json:"devpod_expected"`
+			DevpodMatch    bool   `json:"devpod_match"`
+			DevpodError    string `json:"devpod_error"`
+		}
+		if err := deps.Call(ctx, circuitName, wire.MethodServerVerify, struct{}{}, &vr); err != nil {
+			fmt.Fprintf(w, "  devpod probe skipped: %v\n", err)
+		} else {
+			switch {
+			case vr.DevpodError != "":
+				fmt.Fprintf(w, "  devpod unreachable on circuit: %s\n", vr.DevpodError)
+			case vr.DevpodExpected == "":
+				fmt.Fprintf(w, "  devpod: %s (lakitu has no pin — dev build)\n", vr.DevpodActual)
+			case vr.DevpodMatch:
+				fmt.Fprintf(w, "  devpod: %s (matches pin)\n", vr.DevpodActual)
+			default:
+				fmt.Fprintf(w, "  devpod: %s — WARNING: lakitu expects %s\n",
+					vr.DevpodActual, vr.DevpodExpected)
 			}
 		}
 	}
 	return nil
 }
 
-func runCharacterPhase(ctx context.Context, deps Deps, br *bufio.Reader, w io.Writer, cfg *config.Client) error {
+func runCharacterPhase(ctx context.Context, deps Deps, br *bufio.Reader, w io.Writer, cfg *config.Client, skip map[string]bool) error {
 	sectionHeader(w, style.For(w, false), "Characters")
 	if len(cfg.Circuits) == 0 {
 		fmt.Fprintln(w, "no circuits configured; skipping characters")
+		return nil
+	}
+
+	// If every configured circuit already has a default_character, the
+	// phase has nothing to do. This is the steady-state idempotent path.
+	allSkipped := true
+	for n := range cfg.Circuits {
+		if !skip[n] {
+			allSkipped = false
+			break
+		}
+	}
+	if allSkipped {
+		fmt.Fprintln(w, "all circuits already have a default_character; skipping")
 		return nil
 	}
 

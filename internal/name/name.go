@@ -74,3 +74,60 @@ func SplitUserHost(target string) (user, host string, err error) {
 	}
 	return user, host, nil
 }
+
+// SplitHostPort breaks apart "host" or "host:port". Passing a bare host
+// returns (host, "", nil). A literal IPv6 address should be wrapped in
+// brackets (`[::1]:22`); bare IPv6 without a port is returned as-is.
+func SplitHostPort(host string) (hostname, port string, err error) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return "", "", errors.New("host is required")
+	}
+	// Bracketed IPv6: `[addr]` or `[addr]:port`.
+	if strings.HasPrefix(host, "[") {
+		end := strings.Index(host, "]")
+		if end < 0 {
+			return "", "", fmt.Errorf("invalid host %q: unterminated IPv6 bracket", host)
+		}
+		hostname = host[1:end]
+		rest := host[end+1:]
+		if rest == "" {
+			return hostname, "", nil
+		}
+		if !strings.HasPrefix(rest, ":") {
+			return "", "", fmt.Errorf("invalid host %q: expected :port after bracket", host)
+		}
+		return hostname, rest[1:], nil
+	}
+	// Ambiguous bare IPv6 (multiple colons) — no port possible.
+	if strings.Count(host, ":") > 1 {
+		return host, "", nil
+	}
+	if i := strings.IndexByte(host, ':'); i >= 0 {
+		return host[:i], host[i+1:], nil
+	}
+	return host, "", nil
+}
+
+// SSHArgsFor builds the leading ssh argv for a "user@host[:port]" target:
+// returns e.g. ["-p", "2222", "alice@host"] or just ["alice@host"]. Used by
+// client.SSHTransportArgs so circuit-add can probe a raw destination
+// before any drift.<name> alias is on disk.
+func SSHArgsFor(target string) ([]string, error) {
+	user, host, err := SplitUserHost(target)
+	if err != nil {
+		return nil, err
+	}
+	hostPart, port, err := SplitHostPort(host)
+	if err != nil {
+		return nil, err
+	}
+	dest := hostPart
+	if user != "" {
+		dest = user + "@" + hostPart
+	}
+	if port == "" {
+		return []string{dest}, nil
+	}
+	return []string{"-p", port, dest}, nil
+}
