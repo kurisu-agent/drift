@@ -43,3 +43,21 @@ func TestCliArgs(t *testing.T) {
 		})
 	}
 }
+
+// TestCliArgs_TermuxLinkerWrap simulates the real-world Termux case that
+// bit v0.2.1/v0.2.2: /proc/self/exe points at the Android linker, not
+// our binary, so os.Executable (and by extension os.SameFile) can't
+// identify argv[1] as self. termux-exec exports TERMUX_EXEC__PROC_SELF_EXE
+// with the true binary path — using it must take precedence.
+func TestCliArgs_TermuxLinkerWrap(t *testing.T) {
+	// A path that doesn't exist and isn't our executable — the only way
+	// to strip it is by consulting the env var.
+	fakeBinary := "/data/data/com.termux/files/usr/bin/drift"
+	t.Setenv("TERMUX_EXEC__PROC_SELF_EXE", fakeBinary)
+
+	got := cliArgs([]string{"drift", fakeBinary, "help"})
+	want := []string{"help"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("cliArgs under Termux linker wrap = %v, want %v", got, want)
+	}
+}

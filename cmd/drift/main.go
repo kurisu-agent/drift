@@ -21,23 +21,36 @@ func main() {
 	}))
 }
 
-// cliArgs returns argv[1:] with a Termux-specific workaround: on Android
-// under Termux, exec wrapping injects the binary's own path as an extra
-// argv[1], so plain `drift` arrives as argv=[name, /path/to/drift] and
-// Kong rejects the path as an unexpected positional. We strip argv[1]
-// only when it refers to the same underlying file as /proc/self/exe
-// (inode+device match via os.SameFile) — a legitimate path argument
-// like `drift connect /tmp/foo` never collides because that file isn't
-// the drift binary. Using os.SameFile instead of string equality avoids
-// canonicalization mismatches between argv[1] and os.Executable() that
-// bit the first version of this workaround on Termux.
+// cliArgs returns argv[1:] with a Termux-specific workaround.
 //
-// Set DRIFT_TERMUX_DEBUG=1 to dump argv + executable paths to stderr;
-// useful when diagnosing further exec-wrapper quirks.
+// Termux on Android 10+ can't exec files from app-data dirs directly
+// (W^X SELinux restrictions), so termux-exec's LD_PRELOAD rewrites
+// every execve of such a binary to run through /system/bin/linker64,
+// passing the real binary path as an argument. The target binary
+// therefore starts with argv[1] set to its own path (pushed in by the
+// linker wrapper) ahead of the caller's original arguments — so a
+// plain `drift` lands in main as argv=[name, /path/to/drift] and Kong
+// rejects the path as an unexpected positional.
+//
+// Two consequences for detection:
+//  1. /proc/self/exe points at /system/bin/linker64, not the drift
+//     binary, so os.Executable() returns the wrong thing. termux-exec
+//     works around this by exporting the real binary path in the
+//     $TERMUX_EXEC__PROC_SELF_EXE env var — we check that first.
+//  2. When running outside Termux we still want a defense-in-depth
+//     check, so fall back to os.Executable string match, then to an
+//     os.SameFile (inode) compare to catch canonicalization drift.
+//
+// A legitimate path argument like `drift connect /tmp/foo` never
+// collides because /tmp/foo has a different inode than the drift
+// binary. Set DRIFT_TERMUX_DEBUG=1 to dump argv + resolved paths to
+// stderr when diagnosing further exec-wrapper quirks.
 func cliArgs(argv []string) []string {
 	if os.Getenv("DRIFT_TERMUX_DEBUG") != "" {
 		exe, _ := os.Executable()
-		fmt.Fprintf(os.Stderr, "drift-debug: argv=%q exe=%q\n", argv, exe)
+		fmt.Fprintf(os.Stderr,
+			"drift-debug: argv=%q exe=%q TERMUX_EXEC__PROC_SELF_EXE=%q\n",
+			argv, exe, os.Getenv("TERMUX_EXEC__PROC_SELF_EXE"))
 	}
 	if len(argv) < 2 {
 		return nil
@@ -50,6 +63,9 @@ func cliArgs(argv []string) []string {
 }
 
 func isSelfPath(p string) bool {
+	if termuxExe := os.Getenv("TERMUX_EXEC__PROC_SELF_EXE"); termuxExe != "" && p == termuxExe {
+		return true
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return false
