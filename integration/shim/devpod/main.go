@@ -1,13 +1,9 @@
-// Binary devpod-shim records every invocation as a JSON line in
-// /tmp/devpod-invocations.log and copies the file/dir artifacts drift
-// hands to devpod into /tmp/devpod-artifacts/<ns-ts>-<sub>/, then exits 0.
-//
-// It stands in for the real devpod during tune/feature/dotfiles composition
-// tests so assertions can focus both on the argv drift produced *and* on
-// the actual file content drift materialized (layer-1 dotfiles dir, starter
-// tmp source dir, --extra-devcontainer-path file). The harness installs it
-// at /usr/local/bin/devpod and reads back both the log and the artifact
-// tree via docker exec.
+// Binary devpod-shim stands in for devpod during integration tests:
+// records every invocation as a JSON line in /tmp/devpod-invocations.log,
+// copies the file/dir artifacts drift hands to devpod into
+// /tmp/devpod-artifacts/<ns-ts>-<sub>/, emits canned JSON for query
+// subcommands, and exits 0. The harness installs it at
+// /usr/local/bin/devpod and reads both back via docker exec.
 package main
 
 import (
@@ -38,8 +34,8 @@ func main() {
 	if len(argv) >= 1 {
 		sub = argv[0]
 	}
-	// `agent workspace install-dotfiles` — two words deeper than the usual
-	// subcommand. Capture the tail verb so the artifact dir name hints at
+	// `agent workspace install-dotfiles` is two words deeper than a normal
+	// subcommand — capture the tail verb so the artifact dir name hints at
 	// which invocation a test is inspecting.
 	if sub == "agent" && len(argv) >= 3 {
 		sub = argv[2]
@@ -54,15 +50,13 @@ func main() {
 
 	copyKnownArtifacts(argv, artDir)
 
-	// Log entry — argv plus the dir the caller can read back.
 	if err := appendLog(record{Argv: argv, ArtifactDir: artDir}); err != nil {
 		fmt.Fprintf(os.Stderr, "devpod-shim: log: %v\n", err)
 		os.Exit(3)
 	}
 
 	// Canned responses for query subcommands so drift's kart.info /
-	// kart.list paths work without a real daemon. Up/stop/delete/
-	// install-dotfiles etc. are acknowledged silently.
+	// kart.list paths work without a real daemon.
 	switch argv[0] {
 	case "status":
 		fmt.Println(`{"state":"Running"}`)
@@ -72,10 +66,9 @@ func main() {
 	os.Exit(0)
 }
 
-// copyKnownArtifacts inspects argv for paths drift materialized (starter
-// tmpdir, layer-1 dotfiles tmpdir, --extra-devcontainer-path file) and
-// preserves copies under dir so tests can assert on the contents after the
-// shim exits — drift removes these tmpdirs on defer.
+// copyKnownArtifacts preserves paths drift materialized (starter tmpdir,
+// layer-1 dotfiles, --extra-devcontainer-path file) under dir — drift
+// RemoveAlls these on defer, so tests can only assert after the shim runs.
 func copyKnownArtifacts(argv []string, dir string) {
 	for i, a := range argv {
 		switch a {
@@ -86,16 +79,16 @@ func copyKnownArtifacts(argv []string, dir string) {
 		case "--dotfiles", "--repository":
 			// `up --dotfiles` (layer-2) and `agent workspace install-dotfiles
 			// --repository` (layer-1, skevetter fork v0.22) both carry a
-			// file:// URL pointing at a tmpdir drift materialized.
+			// file:// URL pointing at a drift-materialized tmpdir.
 			if i+1 < len(argv) {
 				if path, ok := strings.CutPrefix(argv[i+1], "file://"); ok {
 					_ = copyTree(path, filepath.Join(dir, "dotfiles"))
 				}
 			}
 		case "--id":
-			// Devpod's `up --id <name> <source>` convention: source is two
-			// positions after --id. Only copy when source is a local dir;
-			// clone URLs skip (os.Stat fails cleanly).
+			// `up --id <name> <source>`: source is two positions after --id.
+			// Only copy when source is a local dir; clone URLs skip (stat
+			// fails cleanly).
 			if i+2 < len(argv) {
 				src := argv[i+2]
 				if st, err := os.Stat(src); err == nil && st.IsDir() {
@@ -106,8 +99,7 @@ func copyKnownArtifacts(argv []string, dir string) {
 	}
 }
 
-// appendLog writes one JSON-encoded record per line, O_APPEND so parallel
-// invocations (if any) don't stomp each other.
+// appendLog uses O_APPEND so parallel invocations don't stomp each other.
 func appendLog(r record) error {
 	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
 	if err != nil {
@@ -123,8 +115,6 @@ func appendLog(r record) error {
 	return err
 }
 
-// sanitize replaces anything awkward for a filesystem path with '-'. Keeps
-// the shim tolerant of unexpected subcommand shapes.
 func sanitize(s string) string {
 	if s == "" {
 		return "unknown"

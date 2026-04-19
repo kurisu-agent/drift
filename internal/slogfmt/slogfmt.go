@@ -1,9 +1,6 @@
 // Package slogfmt is the shared formatter for structured log records. It
-// mirrors internal/cli/errfmt: a single [Emit] entry point produces the
-// same visual grammar (header line, indented sorted attrs) so logs and
-// errors look the same when they show up next to each other. Server code
-// also uses the parsing helpers (ParseLevel, DecodeRecord) for filter
-// pushdown; only [Emit] is rendering.
+// mirrors internal/cli/errfmt so logs and errors share one visual grammar.
+// Server code also uses ParseLevel/DecodeRecord for filter pushdown.
 package slogfmt
 
 import (
@@ -15,8 +12,6 @@ import (
 	"time"
 )
 
-// Record is the decoded form of one log line. Attrs carries everything that
-// isn't one of the canonical slog fields; nil is fine.
 type Record struct {
 	Time  time.Time
 	Level string
@@ -24,9 +19,8 @@ type Record struct {
 	Attrs map[string]any
 }
 
-// ParseLevel maps the common string spellings to slog.Level. Unknown values
-// (including the empty string) return slog.LevelInfo so a missing or garbled
-// level doesn't silently drop records below the default threshold.
+// ParseLevel: unknown/empty returns LevelInfo rather than silently
+// dropping records below the default threshold.
 func ParseLevel(s string) slog.Level {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "debug":
@@ -40,9 +34,8 @@ func ParseLevel(s string) slog.Level {
 	}
 }
 
-// DecodeRecord parses one JSONL line produced by a slog.JSONHandler into a
-// Record. Unknown fields become entries in Attrs so a server that adds
-// context via slog.With survives the round-trip.
+// DecodeRecord parses a slog.JSONHandler line. Unknown fields become
+// Attrs so server-side slog.With context survives the round-trip.
 func DecodeRecord(raw map[string]any) Record {
 	r := Record{}
 	if v, ok := raw["time"].(string); ok {
@@ -68,18 +61,13 @@ func DecodeRecord(raw map[string]any) Record {
 	return r
 }
 
-// Emit writes rec to w in the standard grammar:
+// Emit renders:
 //
 //	HH:MM:SS LEVEL  <msg>
 //	  key: value
-//	  key: value
 //
-// Levels are padded to 5 characters. Attributes are sorted by key for
-// deterministic output. Multi-line values get their continuation lines
-// indented to align under the value column.
-//
-// If ParseLevel(rec.Level) is below min, nothing is written and Emit returns
-// false so callers can count filtered records.
+// Attributes sorted by key for deterministic output. Returns false when
+// the record is below min so callers can count filtered records.
 func Emit(w io.Writer, rec Record, min slog.Level) bool {
 	if ParseLevel(rec.Level) < min {
 		return false
@@ -107,8 +95,8 @@ func Emit(w io.Writer, rec Record, min slog.Level) bool {
 	return true
 }
 
-// writeAttr renders a single `  key: value` pair, indenting continuation
-// lines so multi-line values align under the first line's value column.
+// writeAttr indents continuation lines so multi-line values align under
+// the first line's value column.
 func writeAttr(w io.Writer, key string, val any) {
 	s := fmt.Sprintf("%v", val)
 	if !strings.Contains(s, "\n") {
