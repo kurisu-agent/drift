@@ -1,10 +1,6 @@
-// Package client is the drift-side helper for issuing a single JSON-RPC 2.0
-// call to a remote lakitu over SSH.
-//
-// Every non-local drift subcommand resolves to one [Client.Call] which
-// shells out to `ssh drift.<circuit> lakitu rpc`. A transport failure (SSH
-// itself exited non-zero) surfaces as [*TransportError]; an RPC-level error
-// arrives as [*rpcerr.Error] with its Code, Type, and Data preserved.
+// Package client is the drift-side helper for issuing a JSON-RPC 2.0 call
+// to a remote lakitu over SSH. Every non-local drift subcommand resolves
+// to one [Client.Call] which shells `ssh drift.<circuit> lakitu rpc`.
 package client
 
 import (
@@ -19,16 +15,14 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// Transport sends a single marshalled JSON-RPC request to the given circuit
-// and returns the raw response bytes. Implementations must return a
-// [*TransportError] for any failure that prevented the request from being
-// delivered or the response from being received intact.
+// Transport sends a marshalled JSON-RPC request to the circuit and returns
+// the raw response. Any failure that prevented delivery or intact receipt
+// must surface as a *TransportError.
 type Transport func(ctx context.Context, circuit string, request []byte) (response []byte, err error)
 
-// TransportError indicates that SSH (or whatever transport is in use) failed
-// before a JSON-RPC response could be read. drift preserves the transport's
-// own exit code and stderr so the user sees the real diagnostic ("ssh: Could
-// not resolve hostname ...") rather than a fabricated envelope.
+// TransportError covers failures before a JSON-RPC response arrives. drift
+// preserves ssh's exit code and stderr verbatim so the user sees the real
+// diagnostic rather than a fabricated envelope.
 type TransportError struct {
 	ExitCode int
 	Stderr   string
@@ -47,26 +41,18 @@ func (e *TransportError) Error() string {
 
 func (e *TransportError) Unwrap() error { return e.Cause }
 
-// Client performs one JSON-RPC call per invocation.
-//
-// The zero value is not usable; call [New] (or set Transport manually).
 type Client struct {
 	Transport Transport
-
-	// nextID returns the id encoded into each request. Overridable for tests;
-	// when nil, a monotonically increasing integer starting at 1 is used.
+	// nextID overrides the request id (tests). Nil uses `1` per call.
 	nextID func() json.RawMessage
 }
 
-// New returns a Client backed by the SSH transport.
 func New() *Client {
 	return &Client{Transport: SSHTransport()}
 }
 
-// Call issues a single RPC against circuit. params is marshalled as the JSON
-// params object; pass nil to send `{}`. On success, result (which may be nil)
-// is populated from the response's result. On an RPC-level error the returned
-// error is always a *rpcerr.Error.
+// Call issues a single RPC. params=nil sends `{}`; result=nil discards the
+// response payload. RPC-level errors always come back as *rpcerr.Error.
 func (c *Client) Call(ctx context.Context, circuit, method string, params, result any) error {
 	if c.Transport == nil {
 		return rpcerr.Internal("rpc client: no transport configured")
@@ -106,8 +92,8 @@ func (c *Client) allocID() json.RawMessage {
 	if c.nextID != nil {
 		return c.nextID()
 	}
-	// Default: fixed id 1 per call. Each SSH invocation is a fresh process
-	// with a single request/response pair, so there is nothing to collide.
+	// Fixed id 1 per call: each SSH invocation is a fresh process with a
+	// single request/response pair, so there is nothing to collide with.
 	return json.RawMessage(`1`)
 }
 
@@ -129,17 +115,12 @@ func buildRequest(id json.RawMessage, method string, params any) ([]byte, error)
 	return json.Marshal(req)
 }
 
-// SSHTransport returns the default Transport that shells out to
-// `ssh drift.<circuit> lakitu rpc`. Any non-zero exit from ssh is wrapped in
-// a [*TransportError] carrying ssh's exit code and stderr verbatim.
-//
-// The ssh invocation routes through [driftexec.Run] so it inherits the
-// standard Cancel/WaitDelay discipline.
+// SSHTransport shells `ssh drift.<circuit> lakitu rpc` via driftexec.Run so
+// it inherits the standard Cancel/WaitDelay discipline. The alias is a
+// drift-managed Host entry in ~/.config/drift/ssh_config.
 func SSHTransport() Transport {
 	return func(ctx context.Context, circuit string, request []byte) ([]byte, error) {
 		alias := "drift." + circuit
-		// SSH alias is a drift-managed Host entry from ~/.config/drift/ssh_config;
-		// argv is built directly (no shell) so circuit interpolation is safe.
 		res, err := driftexec.Run(ctx, driftexec.Cmd{
 			Name:  "ssh",
 			Args:  []string{alias, "lakitu", "rpc"},

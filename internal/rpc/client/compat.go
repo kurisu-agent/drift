@@ -13,35 +13,17 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// ServerVersion is the shape returned by the server.version RPC. Duplicated
-// here rather than imported from internal/server so the drift client stays
-// independent of the server package's file layout.
+// ServerVersion duplicates the server.version RPC shape rather than
+// importing internal/server — drift stays independent of server layout.
 type ServerVersion struct {
 	Version string `json:"version"`
 	API     int    `json:"api"`
 }
 
-// CheckCompat fetches lakitu's version over the RPC client and compares it
-// to the drift binary's own semver. The result is cached per (client,
-// circuit) pair — subsequent calls in the same process return without
-// issuing another RPC. `--skip-version-check` bypasses the check entirely
-// and callers can signal that by not invoking CheckCompat at all, or by
-// passing a zero skip=true on the return value.
-//
-// Semver comparison:
-//
-//   - major mismatch  → abort with a typed rpcerr
-//   - minor mismatch  → write a single warning line to stderr
-//   - patch mismatch  → silent
-//
-// The version parser is deliberately lax — it accepts `devel`,
-// `v1.2.3`, `1.2.3`, trailing `-prerelease` or `+metadata` — because drift
-// development builds report "devel" and we don't want that to abort every
-// RPC call during local hacking.
 type compatKey struct{ circuit string }
 
-// CompatChecker wraps a Client and runs the compat probe at most once per
-// circuit. It's safe for concurrent use.
+// CompatChecker runs the probe at most once per circuit. Safe for
+// concurrent use.
 type CompatChecker struct {
 	client  *Client
 	once    sync.Map // map[compatKey]*sync.Once
@@ -49,24 +31,22 @@ type CompatChecker struct {
 }
 
 type compatOutcome struct {
-	warn string // set when a minor mismatch should be logged
-	err  error  // set when the call must abort
+	warn string
+	err  error
 }
 
-// NewCompatChecker returns a checker backed by c. The zero value is not
-// usable.
 func NewCompatChecker(c *Client) *CompatChecker {
 	return &CompatChecker{client: c}
 }
 
-// Check runs the probe for circuit. Transport failures surface as-is (a
-// *TransportError); ordinary RPC errors from server.version are wrapped as
-// an internal rpcerr so the caller can distinguish probe failure from the
-// eventual request failure.
+// Check probes circuit's lakitu version and applies:
+//   - major mismatch → typed rpcerr returned
+//   - minor mismatch → single warning line to warnWriter
+//   - patch mismatch → silent
 //
-// When the server is on an older minor, Check writes a single line to
-// warnWriter. The returned error is non-nil only on major mismatch or on
-// probe failure.
+// The version parser accepts `devel`, `v1.2.3`, and trailing `-pre` /
+// `+meta` so drift dev builds (which report "devel") don't abort every
+// call during local hacking.
 func (c *CompatChecker) Check(ctx context.Context, circuit string, warnWriter io.Writer) error {
 	key := compatKey{circuit: circuit}
 	onceAny, _ := c.once.LoadOrStore(key, &sync.Once{})
@@ -91,14 +71,13 @@ func (c *CompatChecker) runProbe(ctx context.Context, circuit string) *compatOut
 	return compareSemver(local, remote.Version, circuit)
 }
 
-// compareSemver applies the major/minor/patch rules. Exposed for tests.
 func compareSemver(local, remote, circuit string) *compatOutcome {
 	lv, ok1 := parseSemver(local)
 	rv, ok2 := parseSemver(remote)
 	if !ok1 || !ok2 {
-		// One side is "devel" or unparseable — don't block the call, just
-		// stay silent. Local dev builds routinely report "devel"; pinning
-		// them against a tagged lakitu would make hacking unpleasant.
+		// One side is "devel" or unparseable — stay silent. Local dev
+		// builds routinely report "devel" and blocking them would make
+		// hacking unpleasant.
 		return &compatOutcome{}
 	}
 	switch {
@@ -121,14 +100,12 @@ func compareSemver(local, remote, circuit string) *compatOutcome {
 
 type semver struct{ major, minor, patch int }
 
-// parseSemver accepts `1.2.3`, `v1.2.3`, trailing `-pre` / `+meta` suffix,
-// and returns (_, false) for anything else (including "devel"). Strict
-// enough to catch typos, lax enough to survive pre-release builds.
+// parseSemver accepts `1.2.3`, `v1.2.3`, and trailing `-pre` / `+meta`.
+// Returns ok=false for anything else (including "devel").
 func parseSemver(s string) (semver, bool) {
 	s = strings.TrimPrefix(s, "v")
-	// Strip build metadata (`+...`) and pre-release tag (`-...`) — neither
-	// is semver-sorted-comparable without more work than we need for
-	// major/minor/patch equality.
+	// Drop build metadata and pre-release tags — not needed for
+	// major/minor/patch equality comparison.
 	for _, sep := range []string{"+", "-"} {
 		if i := strings.Index(s, sep); i >= 0 {
 			s = s[:i]
