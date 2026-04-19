@@ -1,12 +1,7 @@
-// Package warmup implements the `drift warmup` interactive first-time setup
-// wizard. It walks the user through registering circuits, creating characters,
-// and then prints a summary. Each phase is skippable via the corresponding
-// Options flag; the wizard is re-runnable and performs no destructive actions.
-//
-// All external effects (config load/save, SSH config writes, RPC calls) are
-// funnelled through the Deps struct so tests can exercise the full flow
-// without real SSH. The Kong-facing subcommand in internal/cli/drift/warmup.go
-// is a thin wrapper around Run.
+// Package warmup is the `drift warmup` interactive wizard: register
+// circuits, create characters, print a summary. Re-runnable, non-destructive.
+// All external effects go through Deps so tests can exercise the flow
+// without real SSH.
 package warmup
 
 import (
@@ -25,54 +20,33 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// Options selects which phases run. The flags mirror the CLI: --skip-circuits,
-// --skip-characters, --no-probe.
 type Options struct {
 	SkipCircuits   bool
 	SkipCharacters bool
 	NoProbe        bool
-	// IsTTY is decided by the caller — the Kong wrapper checks os.Stdin mode
-	// and passes the result in. Non-TTY stdin aborts with a user_error.
+	// IsTTY is decided by the Kong wrapper (os.Stdin mode check). Non-TTY
+	// stdin aborts with a user_error.
 	IsTTY bool
 }
 
-// ProbeResult mirrors the shape the CLI uses — exported so the summary can
-// display per-circuit latency + version without the caller having to probe
-// twice.
 type ProbeResult struct {
 	Version   string
 	API       int
 	LatencyMS int64
 }
 
-// Deps is the injection surface. Every external effect is a function field so
-// tests can fake it without spawning real processes.
 type Deps struct {
-	// LoadClientConfig / SaveClientConfig persist the workstation-side config.
 	LoadClientConfig func() (*config.Client, error)
 	SaveClientConfig func(*config.Client) error
 
-	// WriteSSHBlock updates the managed ssh_config with a block for the
-	// circuit. userPart and hostPart are the split halves of `user@host`.
-	// May be nil; when nil, the wizard still writes client config but skips
-	// the SSH integration (matches --no-ssh-config behavior on circuit add).
+	// WriteSSHBlock: nil skips SSH integration (the --no-ssh-config case).
 	WriteSSHBlock func(circuit, hostPart, userPart string) error
 
-	// Probe issues a server.version RPC against circuit. Implementations
-	// measure round-trip latency. A transport error returns non-nil err.
 	Probe func(ctx context.Context, circuit string) (*ProbeResult, error)
-
-	// Call issues a single RPC. Used for chest.set, character.add, and
-	// config.set during the character phase.
-	Call func(ctx context.Context, circuit, method string, params, out any) error
-
-	// Now is wall-clock time, injected so tests can keep output deterministic.
-	Now func() time.Time
+	Call  func(ctx context.Context, circuit, method string, params, out any) error
+	Now   func() time.Time
 }
 
-// Run drives the wizard and returns nil on success. A non-TTY stdin yields
-// an rpcerr.UserError with CodeUserError so the CLI wrapper can surface
-// exit code 2.
 func Run(ctx context.Context, opts Options, deps Deps, stdin io.Reader, stdout io.Writer) error {
 	if !opts.IsTTY {
 		return rpcerr.UserError(rpcerr.TypeInvalidFlag,
@@ -88,7 +62,6 @@ func Run(ctx context.Context, opts Options, deps Deps, stdin io.Reader, stdout i
 		cfg.Circuits = make(map[string]config.ClientCircuit)
 	}
 
-	// Snapshot of probe results keyed by circuit for use in the summary.
 	probes := make(map[string]*ProbeResult)
 
 	if !opts.SkipCircuits {
@@ -106,9 +79,6 @@ func Run(ctx context.Context, opts Options, deps Deps, stdin io.Reader, stdout i
 	return runSummary(ctx, opts, deps, stdout, cfg, probes)
 }
 
-// runCircuitPhase prompts the user to add one or more circuits. Existing
-// circuits are listed up front so a re-run doesn't feel like it's starting
-// from scratch. The loop exits when the user declines to add another.
 func runCircuitPhase(ctx context.Context, opts Options, deps Deps, br *bufio.Reader, w io.Writer, cfg *config.Client, probes map[string]*ProbeResult) error {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "== Circuits ==")
@@ -135,16 +105,13 @@ func runCircuitPhase(ctx context.Context, opts Options, deps Deps, br *bufio.Rea
 			return nil
 		}
 		if err := addOneCircuit(ctx, opts, deps, br, w, cfg, probes); err != nil {
-			// An individual circuit failure is reported inline; the loop
-			// continues so one bad entry doesn't abort the whole wizard.
+			// Surface per-circuit errors inline; the loop continues so one
+			// bad entry doesn't abort the whole wizard.
 			fmt.Fprintf(w, "  error: %v\n", err)
 		}
 	}
 }
 
-// addOneCircuit walks the user through a single circuit entry: name, target,
-// default flag, SSH config write, and probe. Returns an error on
-// unrecoverable IO failures; validation errors surface inline.
 func addOneCircuit(ctx context.Context, opts Options, deps Deps, br *bufio.Reader, w io.Writer, cfg *config.Client, probes map[string]*ProbeResult) error {
 	circuitName, err := promptNonEmpty(br, w, "  circuit name: ")
 	if err != nil {
@@ -162,7 +129,7 @@ func addOneCircuit(ctx context.Context, opts Options, deps Deps, br *bufio.Reade
 		return err
 	}
 
-	def := cfg.DefaultCircuit == "" // auto-default when first circuit
+	def := cfg.DefaultCircuit == ""
 	if cfg.DefaultCircuit != "" && cfg.DefaultCircuit != circuitName {
 		def, err = promptYesNo(br, w, "  set as default circuit?", false)
 		if err != nil {
@@ -194,9 +161,9 @@ func addOneCircuit(ctx context.Context, opts Options, deps Deps, br *bufio.Reade
 		probes[circuitName] = pr
 		fmt.Fprintf(w, "  probe ok — lakitu %s (api %d, %dms)\n", pr.Version, pr.API, pr.LatencyMS)
 
-		// Deeper one-shot check that pulls live devpod version info. Scoped
-		// to this setup-time flow rather than every RPC (per user guidance
-		// — kart lifecycle RPCs stay on the cheap server.version probe).
+		// Deeper one-shot check with live devpod version info. Scoped to
+		// setup rather than every RPC — kart lifecycle stays on the cheap
+		// server.version probe.
 		if deps.Call != nil {
 			var vr struct {
 				DevpodActual   string `json:"devpod_actual"`
@@ -224,9 +191,6 @@ func addOneCircuit(ctx context.Context, opts Options, deps Deps, br *bufio.Reade
 	return nil
 }
 
-// runCharacterPhase adds git/GitHub identities. Only available when at least
-// one circuit is configured; otherwise the server-side `character.add` RPC
-// has nowhere to land.
 func runCharacterPhase(ctx context.Context, deps Deps, br *bufio.Reader, w io.Writer, cfg *config.Client) error {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "== Characters ==")
@@ -249,9 +213,6 @@ func runCharacterPhase(ctx context.Context, deps Deps, br *bufio.Reader, w io.Wr
 	}
 }
 
-// addOneCharacter handles the per-character RPC flow: optionally stage a PAT
-// via chest.set, call character.add, optionally set the circuit's
-// default_character via config.set.
 func addOneCharacter(ctx context.Context, deps Deps, br *bufio.Reader, w io.Writer, cfg *config.Client) error {
 	circuit, err := pickCircuit(br, w, cfg)
 	if err != nil {
@@ -334,8 +295,6 @@ func addOneCharacter(ctx context.Context, deps Deps, br *bufio.Reader, w io.Writ
 	return nil
 }
 
-// pickCircuit returns the circuit to attach a character to. A single
-// configured circuit is auto-selected; otherwise the user picks by index.
 func pickCircuit(br *bufio.Reader, w io.Writer, cfg *config.Client) (string, error) {
 	names := sortedKeys(cfg.Circuits)
 	if len(names) == 1 {
@@ -362,8 +321,6 @@ func pickCircuit(br *bufio.Reader, w io.Writer, cfg *config.Client) (string, err
 	}
 }
 
-// runSummary re-probes each configured circuit (unless --no-probe) and prints
-// circuits, characters (from character.list), and a next-step hint.
 func runSummary(ctx context.Context, opts Options, deps Deps, w io.Writer, cfg *config.Client, probes map[string]*ProbeResult) error {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "== Summary ==")
@@ -377,8 +334,8 @@ func runSummary(ctx context.Context, opts Options, deps Deps, w io.Writer, cfg *
 	for _, n := range names {
 		pr := probes[n]
 		if pr == nil && !opts.NoProbe && deps.Probe != nil {
-			// Cover the case where the user skipped the probe earlier in the
-			// add flow but NoProbe is still off at the wizard level.
+			// Catches the case where the user skipped the probe earlier but
+			// NoProbe is still off at the wizard level.
 			if got, err := deps.Probe(ctx, n); err == nil {
 				pr = got
 				probes[n] = got
@@ -392,7 +349,6 @@ func runSummary(ctx context.Context, opts Options, deps Deps, w io.Writer, cfg *
 		if pr != nil {
 			fmt.Fprintf(w, "    lakitu %s (api %d, %dms)\n", pr.Version, pr.API, pr.LatencyMS)
 		}
-		// Characters are listed per-circuit via character.list.
 		listCharactersFor(ctx, deps, w, n)
 	}
 
@@ -401,8 +357,8 @@ func runSummary(ctx context.Context, opts Options, deps Deps, w io.Writer, cfg *
 	return nil
 }
 
-// listCharactersFor fetches characters on circuit and prints them. Failure is
-// non-fatal — the summary should still render even if a probe failed.
+// listCharactersFor fetches characters and prints them. Failure is
+// non-fatal — the summary should render even if a probe failed.
 func listCharactersFor(ctx context.Context, deps Deps, w io.Writer, circuit string) {
 	if deps.Call == nil {
 		return
@@ -425,20 +381,14 @@ func listCharactersFor(ctx context.Context, deps Deps, w io.Writer, circuit stri
 	fmt.Fprintln(w)
 }
 
-// printInstallHints renders a short block pointing users at the install
-// surface when a probe fails. Keep it under 5 lines.
 func printInstallHints(w io.Writer, circuit string) {
 	fmt.Fprintf(w, "  lakitu may not be installed (or may be the wrong version) on %q.\n", circuit)
 	fmt.Fprintln(w, "  install via the Nix module or the manual tarball — see the README for bootstrap instructions.")
 	fmt.Fprintln(w, "  re-run `drift warmup` after installing to re-probe.")
 }
 
-// ----------------------------------------------------------------------------
-// Prompt helpers
-// ----------------------------------------------------------------------------
-
-// promptLine reads one line, trimmed. EOF before any input is treated as an
-// abort — the caller receives io.EOF so it can unwind cleanly.
+// promptLine reads one line. EOF before any input surfaces io.EOF so the
+// caller can unwind cleanly.
 func promptLine(br *bufio.Reader, w io.Writer, prompt string) (string, error) {
 	fmt.Fprint(w, prompt)
 	line, err := br.ReadString('\n')
@@ -465,8 +415,6 @@ func promptNonEmpty(br *bufio.Reader, w io.Writer, prompt string) (string, error
 	}
 }
 
-// promptYesNo returns true for y/yes (case-insensitive) and false for n/no.
-// dflt supplies the answer for empty input.
 func promptYesNo(br *bufio.Reader, w io.Writer, prompt string, dflt bool) (bool, error) {
 	suffix := " [y/N]: "
 	if dflt {
@@ -498,8 +446,8 @@ func sortedKeys(m map[string]config.ClientCircuit) []string {
 	return out
 }
 
-// splitUserHost mirrors the helper in internal/cli/drift/circuit.go. We keep
-// a local copy to avoid importing the CLI package from a library.
+// splitUserHost duplicates the circuit.go helper to avoid importing the
+// CLI package from this library.
 func splitUserHost(target string) (user, host string, err error) {
 	target = strings.TrimSpace(target)
 	if target == "" {

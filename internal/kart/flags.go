@@ -13,9 +13,8 @@ import (
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 )
 
-// Tune mirrors the tune-profile fields the resolver reads. Duplicated from
-// internal/server.Tune so internal/kart stays below internal/server in the
-// dependency graph — the server package imports this one.
+// Tune duplicates internal/server.Tune to keep kart below server in the
+// dep graph (server imports kart).
 type Tune struct {
 	Starter      string
 	Devcontainer string
@@ -23,31 +22,22 @@ type Tune struct {
 	Features     string
 }
 
-// Character mirrors the character fields kart.new consumes: git identity
-// plus optional GitHub/PAT/SSH data used by the layer-1 dotfiles generator.
 type Character struct {
 	GitName    string
 	GitEmail   string
 	GithubUser string
 	SSHKeyPath string
-	// PAT is the *resolved* token value (already looked up via chest) or
-	// empty when no PAT is attached. The resolver layer never sees the
-	// literal `chest:<name>` reference — the server handler resolves it
-	// before calling Resolve().
+	// PAT is already de-chested by the server handler before Resolve().
 	PAT string
 }
 
 // ServerDefaults is the narrow slice of internal/config.Server the resolver
-// uses. Passing this struct (rather than *config.Server) keeps the kart
-// package independent of the wider config schema.
+// uses, so kart stays independent of the wider config schema.
 type ServerDefaults struct {
 	DefaultTune      string
 	DefaultCharacter string
 }
 
-// Flags is the parsed-but-unresolved input to `kart.new`. All fields map 1:1
-// to the `drift new` flags. Empty means "not set" so Resolve() can layer
-// tune defaults underneath.
 type Flags struct {
 	Name         string
 	Clone        string
@@ -60,9 +50,6 @@ type Flags struct {
 	Autostart    bool
 }
 
-// Resolved is the composed view produced by Resolve(). It carries the tune
-// and character records alongside the final flag values so downstream code
-// never has to re-open the garage.
 type Resolved struct {
 	Name          string
 	SourceMode    string // "clone" | "starter" | "none"
@@ -72,32 +59,22 @@ type Resolved struct {
 	CharacterName string
 	Character     *Character
 	Features      string // already merged
-	Devcontainer  string // raw value: path/JSON/URL — normalization happens later
+	Devcontainer  string // raw; normalized later
 	Dotfiles      string
 	Autostart     bool
 }
 
-// Resolver composes the flag layers. Instances bind to a garage so the
-// handler layer can construct one per call without repeating filesystem
-// lookups.
 type Resolver struct {
 	Defaults ServerDefaults
-	// LoadTune returns a tune by name. Missing tunes should yield a
-	// user-facing rpcerr; the caller decides what NotFound means for their
-	// domain.
-	LoadTune func(name string) (*Tune, error)
-	// LoadCharacter returns a character by name. Missing characters yield
-	// a NotFound rpcerr. The returned Character must carry the resolved
-	// PAT (already de-chested) so downstream code never touches the chest.
+	// LoadTune / LoadCharacter: missing entries should return a NotFound
+	// rpcerr. LoadCharacter must return a Character with PAT already
+	// resolved — downstream code never touches the chest.
+	LoadTune      func(name string) (*Tune, error)
 	LoadCharacter func(name string) (*Character, error)
 }
 
-// Resolve applies the flag composition:
-//  1. server defaults (default_tune, default_character)
-//  2. tune preset (starter, features, devcontainer, dotfiles_repo)
-//  3. explicit flags always override tune values
-//  4. --features is ADDITIVE — merged on top of the tune's features
-//  5. --devcontainer passes through; normalization to a file happens later.
+// Resolve applies: server defaults → tune → explicit flags, with --features
+// additive on top of the tune's features.
 func (r *Resolver) Resolve(f Flags) (*Resolved, error) {
 	if f.Clone != "" && f.Starter != "" {
 		return nil, rpcerr.UserError(rpcerr.TypeMutuallyExclusive,
@@ -116,11 +93,10 @@ func (r *Resolver) Resolve(f Flags) (*Resolved, error) {
 	if tuneName != "" && tuneName != "none" {
 		t, err := r.LoadTune(tuneName)
 		if err != nil {
-			// default_tune is a hint, not a hard requirement. When it points
-			// at a tune that doesn't exist (e.g. the server config ships
-			// `default_tune: default` but no `tunes/default.yaml` has been
-			// created yet), fall through to "no tune" rather than erroring.
-			// Explicit --tune still errors — only the defaulted path degrades.
+			// default_tune is a hint — if the server config points at a tune
+			// that doesn't exist (e.g. ships `default_tune: default` but no
+			// `tunes/default.yaml` has been created), fall through to "no
+			// tune" rather than erroring. Explicit --tune still errors.
 			var rpcErr *rpcerr.Error
 			if tuneFromDefault && errors.As(err, &rpcErr) && rpcErr.Type == "tune_not_found" {
 				effectiveTune = ""
@@ -200,13 +176,9 @@ func tuneFeatures(t *Tune) string {
 	return t.Features
 }
 
-// mergeFeatures composes the tune's features JSON and the user's --features
-// JSON, user-wins-on-overlap. Both sides are optional. The return value is
-// JSON text suitable for devpod's --additional-features.
-//
-// The merge is shallow: devpod features are top-level feature-ID keys so a
-// user specifying the same feature ID as the tune replaces the whole record.
-// That matches devpod's own interpretation of --additional-features.
+// mergeFeatures composes tune + user features JSON, user-wins-on-overlap.
+// The merge is shallow: top-level feature IDs, matching devpod's own
+// interpretation of --additional-features.
 func mergeFeatures(tuneJSON, userJSON string) (string, error) {
 	tuneJSON = strings.TrimSpace(tuneJSON)
 	userJSON = strings.TrimSpace(userJSON)
@@ -214,8 +186,8 @@ func mergeFeatures(tuneJSON, userJSON string) (string, error) {
 		return "", nil
 	}
 	if userJSON == "" {
-		// Still validate tune JSON so a broken tune surfaces at kart.new
-		// time rather than deep inside devpod.
+		// Validate tune JSON so a broken tune surfaces at kart.new time
+		// rather than deep inside devpod.
 		if _, err := decodeFeaturesMap(tuneJSON, "tune features"); err != nil {
 			return "", err
 		}

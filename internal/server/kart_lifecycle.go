@@ -16,16 +16,10 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// defaultLogTailLimit caps the number of lines returned when the caller does
-// not set Tail explicitly. The one-shot SSH channel can't stream, so an
-// unbounded response is a foot-gun — users who need more can page with
-// --since or set --tail explicitly.
+// The one-shot SSH channel can't stream, so cap unbounded log responses.
+// Users who want more can page with --since or set --tail explicitly.
 const defaultLogTailLimit = 1000
 
-// RegisterKartLifecycle wires the Phase 9 kart lifecycle handlers into reg.
-// It is a separate entry point from [RegisterKart] so Phase 7 (list/info) and
-// Phase 9 (start/stop/restart/delete/logs) can land and be tested in
-// isolation without touching each other's Register call.
 func RegisterKartLifecycle(reg *rpc.Registry, d KartDeps) {
 	reg.Register(wire.MethodKartStart, d.kartStartHandler)
 	reg.Register(wire.MethodKartStop, d.kartStopHandler)
@@ -34,23 +28,18 @@ func RegisterKartLifecycle(reg *rpc.Registry, d KartDeps) {
 	reg.Register(wire.MethodKartLogs, d.kartLogsHandler)
 }
 
-// KartLifecycleParams is the shared param shape for the verbs that only need
-// to identify a kart by name.
 type KartLifecycleParams struct {
 	Name string `json:"name"`
 }
 
-// KartLifecycleResult is the envelope returned by start/stop/restart/delete.
-// The `status` field is the kart's post-operation status — running for start
-// and restart, stopped for stop, not_found for delete. Keeping the shape the
-// same across verbs lets drift's client layer parse one result type.
+// KartLifecycleResult is shared across start/stop/restart/delete so drift's
+// client layer parses one result type. Status reflects post-op state.
 type KartLifecycleResult struct {
 	Name   string        `json:"name"`
 	Status devpod.Status `json:"status"`
 }
 
-// KartLogsParams is the param shape for kart.logs. Every filter is optional:
-// a zero value means "no filter". Tail=0 invokes the server-side default cap.
+// KartLogsParams: every filter is optional; Tail=0 uses the server-side cap.
 type KartLogsParams struct {
 	Name  string        `json:"name"`
 	Tail  int           `json:"tail,omitempty"`
@@ -59,24 +48,19 @@ type KartLogsParams struct {
 	Grep  string        `json:"grep,omitempty"`
 }
 
-// KartLogsResult is returned by kart.logs. Format discriminates between
-// JSONL-per-line (each entry is a slog record as an object) and text (each
-// entry is a raw line). The client renders both with slogfmt.Emit; text
-// lines are wrapped into synthetic INFO records at render time.
+// KartLogsResult.Format: "jsonl" — each line is a slog record object; "text"
+// — raw lines. The client wraps text lines into synthetic INFO records.
 type KartLogsResult struct {
 	Name   string   `json:"name"`
 	Format string   `json:"format"`
 	Lines  []string `json:"lines"`
 }
 
-// Log format discriminators.
 const (
 	LogFormatJSONL = "jsonl"
 	LogFormatText  = "text"
 )
 
-// kartStartHandler runs `devpod up <name>`. Idempotent: starting a running
-// kart is a success (code 0).
 func (d KartDeps) kartStartHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	p, err := bindLifecycleParams(params, "kart.start")
 	if err != nil {
@@ -92,8 +76,6 @@ func (d KartDeps) kartStartHandler(ctx context.Context, params json.RawMessage) 
 	return KartLifecycleResult{Name: p.Name, Status: d.statusFor(ctx, p.Name)}, nil
 }
 
-// kartStopHandler runs `devpod stop <name>`. Idempotent: stopping an
-// already-stopped kart returns success.
 func (d KartDeps) kartStopHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	p, err := bindLifecycleParams(params, "kart.stop")
 	if err != nil {
@@ -109,8 +91,6 @@ func (d KartDeps) kartStopHandler(ctx context.Context, params json.RawMessage) (
 	return KartLifecycleResult{Name: p.Name, Status: d.statusFor(ctx, p.Name)}, nil
 }
 
-// kartRestartHandler stops then starts. A stop error is surfaced as-is; once
-// stop succeeds, start runs even if the kart was already stopped (idempotent).
 func (d KartDeps) kartRestartHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	p, err := bindLifecycleParams(params, "kart.restart")
 	if err != nil {
@@ -130,10 +110,8 @@ func (d KartDeps) kartRestartHandler(ctx context.Context, params json.RawMessage
 	return KartLifecycleResult{Name: p.Name, Status: d.statusFor(ctx, p.Name)}, nil
 }
 
-// kartDeleteHandler runs `devpod delete --force <name>` and removes the
-// garage dir. This is the one lifecycle verb that errors on missing — we
-// check both sides (devpod + garage) up front and return `kart_not_found`
-// if neither knows about the kart.
+// kartDeleteHandler is the one lifecycle verb that errors on missing; both
+// sides (devpod + garage) are checked up front.
 func (d KartDeps) kartDeleteHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	p, err := bindLifecycleParams(params, "kart.delete")
 	if err != nil {
@@ -169,15 +147,9 @@ func (d KartDeps) kartDeleteHandler(ctx context.Context, params json.RawMessage)
 	return KartLifecycleResult{Name: p.Name, Status: devpod.StatusNotFound}, nil
 }
 
-// kartLogsHandler fetches `devpod logs <name>` output and packages it into a
-// KartLogsResult. If every non-empty line parses as a slog-JSON record with a
-// `time` field, Format is "jsonl" and lines pass through verbatim; otherwise
-// Format is "text" and the client wraps each line at render time.
-//
-// Filter order: since → level → grep → tail. The first three are applied
-// only where meaningful for the chosen format (since/level require JSONL,
-// grep works on both). Tail is applied last so a user asking for "the last
-// 20 matching warnings" gets exactly that.
+// kartLogsHandler. Filter order: since → level → grep → tail. since/level
+// require JSONL (for the record fields to inspect); grep works on both.
+// Tail is last so "last 20 matching warnings" means exactly that.
 func (d KartDeps) kartLogsHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	var p KartLogsParams
 	if err := rpc.BindParams(params, &p); err != nil {
@@ -207,10 +179,8 @@ func (d KartDeps) kartLogsHandler(ctx context.Context, params json.RawMessage) (
 	return KartLogsResult{Name: p.Name, Format: format, Lines: lines}, nil
 }
 
-// classifyLogLines splits chunk into lines, dropping the trailing empty
-// fragment produced by a terminal newline. Every non-empty line must parse
-// as a JSON object with a `time` field for the result to be tagged "jsonl";
-// otherwise "text" so the client knows to synthesize INFO records.
+// classifyLogLines tags output as "jsonl" iff every non-empty line parses as
+// an object with a `time` field.
 func classifyLogLines(chunk string) (format string, lines []string) {
 	if chunk == "" {
 		return LogFormatText, nil
@@ -242,10 +212,6 @@ func classifyLogLines(chunk string) (format string, lines []string) {
 	return LogFormatText, split
 }
 
-// filterLogLines applies the KartLogsParams filters in order. The since/
-// level filters are meaningful only when format is JSONL — for text lines
-// the server has no per-line time or level to inspect. Tail is applied last
-// so it always reflects the post-filter population.
 func filterLogLines(lines []string, format string, p KartLogsParams, now time.Time) []string {
 	minLevel := slogfmt.ParseLevel(p.Level)
 	hasLevel := strings.TrimSpace(p.Level) != ""
@@ -263,8 +229,8 @@ func filterLogLines(lines []string, format string, p KartLogsParams, now time.Ti
 		if format == LogFormatJSONL {
 			var obj map[string]any
 			if err := json.Unmarshal([]byte(line), &obj); err != nil {
-				// Shouldn't happen — classifyLogLines already validated — but
-				// guard anyway so a malformed line doesn't panic.
+				// classifyLogLines already validated — guard against a
+				// malformed line slipping through rather than panicking.
 				continue
 			}
 			rec := slogfmt.DecodeRecord(obj)
@@ -295,9 +261,6 @@ func filterLogLines(lines []string, format string, p KartLogsParams, now time.Ti
 	return out
 }
 
-// bindLifecycleParams decodes params and enforces that a name was provided.
-// The method name is threaded into the error message so a user looking at
-// stderr can tell which verb complained.
 func bindLifecycleParams(params json.RawMessage, method string) (KartLifecycleParams, error) {
 	var p KartLifecycleParams
 	if err := rpc.BindParams(params, &p); err != nil {
@@ -309,9 +272,6 @@ func bindLifecycleParams(params json.RawMessage, method string) (KartLifecyclePa
 	return p, nil
 }
 
-// requireDevpod guards against a zero KartDeps — in production the client is
-// always wired, but tests that forget to inject one should get a clear error
-// instead of a nil-pointer panic.
 func (d KartDeps) requireDevpod() error {
 	if d.Devpod == nil {
 		return rpcerr.Internal("kart: devpod client not configured")
@@ -319,9 +279,6 @@ func (d KartDeps) requireDevpod() error {
 	return nil
 }
 
-// removeKartDir deletes garage/karts/<name>/. A missing dir is not an error —
-// the caller already established the kart exists somewhere; if devpod had
-// the only record we just finished cleaning that up.
 func (d KartDeps) removeKartDir(name string) error {
 	dir := filepath.Join(d.GarageDir, "karts", name)
 	if err := os.RemoveAll(dir); err != nil {

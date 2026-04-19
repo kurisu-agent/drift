@@ -16,30 +16,19 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
-// KartDeps collects the collaborators the kart.* handlers need. It is
-// separate from the main [Deps] bundle so Phase 7 can land without touching
-// the Phase 6 handler wiring; both structs can be merged once their owners
-// agree on a shape.
 type KartDeps struct {
-	// Devpod is the typed devpod wrapper. Required.
-	Devpod *devpod.Client
-	// GarageDir is the absolute path to `~/.drift/garage`. Kart handlers
-	// reconcile workspaces listed by devpod against entries under
-	// GarageDir/karts to detect stale karts.
+	Devpod    *devpod.Client
 	GarageDir string
 }
 
-// RegisterKart wires the kart.list and kart.info handlers into reg. Later
-// phases append kart.new, kart.start, kart.stop, etc. from additional files
-// in this package.
 func RegisterKart(reg *rpc.Registry, d KartDeps) {
 	reg.Register(wire.MethodKartList, d.kartListHandler)
 	reg.Register(wire.MethodKartInfo, d.kartInfoHandler)
 }
 
-// KartConfig is the on-disk shape of `garage/karts/<name>/config.yaml`.
-// Only the resource identifiers (tune, character, source) need to
-// round-trip — container and devpod details come from devpod at query time.
+// KartConfig is the on-disk shape of garage/karts/<name>/config.yaml. Only
+// identifiers (tune, character, source) round-trip — runtime details come
+// from devpod at query time.
 type KartConfig struct {
 	Repo       string `yaml:"repo,omitempty"`
 	Tune       string `yaml:"tune,omitempty"`
@@ -52,14 +41,12 @@ type KartConfig struct {
 	CreatedAt  string `yaml:"created_at,omitempty"`
 }
 
-// KartSource is the `source` sub-object of the kart.info payload.
 type KartSource struct {
 	Mode string `json:"mode"`
 	URL  string `json:"url,omitempty"`
 }
 
-// KartContainer is the `container` sub-object. Absent (nil) when the kart
-// is not running.
+// KartContainer is absent (nil) when the kart is not running.
 type KartContainer struct {
 	User    string `json:"user,omitempty"`
 	Shell   string `json:"shell,omitempty"`
@@ -67,15 +54,13 @@ type KartContainer struct {
 	Image   string `json:"image,omitempty"`
 }
 
-// KartDevpod is the `devpod` sub-object. Carries just enough to let a
-// client correlate the kart back to its devpod workspace.
 type KartDevpod struct {
 	WorkspaceID string `json:"workspace_id"`
 	Provider    string `json:"provider,omitempty"`
 }
 
-// KartInfo is the stable JSON shape returned by `kart.info` and embedded
-// (per entry) in `kart.list`. Additive-only forward compat.
+// KartInfo is the stable JSON shape returned by kart.info and embedded
+// (per entry) in kart.list. Additive-only forward compat.
 type KartInfo struct {
 	Name      string         `json:"name"`
 	Status    devpod.Status  `json:"status"`
@@ -86,28 +71,21 @@ type KartInfo struct {
 	Autostart bool           `json:"autostart"`
 	Container *KartContainer `json:"container,omitempty"`
 	Devpod    *KartDevpod    `json:"devpod,omitempty"`
-	// Stale is true when the kart exists in the garage but devpod has no
-	// matching workspace. The list view uses `status:error` plus a
-	// `stale: true` hint; info returns the full stale_kart error object
-	// instead of this shape.
+	// Stale: garage-known without a matching devpod workspace. List surfaces
+	// `status:error` + `stale:true`; info returns a stale_kart error instead.
 	Stale bool `json:"stale,omitempty"`
 }
 
-// KartListResult is the envelope returned by `kart.list` — an object with a
-// top-level `karts` array so additive fields (counts, garbage-collector
-// hints, etc.) can be attached later without changing the array shape.
+// KartListResult is wrapped in an object so additive top-level fields
+// (counts, GC hints) can be added without changing the array shape.
 type KartListResult struct {
 	Karts []KartInfo `json:"karts"`
 }
 
-// KartInfoParams is the request shape for `kart.info`.
 type KartInfoParams struct {
 	Name string `json:"name"`
 }
 
-// kartListHandler returns every kart known to the circuit — union of
-// `devpod list` and `garage/karts/<name>/`. Entries that appear only in
-// the garage get `status: error` + `stale: true`.
 func (d KartDeps) kartListHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	var p struct{}
 	if err := rpc.BindParams(params, &p); err != nil {
@@ -132,9 +110,8 @@ func (d KartDeps) kartListHandler(ctx context.Context, params json.RawMessage) (
 		garageByName[name] = cfg
 	}
 
-	// Union by name so a kart present in either system shows up exactly
-	// once. Sort the resulting slice so the output is stable — clients
-	// and testscripts compare strings.
+	// Union by name so a kart present in either system shows up once;
+	// sorted so output is stable for testscript diffs.
 	names := make(map[string]struct{}, len(workspaces)+len(garage))
 	for _, w := range workspaces {
 		names[w.ID] = struct{}{}
@@ -158,9 +135,6 @@ func (d KartDeps) kartListHandler(ctx context.Context, params json.RawMessage) (
 	return KartListResult{Karts: karts}, nil
 }
 
-// kartInfoHandler returns a single kart. A garage entry without a matching
-// devpod workspace yields `stale_kart` (code 4); an entirely unknown name
-// yields `kart_not_found` (code 3).
 func (d KartDeps) kartInfoHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	var p KartInfoParams
 	if err := rpc.BindParams(params, &p); err != nil {
@@ -196,9 +170,8 @@ func (d KartDeps) kartInfoHandler(ctx context.Context, params json.RawMessage) (
 	return info, nil
 }
 
-// buildInfo assembles the KartInfo payload from the two data sources.
-// Single place so the list and info handlers stay in sync — any future
-// field gets added here and both callers pick it up for free.
+// buildInfo is the single place that assembles KartInfo so list and info
+// stay in sync.
 func (d KartDeps) buildInfo(
 	ctx context.Context,
 	name string,
@@ -236,9 +209,8 @@ func (d KartDeps) buildInfo(
 	return info
 }
 
-// statusFor fetches the runtime status of a workspace from devpod. Errors
-// from the status call fold to StatusError — lakitu never surfaces a raw
-// devpod exec failure in a list response; clients branch on the enum.
+// statusFor folds devpod status errors to StatusError — lakitu never leaks
+// a raw devpod exec failure in a list response.
 func (d KartDeps) statusFor(ctx context.Context, name string) devpod.Status {
 	st, err := d.Devpod.Status(ctx, name)
 	if err != nil {
@@ -247,9 +219,6 @@ func (d KartDeps) statusFor(ctx context.Context, name string) devpod.Status {
 	return st
 }
 
-// listWorkspaces wraps the devpod call and converts exec failures into a
-// structured rpcerr so handlers can return it directly. Missing binary is
-// treated as a devpod-unreachable condition rather than an internal error.
 func (d KartDeps) listWorkspaces(ctx context.Context) ([]devpod.Workspace, error) {
 	if d.Devpod == nil {
 		return nil, rpcerr.Internal("kart: devpod client not configured")
@@ -262,10 +231,8 @@ func (d KartDeps) listWorkspaces(ctx context.Context) ([]devpod.Workspace, error
 	return workspaces, nil
 }
 
-// listGarageKarts enumerates `garage/karts/<name>/` directories. A missing
-// karts/ directory yields an empty map, not an error — `lakitu init`
-// creates it on a fresh garage, but the handler tolerates a user who hasn't
-// run init yet so `kart.list` on a blank circuit is empty, not failing.
+// listGarageKarts tolerates a missing karts/ dir — returns an empty map
+// rather than erroring on a circuit that hasn't run `lakitu init` yet.
 func (d KartDeps) listGarageKarts() (map[string]KartConfig, error) {
 	root := filepath.Join(d.GarageDir, "karts")
 	entries, err := os.ReadDir(root)
@@ -287,17 +254,16 @@ func (d KartDeps) listGarageKarts() (map[string]KartConfig, error) {
 		if loaded {
 			out[e.Name()] = cfg
 		} else {
-			// Directory without a config.yaml is still a garage-known
-			// kart — surface it as stale rather than ignoring it.
+			// Dir without config.yaml is still garage-known — surface as
+			// stale rather than ignoring.
 			out[e.Name()] = KartConfig{}
 		}
 	}
 	return out, nil
 }
 
-// readKartConfig loads garage/karts/<name>/config.yaml. The second return
-// value is true when a config.yaml exists (the kart is garage-known);
-// false+nil error means no garage entry at all.
+// readKartConfig returns (cfg, true, nil) when the kart is garage-known and
+// (_, false, nil) when there's no garage entry at all.
 func (d KartDeps) readKartConfig(name string) (KartConfig, bool, error) {
 	path := filepath.Join(d.GarageDir, "karts", name, "config.yaml")
 	b, err := os.ReadFile(path)
@@ -320,8 +286,6 @@ func (d KartDeps) readKartConfig(name string) (KartConfig, bool, error) {
 	return cfg, true, nil
 }
 
-// kartAutostartEnabled reports whether the marker file in the kart's
-// garage dir is present.
 func (d KartDeps) kartAutostartEnabled(name string) bool {
 	path := filepath.Join(d.GarageDir, "karts", name, "autostart")
 	if _, err := os.Stat(path); err == nil {
@@ -339,9 +303,8 @@ func findWorkspace(workspaces []devpod.Workspace, name string) (devpod.Workspace
 	return devpod.Workspace{}, false
 }
 
-// sourceFromConfig builds the KartSource sub-object. The garage config is
-// authoritative for mode (set at kart creation time). If the garage has no
-// opinion, fall back to the devpod workspace's Source.
+// sourceFromConfig: garage config is authoritative for mode. If garage has
+// no opinion, fall back to the devpod workspace's Source.
 func sourceFromConfig(cfg KartConfig, ws devpod.Workspace) KartSource {
 	mode := cfg.SourceMode
 	url := cfg.Repo
@@ -364,9 +327,6 @@ func sourceFromConfig(cfg KartConfig, ws devpod.Workspace) KartSource {
 	return src
 }
 
-// containerFromConfig returns the kart-creation-time container hints. Nil
-// when the garage has no opinion (a running kart with no config is a rare
-// transient state — callers should tolerate a missing `container` field).
 func containerFromConfig(cfg KartConfig) *KartContainer {
 	if cfg.User == "" && cfg.Shell == "" && cfg.Workdir == "" && cfg.Image == "" {
 		return nil

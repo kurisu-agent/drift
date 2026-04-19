@@ -1,11 +1,6 @@
 // Package connect implements the transport-selection and auto-start logic
-// behind `drift connect <kart>`. It is deliberately narrow: the caller
-// supplies a [Deps] bundle carrying the RPC client + subprocess hooks, and
-// Run decides between mosh and ssh, waits for the kart to reach `running`
-// if necessary, and execs into the final command.
-//
-// Separating this from internal/cli/drift/connect.go keeps the decision
-// logic unit-testable without a Kong harness.
+// behind `drift connect <kart>`. Separated from internal/cli/drift/connect.go
+// so the decision logic is unit-testable without a Kong harness.
 package connect
 
 import (
@@ -22,60 +17,37 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// Deps captures the side-effecting collaborators Run needs. Every field is
-// an injection point — production binds them via closure over the real
-// exec.LookPath / rpc client / syscall.Exec; tests bind stubs.
 type Deps struct {
-	// LookPath mirrors os/exec.LookPath for mosh detection. Stubs can
-	// return err to force the ssh fallback even on a host that has mosh.
+	// LookPath mirrors os/exec.LookPath for mosh detection.
 	LookPath func(file string) (string, error)
-	// Call issues an RPC to the server. The signature matches
-	// internal/rpc/client.Call so prod can bind it as
+	// Call signature matches internal/rpc/client.Call so prod binds it as
 	// `deps.Call = client.Call`.
 	Call func(ctx context.Context, circuit, method string, params, result any) error
-	// Exec is how Run hands control to mosh or ssh. In production this is a
-	// direct os/exec Run with stdin/stdout/stderr wired through, so the
-	// user's terminal sees the child process transparently. The default is
-	// execStdio — tests override it to capture argv.
-	Exec func(ctx context.Context, bin string, argv []string, stdio Stdio) error
-	// Now is used by the auto-start polling loop so tests can drive time
-	// without waiting for real seconds.
-	Now func() time.Time
-	// Sleep is the polling backoff primitive.
+	// Exec defaults to execStdio — a direct os/exec Run with stdio wired
+	// through so the user's terminal sees the child transparently.
+	Exec  func(ctx context.Context, bin string, argv []string, stdio Stdio) error
+	Now   func() time.Time
 	Sleep func(d time.Duration)
 }
 
-// Stdio is the passthrough bundle exec receives.
 type Stdio struct {
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
 }
 
-// Options controls a single drift connect invocation.
 type Options struct {
-	// Circuit is the drift-managed circuit alias — the thing that appears
-	// after "drift." in the generated SSH config. Run will pass the alias
-	// "drift.<Circuit>" to mosh/ssh.
+	// Circuit is the short name; Run passes "drift.<Circuit>" to mosh/ssh.
 	Circuit string
-	// Kart is the name of the devcontainer workspace on the circuit.
-	Kart string
+	Kart    string
 	// ForceSSH skips mosh detection entirely.
 	ForceSSH bool
 	// ForwardAgent sets `-A` on the ssh fallback (no effect on mosh).
-	ForwardAgent bool
-	// AutoStartTimeout bounds how long Run waits for a stopped kart to
-	// reach `running` after sending kart.start. Zero defaults to 30s.
+	ForwardAgent     bool
 	AutoStartTimeout time.Duration
-	// AutoStartPoll is the poll interval during the running-state wait.
-	// Zero defaults to 500ms.
-	AutoStartPoll time.Duration
+	AutoStartPoll    time.Duration
 }
 
-// Run does everything `drift connect` needs: checks status, triggers
-// kart.start if stopped, picks mosh vs ssh, and execs the final command.
-// The returned error is already shaped for errfmt.Emit — rpcerr-typed for
-// RPC failures, plain error for exec transport issues.
 func Run(ctx context.Context, d Deps, opts Options, stdio Stdio) error {
 	d = withDefaults(d)
 
@@ -112,9 +84,6 @@ func moshAvailable(d Deps) bool {
 	return err == nil
 }
 
-// buildConnectArgv constructs the command to exec. Mosh path puts
-// `devpod ssh <kart>` after the `--` separator so mosh hands it straight to
-// the remote shell; ssh path invokes the same command via `ssh -t`.
 func buildConnectArgv(useMosh bool, opts Options) (string, []string) {
 	target := "drift." + opts.Circuit
 	remote := []string{"devpod", "ssh", opts.Kart}
@@ -131,11 +100,6 @@ func buildConnectArgv(useMosh bool, opts Options) (string, []string) {
 	return "ssh", sshArgs
 }
 
-// ensureRunning checks the kart's current status via kart.info and, if
-// stopped, issues kart.start and polls kart.info until status == "running"
-// or the timeout elapses. Any non-stopped/running terminal state
-// (stale_kart, error, not_found) returns the rpcerr as-is so errfmt shows
-// the typed error to the user.
 func ensureRunning(ctx context.Context, d Deps, opts Options) error {
 	info, err := fetchInfo(ctx, d, opts)
 	if err != nil {
@@ -145,7 +109,6 @@ func ensureRunning(ctx context.Context, d Deps, opts Options) error {
 	case "running":
 		return nil
 	case "stopped":
-		// Fire kart.start, then poll until running.
 		var out map[string]any
 		if err := d.Call(ctx, opts.Circuit, wire.MethodKartStart,
 			map[string]string{"name": opts.Kart}, &out); err != nil {
@@ -153,7 +116,6 @@ func ensureRunning(ctx context.Context, d Deps, opts Options) error {
 		}
 		return pollUntilRunning(ctx, d, opts)
 	case "busy":
-		// A transient state; poll as if a start is already in flight.
 		return pollUntilRunning(ctx, d, opts)
 	default:
 		return rpcerr.Conflict(
@@ -164,9 +126,6 @@ func ensureRunning(ctx context.Context, d Deps, opts Options) error {
 	}
 }
 
-// InfoResult is a minimal view of kart.info — only the status field matters
-// for connect's state machine. We tolerate unknown fields because the
-// kart.info schema is additive-forward.
 type InfoResult struct {
 	Status string `json:"status"`
 }
@@ -224,10 +183,9 @@ func pollUntilRunning(ctx context.Context, d Deps, opts Options) error {
 	}
 }
 
-// execStdio is the production Exec binding: stdin/stdout/stderr are wired
-// straight through so the child owns the TTY. We keep the SIGTERM → SIGKILL
-// ladder by setting Cmd.Cancel and Cmd.WaitDelay; internal/exec.Run would
-// buffer stdio, which is wrong for an interactive session.
+// execStdio wires stdio straight through so the child owns the TTY.
+// internal/exec.Run is deliberately bypassed because it buffers — wrong for
+// an interactive session. Cancel/WaitDelay reproduce the discipline inline.
 func execStdio(ctx context.Context, bin string, argv []string, stdio Stdio) error {
 	c := osexec.CommandContext(ctx, bin, argv...)
 	c.Stdin = stdio.Stdin
@@ -241,16 +199,13 @@ func execStdio(ctx context.Context, bin string, argv []string, stdio Stdio) erro
 	}
 	var ee *osexec.ExitError
 	if errors.As(err, &ee) {
-		// Surface the child's exit code to drift's top-level so the shell
-		// sees the same exit code the remote session produced.
+		// Propagate the child's exit code so the shell sees what the remote
+		// session produced, rather than a drift-level failure.
 		return &ExitError{Code: ee.ExitCode()}
 	}
 	return err
 }
 
-// ExitError lets the caller convey the child's exit code to os.Exit without
-// mistaking a non-zero exit for a drift-level failure. The message reuses
-// the child's fmt so errfmt.Emit doesn't label a clean ssh exit as an error.
 type ExitError struct{ Code int }
 
 func (e *ExitError) Error() string { return fmt.Sprintf("remote session exited with code %d", e.Code) }
