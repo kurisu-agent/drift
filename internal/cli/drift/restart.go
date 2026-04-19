@@ -6,7 +6,6 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// restartCmd is `drift restart <kart>`.
 type restartCmd struct {
 	Name string `arg:"" help:"Kart name."`
 }

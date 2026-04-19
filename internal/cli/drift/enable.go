@@ -8,7 +8,6 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// enableCmd is `drift enable <kart>` — turns on systemd autostart for a kart.
 type enableCmd struct {
 	Name string `arg:"" help:"Kart name."`
 }
@@ -17,9 +16,8 @@ func runKartEnable(ctx context.Context, io IO, root *CLI, cmd enableCmd, deps de
 	return runKartAutostart(ctx, io, root, cmd.Name, wire.MethodKartEnable, "enabled", deps)
 }
 
-// runKartAutostart is the shared client-side path for enable/disable. Both
-// verbs are idempotent on the server, so a redundant call (already enabled /
-// already disabled) still returns 0 with the final state.
+// runKartAutostart: enable/disable are idempotent — redundant calls still
+// return 0 with the final state.
 func runKartAutostart(ctx context.Context, io IO, root *CLI, name, method, verb string, deps deps) int {
 	circuit, err := resolveCircuit(root, deps)
 	if err != nil {
@@ -32,8 +30,6 @@ func runKartAutostart(ctx context.Context, io IO, root *CLI, name, method, verb 
 	return emitAutostartResult(io, root, verb, raw)
 }
 
-// emitAutostartResult renders the kart.enable/disable response. JSON passes
-// through verbatim; text output is a single line summarizing the final state.
 func emitAutostartResult(io IO, root *CLI, verb string, raw json.RawMessage) int {
 	if root != nil && root.Output == "json" {
 		fmt.Fprintln(io.Stdout, string(raw))

@@ -2,7 +2,6 @@ package drift
 
 import "os"
 
-// userHome wraps os.UserHomeDir so tests can swap the behavior — in
-// particular, the txtar harness sets HOME to the script workdir via
-// env.Setenv, and os.UserHomeDir honors that on Linux.
+// userHome is swappable so the txtar harness can point HOME at its
+// workdir via env.Setenv.
 var userHome = func() (string, error) { return os.UserHomeDir() }

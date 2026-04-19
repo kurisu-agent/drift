@@ -1,4 +1,3 @@
-// drift — client CLI for remote devcontainer workspaces.
 package main
 
 import (

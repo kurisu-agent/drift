@@ -12,9 +12,7 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// newCmd is the Kong command for `drift new <name>`. This struct stays 1:1
-// with the `drift new` flag list so the drift client and the kart.new RPC
-// surface never drift apart.
+// newCmd is kept 1:1 with the kart.new RPC params so they don't drift apart.
 type newCmd struct {
 	Name         string `arg:"" help:"Kart name (matches ^[a-z][a-z0-9-]{0,62}$)."`
 	Clone        string `name:"clone" help:"Clone an existing repo (mutually exclusive with --starter)."`
@@ -27,7 +25,6 @@ type newCmd struct {
 	Autostart    bool   `name:"autostart" help:"Enable auto-start on server reboot."`
 }
 
-// runNew issues the kart.new RPC against the resolved circuit.
 func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 	if cmd.Clone != "" && cmd.Starter != "" {
 		return emitError(io, errors.New("--clone and --starter are mutually exclusive"))
@@ -97,11 +94,6 @@ func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 	return 0
 }
 
-// emitRPCError routes both RPC-level and transport errors through errfmt.
-// A *rpcerr.Error produces the full two-line format with exit code mirroring
-// Code; a *client.TransportError (SSH exited non-zero before any envelope
-// was read) is rendered via the untyped fallback — the message is ssh's own
-// stderr passed through verbatim, with exit code 1.
 func emitRPCError(io IO, err error) int {
 	return errfmt.Emit(io.Stderr, err)
 }

@@ -7,7 +7,6 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// startCmd is `drift start <kart>`.
 type startCmd struct {
 	Name string `arg:"" help:"Kart name."`
 }
@@ -16,12 +15,9 @@ func runKartStart(ctx context.Context, io IO, root *CLI, cmd startCmd, deps deps
 	return runKartLifecycle(ctx, io, root, cmd.Name, wire.MethodKartStart, "started", deps)
 }
 
-// runKartLifecycle is the shared client-side path for start/stop/restart/
-// delete. It lives alongside start because start is the canonical caller;
-// the other verbs are thin wrappers that only differ by method name and the
-// verb fragment used in the stdout summary. delete surfaces not_found from
-// the server as a structured rpcerr, so the shared path handles it without
-// special-casing.
+// runKartLifecycle handles start/stop/restart/delete — they differ only
+// by method name and the stdout verb fragment. delete's not_found comes
+// back as a structured rpcerr so the shared path doesn't special-case it.
 func runKartLifecycle(ctx context.Context, io IO, root *CLI, name, method, verb string, deps deps) int {
 	circuit, err := resolveCircuit(root, deps)
 	if err != nil {

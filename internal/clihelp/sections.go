@@ -8,8 +8,6 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// ExitCodesSection is the shared exit-code contract: both drift and lakitu
-// follow it, so both renderers emit the same body.
 func ExitCodesSection() Section {
 	return Section{
 		Title: "EXIT CODES",
@@ -17,9 +15,8 @@ func ExitCodesSection() Section {
 	}
 }
 
-// RPCMethodsSection enumerates every JSON-RPC method drift sends to lakitu.
-// The list is derived from internal/wire constants via [wire.Methods] so
-// adding a method shows up here automatically.
+// RPCMethodsSection derives from [wire.Methods] so adding a method shows
+// up here automatically.
 func RPCMethodsSection() Section {
 	methods := append([]string(nil), wire.Methods()...)
 	sort.Strings(methods)
@@ -32,9 +29,8 @@ func RPCMethodsSection() Section {
 	return Section{Title: "RPC METHODS", Body: b.String()}
 }
 
-// GarageLayoutSection describes the on-disk server state layout. Derived
-// from config.GarageSubdirs + the hardcoded config.yaml so a new garage
-// subdir appears here automatically.
+// GarageLayoutSection derives from config.GarageSubdirs so a new subdir
+// appears automatically.
 func GarageLayoutSection() Section {
 	var b strings.Builder
 	b.WriteString("  ~/.drift/\n")

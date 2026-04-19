@@ -6,7 +6,6 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// stopCmd is `drift stop <kart>`.
 type stopCmd struct {
 	Name string `arg:"" help:"Kart name."`
 }

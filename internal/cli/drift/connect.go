@@ -9,16 +9,12 @@ import (
 	"github.com/kurisu-agent/drift/internal/rpc/client"
 )
 
-// connectCmd is `drift connect <kart>`.
 type connectCmd struct {
 	Name         string `arg:"" help:"Kart name."`
 	SSH          bool   `name:"ssh" help:"Force plain SSH (skip mosh)."`
 	ForwardAgent bool   `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
 }
 
-// runConnect dispatches to the internal/connect state machine. stdin/stdout/
-// stderr are wired straight through so the child (mosh or ssh) owns the TTY.
-// drift's own logs go to stderr; the child's stderr is interleaved.
 func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps) int {
 	circuit, err := resolveCircuit(root, deps)
 	if err != nil {
@@ -40,9 +36,8 @@ func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps
 	if err == nil {
 		return 0
 	}
-	// Pass through the remote session's exit code verbatim — we don't want
-	// a non-zero exit from the user's own shell to be wrapped in errfmt's
-	// "error:" prefix, so branch on ExitError here before emitError.
+	// Pass remote exit code through — a non-zero from the user's own
+	// shell shouldn't be wrapped in errfmt's "error:" prefix.
 	var ee *connect.ExitError
 	if errors.As(err, &ee) {
 		return ee.Code

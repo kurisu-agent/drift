@@ -8,9 +8,8 @@ import (
 	"github.com/kurisu-agent/drift/internal/config"
 )
 
-// resolveCircuit returns the circuit name to target for a remote RPC. The
-// `-c` root flag wins; otherwise the default circuit from the client config
-// is used. An empty result is an error — every kart verb requires a target.
+// resolveCircuit: -c wins, falling back to default_circuit. Empty is an
+// error — every kart verb requires a target.
 func resolveCircuit(root *CLI, deps deps) (string, error) {
 	if root != nil && root.Circuit != "" {
 		return root.Circuit, nil
@@ -29,9 +28,8 @@ func resolveCircuit(root *CLI, deps deps) (string, error) {
 	return cfg.DefaultCircuit, nil
 }
 
-// emitKartResult is the shared formatter for start/stop/restart/delete. The
-// text rendering is deliberately terse so stdout stays scriptable; JSON
-// output echoes the server's result verbatim.
+// emitKartResult: terse text so stdout stays scriptable; JSON passes
+// through verbatim.
 func emitKartResult(io IO, root *CLI, verb string, raw json.RawMessage) int {
 	if root != nil && root.Output == "json" {
 		fmt.Fprintln(io.Stdout, string(raw))

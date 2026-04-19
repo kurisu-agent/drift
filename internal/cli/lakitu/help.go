@@ -6,10 +6,8 @@ import (
 	"github.com/kurisu-agent/drift/internal/clihelp"
 )
 
-// helpCmd is `lakitu help`. It's the one-stop LLM context an agent running
-// on the circuit (e.g. launched via `drift ai`) can invoke to get lakitu's
-// full surface — subcommands, RPC methods, state layout, exit codes — in a
-// single dense, grep-friendly document.
+// helpCmd is the LLM-context one-stop for an agent on the circuit
+// (typically launched via `drift ai`).
 type helpCmd struct{}
 
 const lakituHelpIntro = `lakitu is the server half of drift. It is invoked two ways: as a long-lived

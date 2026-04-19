@@ -1,6 +1,5 @@
-// Package cliscript wires the drift and lakitu CLIs into testscript's
-// in-process command map. Tests can then invoke `drift …` and `lakitu …`
-// in txtar scripts without building real binaries.
+// Package cliscript wires drift/lakitu into testscript's in-process
+// command map so txtar scripts invoke them without building binaries.
 package cliscript
 
 import (
@@ -11,9 +10,6 @@ import (
 	lakitucli "github.com/kurisu-agent/drift/internal/cli/lakitu"
 )
 
-// Commands returns the map testscript.Main uses to dispatch the pseudo-
-// commands that appear in txtar scripts. Each entry exits the process with
-// the corresponding CLI's return code.
 func Commands() map[string]func() {
 	return map[string]func(){
 		"drift": func() {

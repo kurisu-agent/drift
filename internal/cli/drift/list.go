@@ -9,18 +9,14 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// listCmd is `drift list` — shows karts on the target circuit.
 type listCmd struct{}
 
-// infoCmd is `drift info <kart>` — single-kart JSON view. Useful for
-// scripting and for debugging stale state.
 type infoCmd struct {
 	Name string `arg:"" help:"Kart name."`
 }
 
-// listEntry mirrors the fields of server.KartInfo the client renders.
-// Unknown fields (forward compat) pass through on --output=json via
-// raw JSON passthrough; the table rendering only needs these few.
+// listEntry renders only these fields; unknown fields pass through via
+// raw JSON on --output=json.
 type listEntry struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
@@ -92,8 +88,8 @@ func runKartInfo(ctx context.Context, io IO, root *CLI, cmd infoCmd, deps deps) 
 	if err := deps.call(ctx, circuit, wire.MethodKartInfo, map[string]string{"name": cmd.Name}, &raw); err != nil {
 		return emitError(io, err)
 	}
-	// Always pretty-print JSON — info is inherently structured and the
-	// container / devpod sub-objects don't flatten into a readable table.
+	// Always pretty-print — info's nested sub-objects don't flatten into
+	// a readable table.
 	var v any
 	if err := json.Unmarshal(raw, &v); err != nil {
 		return emitError(io, err)

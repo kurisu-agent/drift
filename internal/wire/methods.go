@@ -1,8 +1,7 @@
 package wire
 
-// Method names for the JSON-RPC 2.0 surface. Both the drift client and the
-// lakitu server reference these constants so a typo surfaces at compile time
-// rather than on the wire.
+// Both drift and lakitu reference these constants so a typo surfaces at
+// compile time rather than on the wire.
 const (
 	MethodServerVersion = "server.version"
 	MethodServerInit    = "server.init"
@@ -38,11 +37,9 @@ const (
 	MethodConfigSet  = "config.set"
 )
 
-// Methods returns every JSON-RPC method name in the catalog. The order
-// tracks this file's source order; callers that want a stable presentation
-// should sort the result. Keep this list in sync with the const block above
-// — it is the one place we pay the price of declaring the names twice so
-// consumers (cliscript, clihelp, docs) don't have to grep the block.
+// Methods returns the catalog in source order. Keep in sync with the
+// const block — the cost of duplicating the names is paid here so
+// consumers (cliscript, clihelp, docs) don't have to grep.
 func Methods() []string {
 	return []string{
 		MethodServerVersion, MethodServerInit, MethodServerVerify,

@@ -1,4 +1,3 @@
-// lakitu — circuit-side server for drift.
 package main
 
 import (
