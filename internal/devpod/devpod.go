@@ -1,10 +1,6 @@
-// Package devpod is lakitu's typed wrapper around the devpod CLI.
-//
-// Every call routes through [internal/exec.Run] so the process tree honors
-// the critical invariants: context-cancellable, SIGTERM → SIGKILL after
-// WaitDelay, no shell interposition, stdout/stderr captured separately.
-// The drift client binary never imports this package — devpod runs only on
-// the circuit, invoked by lakitu.
+// Package devpod is lakitu's typed wrapper around the devpod CLI. Every
+// call routes through [internal/exec.Run] so the process tree honors the
+// cancellation/signal/shell invariants. Not imported by the drift client.
 package devpod
 
 import (
@@ -18,18 +14,13 @@ import (
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 )
 
-// IsNotInstalled reports whether err indicates the devpod binary wasn't
-// found on PATH (as opposed to a real devpod-side failure). Callers use
-// this to render a single actionable message instead of two copies of
-// os/exec's nested wrapping.
+// IsNotInstalled reports whether err came from devpod being absent on PATH
+// (as opposed to a real devpod-side failure). Callers use it to render one
+// actionable install hint instead of two copies of os/exec's nested wrap.
 func IsNotInstalled(err error) bool {
 	return errors.Is(err, osexec.ErrNotFound)
 }
 
-// InstallHint returns a one-line copy-paste install command for the
-// pinned devpod release. When ExpectedVersion is empty (dev build) the
-// hint points at `latest` — good enough for humans to fix a missing
-// binary on their workstation.
 func InstallHint() string {
 	ver := ExpectedVersion
 	if ver == "" {
@@ -41,8 +32,8 @@ func InstallHint() string {
 	)
 }
 
-// tagOrLatest picks the URL path segment for ver: GitHub's release
-// download URL is `/releases/latest/download/…` OR `/releases/download/<tag>/…`.
+// GitHub's release download URL is `/releases/latest/download/…`
+// OR `/releases/download/<tag>/…`.
 func tagOrLatest(ver string) string {
 	if ver == "" || ver == "latest" {
 		return "latest"
@@ -50,41 +41,27 @@ func tagOrLatest(ver string) string {
 	return "download/" + ver
 }
 
-// DefaultBinary is the devpod executable name looked up on $PATH when a
-// [Client] is constructed without an override. Tests inject a fake via
-// [Client.Binary] or [Client.Runner].
 const DefaultBinary = "devpod"
 
-// Runner is the execution seam. Production callers use [ExecRunner]; tests
-// substitute a fake that returns canned stdout/stderr without spawning a
-// real process. The signature mirrors [driftexec.Run] so the production
-// adapter is a one-line passthrough.
+// Runner is the execution seam — tests substitute a fake that returns
+// canned stdout/stderr without spawning a real process.
 type Runner interface {
 	Run(ctx context.Context, cmd driftexec.Cmd) (driftexec.Result, error)
 }
 
-// RunnerFunc adapts a plain function to the [Runner] interface.
 type RunnerFunc func(ctx context.Context, cmd driftexec.Cmd) (driftexec.Result, error)
 
-// Run implements [Runner].
 func (f RunnerFunc) Run(ctx context.Context, cmd driftexec.Cmd) (driftexec.Result, error) {
 	return f(ctx, cmd)
 }
 
-// ExecRunner is the production [Runner] — a thin pass-through to
-// [driftexec.Run]. Exposed as a value (not a method on Client) so callers
-// that want to stack middlewares over the real runner can wrap it.
 var ExecRunner Runner = RunnerFunc(driftexec.Run)
 
-// Client is the typed interface to the devpod CLI. The zero value is usable
-// and defaults to [ExecRunner] and [DefaultBinary].
+// Client is the typed interface to the devpod CLI. The zero value is usable.
 type Client struct {
-	// Binary overrides the devpod executable. Empty means [DefaultBinary].
 	Binary string
-	// Runner overrides the execution seam. nil means [ExecRunner].
 	Runner Runner
-	// Env, when non-nil, is passed as the child environment. nil inherits
-	// the parent's env — the usual case for lakitu on a circuit.
+	// Env: nil inherits the parent env (the usual lakitu case on a circuit).
 	Env []string
 }
 
@@ -102,9 +79,6 @@ func (c *Client) runner() Runner {
 	return c.Runner
 }
 
-// run is the single place this package calls into exec. Every public method
-// funnels through here so every devpod invocation inherits the same
-// cancellation/shell/env invariants.
 func (c *Client) run(ctx context.Context, args ...string) (driftexec.Result, error) {
 	return c.runner().Run(ctx, driftexec.Cmd{
 		Name: c.binary(),
@@ -120,38 +94,19 @@ func (c *Client) envOrNil() []string {
 	return append([]string(nil), c.Env...)
 }
 
-// UpOpts mirrors the subset of `devpod up` flags that lakitu composes from
-// drift's own flags and tune presets.
 type UpOpts struct {
-	// Name is the workspace name (required). Passed as the positional
-	// argument when Source is empty; otherwise Source is the positional
-	// and --id=<Name> carries the name.
 	Name string
-	// Source is the positional source arg: a git URL, a local path, or
-	// empty to reuse an existing workspace.
-	Source string
-	// Provider is the devpod provider (fixed on "docker").
-	// Empty means don't pass --provider.
-	Provider string
-	// IDE maps to --ide; locked at "none".
-	IDE string
-	// AdditionalFeatures is a JSON object serialized to
-	// --additional-features. Pass the zero-value empty string to omit.
-	AdditionalFeatures string
-	// ExtraDevcontainerPath is the resolved on-disk path passed as
-	// --extra-devcontainer-path. Callers are responsible for writing URLs
-	// or inline JSON to a temp file first.
+	// Source: git URL, local path, or empty to reuse an existing workspace.
+	Source                string
+	Provider              string
+	IDE                   string
+	AdditionalFeatures    string
 	ExtraDevcontainerPath string
-	// Dotfiles is the layer-2 dotfiles repo URL (--dotfiles).
-	Dotfiles string
-	// DevcontainerImage overrides the container image (--devcontainer-image).
-	DevcontainerImage string
-	// FallbackImage is --fallback-image.
-	FallbackImage string
-	// GitCloneStrategy is --git-clone-strategy.
-	GitCloneStrategy string
-	// ConfigureSSH toggles --configure-ssh. Default: false. drift manages
-	// its own SSH config and does not want devpod to edit ~/.ssh/config.
+	Dotfiles              string
+	DevcontainerImage     string
+	FallbackImage         string
+	GitCloneStrategy      string
+	// ConfigureSSH: drift manages its own SSH config and keeps this off.
 	ConfigureSSH bool
 }
 
@@ -195,9 +150,6 @@ func (o UpOpts) args() ([]string, error) {
 	return args, nil
 }
 
-// Up invokes `devpod up` with the given options. Returns the combined stdout
-// output for callers that want to log provisioning progress; stderr is
-// available via the *Error on non-zero exit.
 func (c *Client) Up(ctx context.Context, opts UpOpts) ([]byte, error) {
 	args, err := opts.args()
 	if err != nil {
@@ -210,9 +162,6 @@ func (c *Client) Up(ctx context.Context, opts UpOpts) ([]byte, error) {
 	return res.Stdout, nil
 }
 
-// Stop invokes `devpod stop <name>`. Idempotent at the devpod layer —
-// stopping an already-stopped workspace is a no-op exit 0. lakitu relies on
-// this for its own idempotency contract.
 func (c *Client) Stop(ctx context.Context, name string) error {
 	if name == "" {
 		return errors.New("devpod: Stop: name is required")
@@ -221,7 +170,6 @@ func (c *Client) Stop(ctx context.Context, name string) error {
 	return err
 }
 
-// Delete invokes `devpod delete --force <name>`.
 func (c *Client) Delete(ctx context.Context, name string) error {
 	if name == "" {
 		return errors.New("devpod: Delete: name is required")
@@ -230,10 +178,6 @@ func (c *Client) Delete(ctx context.Context, name string) error {
 	return err
 }
 
-// Status invokes `devpod status <name> --output json` and decodes the result.
-// The status string is lower-cased before returning; empty strings are
-// treated as [StatusNotFound] since some devpod versions emit that shape
-// for missing workspaces.
 func (c *Client) Status(ctx context.Context, name string) (Status, error) {
 	if name == "" {
 		return "", errors.New("devpod: Status: name is required")
@@ -251,24 +195,17 @@ func (c *Client) Status(ctx context.Context, name string) (Status, error) {
 	return normalizeStatus(payload.State), nil
 }
 
-// SSHOpts mirrors the useful subset of `devpod ssh` flags.
 type SSHOpts struct {
-	// Name is the target workspace (required).
-	Name string
-	// Command runs inside the container instead of the default login shell.
+	Name    string
 	Command string
-	// User is the container user (--user).
-	User string
-	// Workdir is the container-side working directory (--workdir).
+	User    string
 	Workdir string
-	// SendEnv forwards local env vars into the container (--send-env).
 	SendEnv []string
-	// SetEnv sets env vars inside the container (--set-env KEY=VALUE).
-	SetEnv []string
-	// KeepaliveInterval sets --ssh-keepalive-interval. Zero means default.
+	SetEnv  []string
+	// KeepaliveInterval: zero falls back to devpod's default.
 	KeepaliveInterval string
-	// Stdio toggles --stdio, used by `drift ssh-proxy` to pipe the outer
-	// OpenSSH handshake straight through to devpod's injected SSH server.
+	// Stdio: used by `drift ssh-proxy` to pipe the outer OpenSSH handshake
+	// straight through to devpod's injected SSH server.
 	Stdio bool
 }
 
@@ -301,10 +238,9 @@ func (o SSHOpts) args() ([]string, error) {
 	return args, nil
 }
 
-// SSH invokes `devpod ssh` with opts. Returns the captured stdout for
-// non-interactive uses (`--command`); interactive sessions should drive
-// stdio directly via a different transport — Phase 10's `drift connect`
-// path does not go through this wrapper.
+// SSH invokes `devpod ssh` and returns captured stdout — for non-interactive
+// uses only. Interactive sessions (drift connect) drive stdio via a separate
+// transport that does not go through this wrapper.
 func (c *Client) SSH(ctx context.Context, opts SSHOpts) ([]byte, error) {
 	args, err := opts.args()
 	if err != nil {
@@ -317,11 +253,9 @@ func (c *Client) SSH(ctx context.Context, opts SSHOpts) ([]byte, error) {
 	return res.Stdout, nil
 }
 
-// Workspace is one entry returned by `devpod list --output json`. Fields are
-// the subset lakitu needs to merge with its garage view. Unknown fields are
-// tolerated — the wrapper does not DisallowUnknownFields here because
-// devpod's JSON surface is additive and lakitu should keep working across
-// minor upgrades.
+// Workspace is the subset of `devpod list --output json` that lakitu merges
+// with its garage view. DisallowUnknownFields is deliberately NOT set —
+// devpod's JSON surface is additive and we want to ride through minor bumps.
 type Workspace struct {
 	ID       string `json:"id"`
 	Source   Source `json:"source"`
@@ -332,24 +266,20 @@ type Workspace struct {
 	Created  string `json:"creationTimestamp,omitempty"`
 }
 
-// Source describes how the workspace was created. Exactly one of the
-// fields should be non-empty in a well-formed response; callers should
-// prefer GitRepository when both are present.
+// Source: exactly one field should be non-empty. Prefer GitRepository when
+// both are present.
 type Source struct {
 	GitRepository string `json:"gitRepository,omitempty"`
 	LocalFolder   string `json:"localFolder,omitempty"`
 	Image         string `json:"image,omitempty"`
 }
 
-// List invokes `devpod list --output json` and decodes the workspaces.
-// An empty list is returned as an empty slice, never nil.
 func (c *Client) List(ctx context.Context) ([]Workspace, error) {
 	res, err := c.run(ctx, "list", "--output", "json")
 	if err != nil {
 		return nil, err
 	}
-	// devpod list emits `null` or `[]` on an empty garage depending on
-	// version; normalize both to an empty slice.
+	// devpod emits `null` or `[]` on an empty garage depending on version.
 	trimmed := trimJSONSpace(res.Stdout)
 	if len(trimmed) == 0 || string(trimmed) == "null" {
 		return []Workspace{}, nil
@@ -364,8 +294,6 @@ func (c *Client) List(ctx context.Context) ([]Workspace, error) {
 	return workspaces, nil
 }
 
-// Logs invokes `devpod logs <name>` and returns the raw bytes. Streaming
-// is deferred to a later phase — MVP's `kart.logs` returns a chunk.
 func (c *Client) Logs(ctx context.Context, name string) ([]byte, error) {
 	if name == "" {
 		return nil, errors.New("devpod: Logs: name is required")
@@ -377,31 +305,19 @@ func (c *Client) Logs(ctx context.Context, name string) ([]byte, error) {
 	return res.Stdout, nil
 }
 
-// ExpectedVersion is the devpod fork/release drift was built against —
-// injected at build time by the flake:
-//
-//	-X github.com/kurisu-agent/drift/internal/devpod.ExpectedVersion=v0.17.0
-//
-// Empty means "no pin" (dev builds); Verify then only reports what the
-// circuit has without a match check. Keep the string in the same shape
-// `devpod version` emits (with the leading "v").
+// ExpectedVersion is the devpod fork/release drift was built against,
+// injected by the flake's -X ldflag. Empty means "no pin" (dev builds);
+// Verify then only reports what the circuit has without a match check.
 var ExpectedVersion = ""
 
-// VersionCheck is the result of comparing the circuit's live devpod
-// version to ExpectedVersion. Callers (lakitu init, kart.new) decide what
-// severity to render each state as.
 type VersionCheck struct {
 	Actual   string
 	Expected string
-	// Match is true when Expected is empty (no pin) or Actual == Expected.
-	// Callers should treat Match=false as a warning, not a hard error —
-	// devpod forks maintain backwards-compatible argv across minor bumps.
+	// Match: true when Expected is empty (no pin) or Actual == Expected.
+	// Callers treat Match=false as a warning, not a hard error.
 	Match bool
 }
 
-// Verify calls `devpod version` and compares to ExpectedVersion. A
-// non-nil error means we couldn't determine the circuit's version at
-// all (devpod binary missing, permissions, etc.).
 func (c *Client) Verify(ctx context.Context) (VersionCheck, error) {
 	got, err := c.Version(ctx)
 	if err != nil {
@@ -414,9 +330,6 @@ func (c *Client) Verify(ctx context.Context) (VersionCheck, error) {
 	}, nil
 }
 
-// Version invokes `devpod version` and returns the trimmed one-line output
-// (e.g. "v0.22.0"). Empty output yields an empty string — the caller
-// decides whether that's an error.
 func (c *Client) Version(ctx context.Context) (string, error) {
 	res, err := c.run(ctx, "version")
 	if err != nil {
@@ -425,8 +338,6 @@ func (c *Client) Version(ctx context.Context) (string, error) {
 	return string(bytes.TrimSpace(res.Stdout)), nil
 }
 
-// ProviderList invokes `devpod provider list --output json` and returns
-// the set of installed provider names. Order is unspecified.
 func (c *Client) ProviderList(ctx context.Context) ([]string, error) {
 	res, err := c.run(ctx, "provider", "list", "--output", "json")
 	if err != nil {
@@ -447,8 +358,6 @@ func (c *Client) ProviderList(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
-// ProviderAdd invokes `devpod provider add <name>`. Callers should prefer
-// EnsureProvider for idempotent add-if-missing flows.
 func (c *Client) ProviderAdd(ctx context.Context, name string) error {
 	if name == "" {
 		return errors.New("devpod: ProviderAdd: name is required")
@@ -457,10 +366,8 @@ func (c *Client) ProviderAdd(ctx context.Context, name string) error {
 	return err
 }
 
-// EnsureProvider registers `name` via devpod if it isn't already listed.
-// Safe to call on every init; a no-op when the provider is present.
-// Returns true when a registration actually happened (useful for init
-// summaries).
+// EnsureProvider registers `name` if absent. Returns true when a
+// registration actually happened (useful for init summaries).
 func (c *Client) EnsureProvider(ctx context.Context, name string) (added bool, err error) {
 	have, err := c.ProviderList(ctx)
 	if err != nil {
@@ -477,15 +384,13 @@ func (c *Client) EnsureProvider(ctx context.Context, name string) (added bool, e
 	return true, nil
 }
 
-// InstallDotfiles invokes `devpod agent workspace install-dotfiles` with the
-// given dotfiles URL (layer-1 plumbing used by Phase 8). A file:// URL is
-// valid — lakitu writes the generated layer-1 script to a tmpdir and passes
-// it here.
+// InstallDotfiles invokes `devpod agent workspace install-dotfiles`. A
+// file:// URL is valid — lakitu writes the generated layer-1 script to a
+// tmpdir and passes it here.
 //
-// The skevetter/devpod fork exposes this as `--repository <url>`. Upstream
-// devpod used `--dotfiles`; we track the fork (see flake.nix devpodPin) so
-// --repository is the right flag. If a future fork bump renames again, a
-// thin fallback here would be cleaner than forcing every lakitu rebuild.
+// The skevetter/devpod fork renamed --dotfiles to --repository; flake.nix
+// pins the fork so this flag is correct. A future rename would motivate a
+// fallback probe.
 func (c *Client) InstallDotfiles(ctx context.Context, url string) error {
 	if url == "" {
 		return errors.New("devpod: InstallDotfiles: url is required")
@@ -494,10 +399,6 @@ func (c *Client) InstallDotfiles(ctx context.Context, url string) error {
 	return err
 }
 
-// trimJSONSpace strips ASCII whitespace from both ends of a raw JSON buffer
-// without the extra allocation [strings.TrimSpace] would incur for a byte
-// slice. Kept inline so the package has no stdlib imports beyond what's
-// already present.
 func trimJSONSpace(b []byte) []byte {
 	start, end := 0, len(b)
 	for start < end {
