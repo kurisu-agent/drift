@@ -11,5 +11,5 @@ type stopCmd struct {
 }
 
 func runKartStop(ctx context.Context, io IO, root *CLI, cmd stopCmd, deps deps) int {
-	return runKartLifecycle(ctx, io, root, cmd.Name, wire.MethodKartStop, "stopped", deps)
+	return runKartLifecycle(ctx, io, root, cmd.Name, wire.MethodKartStop, "stopping", "stopped", deps)
 }

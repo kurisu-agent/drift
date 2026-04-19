@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"text/tabwriter"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
+	"github.com/kurisu-agent/drift/internal/cli/style"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
@@ -55,8 +56,9 @@ func runKartList(ctx context.Context, io IO, root *CLI, _ listCmd, deps deps) in
 		fmt.Fprintln(io.Stdout, "no karts on this circuit")
 		return 0
 	}
-	tw := tabwriter.NewWriter(io.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tSTATUS\tSOURCE\tTUNE\tAUTOSTART")
+	p := style.For(io.Stdout, root.Output == "json")
+	rows := make([][]string, 0, len(res.Karts))
+	staleRows := make([]bool, 0, len(res.Karts))
 	for _, k := range res.Karts {
 		status := k.Status
 		if k.Stale {
@@ -74,9 +76,27 @@ func runKartList(ctx context.Context, io IO, root *CLI, _ listCmd, deps deps) in
 		if tune == "" {
 			tune = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", k.Name, status, src, tune, autostart)
+		rows = append(rows, []string{k.Name, status, src, tune, autostart})
+		staleRows = append(staleRows, k.Stale)
 	}
-	_ = tw.Flush()
+	writeTable(io.Stdout, p, []string{"NAME", "STATUS", "SOURCE", "TUNE", "AUTOSTART"}, rows,
+		func(row, col int, _ *style.Palette) lipgloss.Style {
+			switch col {
+			case 0: // NAME
+				return lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+			case 1: // STATUS
+				if row >= 0 && row < len(staleRows) && staleRows[row] {
+					return lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+				}
+				switch rows[row][1] {
+				case "running":
+					return lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+				case "stopped":
+					return lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+				}
+			}
+			return lipgloss.NewStyle()
+		})
 	return 0
 }
 

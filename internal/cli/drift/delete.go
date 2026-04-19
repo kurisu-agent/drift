@@ -13,5 +13,5 @@ type deleteCmd struct {
 }
 
 func runKartDelete(ctx context.Context, io IO, root *CLI, cmd deleteCmd, deps deps) int {
-	return runKartLifecycle(ctx, io, root, cmd.Name, wire.MethodKartDelete, "deleted", deps)
+	return runKartLifecycle(ctx, io, root, cmd.Name, wire.MethodKartDelete, "deleting", "deleted", deps)
 }

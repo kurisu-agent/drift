@@ -96,6 +96,36 @@ func TestEmit_WrappedRPCErrorStillRenderedTyped(t *testing.T) {
 	}
 }
 
+func TestEmit_DevpodStderrRendersAsIndentedBlockAndIsNotAKeyLine(t *testing.T) {
+	re := rpcerr.New(rpcerr.CodeDevpod, rpcerr.TypeDevpodUpFailed,
+		"devpod up failed").
+		With("kart", "alpha").
+		With(rpcerr.DataKeyDevpodStderr,
+			"\x1b[31mwarn\x1b[0m resolving dependencies\nfatal: auth required")
+
+	var buf bytes.Buffer
+	errfmt.Emit(&buf, re)
+
+	got := buf.String()
+	if strings.Contains(got, "devpod_stderr:") {
+		t.Errorf("devpod_stderr leaked as a key line: %q", got)
+	}
+	for _, want := range []string{
+		"error: devpod up failed\n",
+		"  kart: alpha\n",
+		"  devpod output:\n",
+		"    warn resolving dependencies\n",
+		"    fatal: auth required\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in output:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "\x1b[31m") {
+		t.Errorf("ANSI escape leaked into block: %q", got)
+	}
+}
+
 func TestEmit_EachCodeCategoryRoundTrips(t *testing.T) {
 	cases := []struct {
 		name string

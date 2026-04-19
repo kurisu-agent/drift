@@ -232,3 +232,58 @@ func TestPackageFileExists(t *testing.T) {
 		t.Fatalf("expected exec.go to exist in package dir: %v", err)
 	}
 }
+
+func TestStderrTail_ReturnsEmptyForNonExecError(t *testing.T) {
+	t.Parallel()
+	if got := driftexec.StderrTail(errors.New("plain")); got != "" {
+		t.Errorf("StderrTail(plain) = %q, want empty", got)
+	}
+	if got := driftexec.StderrTail(nil); got != "" {
+		t.Errorf("StderrTail(nil) = %q, want empty", got)
+	}
+}
+
+func TestStderrTail_StripsANSIAndRedactsSecrets(t *testing.T) {
+	t.Parallel()
+	e := &driftexec.Error{
+		Stderr: []byte(
+			"\x1b[31mwarn\x1b[0m resolving deps\n" +
+				"GET https://user:supersecret@example.com/repo.git\n" +
+				"Authorization: Bearer abcd1234\n" +
+				"token=xyz123 in log\n" +
+				"fatal: auth failed\n"),
+	}
+	out := driftexec.StderrTail(e)
+	if strings.Contains(out, "\x1b[") {
+		t.Errorf("ANSI not stripped: %q", out)
+	}
+	if strings.Contains(out, "supersecret") {
+		t.Errorf("URL credentials leaked: %q", out)
+	}
+	if strings.Contains(out, "Bearer abcd1234") {
+		t.Errorf("Authorization value leaked: %q", out)
+	}
+	if strings.Contains(out, "token=xyz123") {
+		t.Errorf("token=value leaked: %q", out)
+	}
+	if !strings.Contains(out, "fatal: auth failed") {
+		t.Errorf("tail missing final line: %q", out)
+	}
+}
+
+func TestStderrTail_CapsToLastLines(t *testing.T) {
+	t.Parallel()
+	var lines []string
+	for i := 0; i < 40; i++ {
+		lines = append(lines, "line"+strings.Repeat("x", 20))
+	}
+	e := &driftexec.Error{Stderr: []byte(strings.Join(lines, "\n"))}
+	out := driftexec.StderrTail(e)
+	outLines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(outLines) > 20 {
+		t.Errorf("got %d lines, want <= 20", len(outLines))
+	}
+	if !strings.HasSuffix(out, lines[len(lines)-1]) {
+		t.Errorf("last line not preserved: %q", out)
+	}
+}

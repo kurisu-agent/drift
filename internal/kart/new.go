@@ -11,6 +11,7 @@ import (
 
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/devpod"
+	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/model"
 	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
@@ -157,8 +158,13 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 		ConfigureSSH:          false,
 	}
 	if _, err := d.Devpod.Up(ctx, up); err != nil {
-		return nil, kartErrMarker(rpcerr.New(rpcerr.CodeDevpod,
-			rpcerr.TypeDevpodUpFailed, "kart.new: devpod up: %v", err).Wrap(err))
+		re := rpcerr.New(rpcerr.CodeDevpod,
+			rpcerr.TypeDevpodUpFailed, "kart.new: devpod up: %v", err).Wrap(err).
+			With("kart", resolved.Name)
+		if tail := driftexec.StderrTail(err); tail != "" {
+			re = re.With(rpcerr.DataKeyDevpodStderr, tail)
+		}
+		return nil, kartErrMarker(re)
 	}
 
 	// KNOWN LIMITATION (skevetter/devpod v0.22): install-dotfiles runs

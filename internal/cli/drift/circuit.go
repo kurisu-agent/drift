@@ -8,9 +8,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"text/tabwriter"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
+	"github.com/kurisu-agent/drift/internal/cli/style"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/sshconf"
@@ -182,16 +183,22 @@ func runCircuitList(io IO, root *CLI, deps deps) int {
 		fmt.Fprintln(io.Stdout, "no circuits configured")
 		return 0
 	}
-	tw := tabwriter.NewWriter(io.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tHOST\tDEFAULT")
+	p := style.For(io.Stdout, root.Output == "json")
+	rows := make([][]string, 0, len(entries))
 	for _, e := range entries {
 		def := ""
 		if e.Default {
 			def = "*"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", e.Name, e.Host, def)
+		rows = append(rows, []string{e.Name, e.Host, def})
 	}
-	_ = tw.Flush()
+	writeTable(io.Stdout, p, []string{"NAME", "HOST", "DEFAULT"}, rows,
+		func(_, col int, _ *style.Palette) lipgloss.Style {
+			if col == 0 {
+				return lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+			}
+			return lipgloss.NewStyle()
+		})
 	return 0
 }
 

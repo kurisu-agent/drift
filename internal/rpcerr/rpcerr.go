@@ -11,6 +11,11 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
+// DataKeyDevpodStderr is the Data key under which server wrap sites attach
+// a captured devpod stderr tail; errfmt renders it as a dim indented block
+// below the main error message.
+const DataKeyDevpodStderr = "devpod_stderr"
+
 // Code doubles as process exit code on the human CLI path and populates
 // JSON-RPC error.code on the RPC path.
 type Code int

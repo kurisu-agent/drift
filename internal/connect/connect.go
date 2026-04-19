@@ -25,9 +25,13 @@ type Deps struct {
 	Call func(ctx context.Context, circuit, method string, params, result any) error
 	// Exec defaults to execStdio — a direct os/exec Run with stdio wired
 	// through so the user's terminal sees the child transparently.
-	Exec  func(ctx context.Context, bin string, argv []string, stdio Stdio) error
-	Now   func() time.Time
-	Sleep func(d time.Duration)
+	Exec func(ctx context.Context, bin string, argv []string, stdio Stdio) error
+	// OnReady fires once the kart is running, right before Exec takes the
+	// TTY. CLI callers use it to stop a spinner so it doesn't fight the
+	// interactive child for cursor control. nil skips the hook.
+	OnReady func()
+	Now     func() time.Time
+	Sleep   func(d time.Duration)
 }
 
 type Stdio struct {
@@ -57,6 +61,9 @@ func Run(ctx context.Context, d Deps, opts Options, stdio Stdio) error {
 
 	useMosh := !opts.ForceSSH && moshAvailable(d)
 	bin, argv := buildConnectArgv(useMosh, opts)
+	if d.OnReady != nil {
+		d.OnReady()
+	}
 	return d.Exec(ctx, bin, argv, stdio)
 }
 
@@ -82,6 +89,25 @@ func moshAvailable(d Deps) bool {
 	}
 	_, err := d.LookPath("mosh")
 	return err == nil
+}
+
+// Transport reports which binary `drift connect` would shell out to given
+// the same ForceSSH flag, without running anything. Returns "mosh" when
+// mosh is on PATH and not suppressed, "ssh" otherwise. LookPath errors are
+// swallowed and treated as "mosh not present" — matches the connect path's
+// existing fallback so the user never sees a transport hint blocked on a
+// detection failure.
+func Transport(lookPath func(string) (string, error), forceSSH bool) string {
+	if forceSSH {
+		return "ssh"
+	}
+	if lookPath == nil {
+		lookPath = osexec.LookPath
+	}
+	if _, err := lookPath("mosh"); err == nil {
+		return "mosh"
+	}
+	return "ssh"
 }
 
 func buildConnectArgv(useMosh bool, opts Options) (string, []string) {

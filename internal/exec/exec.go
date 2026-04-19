@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	osexec "os/exec"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -168,6 +169,55 @@ func Run(ctx context.Context, cmd Cmd) (Result, error) {
 	// setup errors) land here. Wrap so errors.Is against os/exec sentinels
 	// still works.
 	return Result{}, fmt.Errorf("exec: %s: %w", cmd.Name, runErr)
+}
+
+// StderrTail unwraps *Error and returns the trailing ~20 lines of captured
+// stderr (capped at stderrTailMaxBytes), with ANSI escapes stripped and
+// obvious secrets redacted. Returns "" if err carries no stderr. Callers
+// attach the result via rpcerr.Error.With(DataKeyDevpodStderr, …) so it
+// rides through JSON-RPC to the client for rendering.
+func StderrTail(err error) string {
+	var e *Error
+	if !errors.As(err, &e) || len(e.Stderr) == 0 {
+		return ""
+	}
+	s := stripANSI(string(e.Stderr))
+	s = redactSecrets(s)
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) > stderrTailMaxLines {
+		lines = lines[len(lines)-stderrTailMaxLines:]
+	}
+	out := strings.Join(lines, "\n")
+	if len(out) > stderrTailMaxBytes {
+		// Drop the overflow from the front and align to the next newline so
+		// we don't emit a half-line that confuses the reader.
+		out = out[len(out)-stderrTailMaxBytes:]
+		if idx := strings.IndexByte(out, '\n'); idx >= 0 {
+			out = out[idx+1:]
+		}
+	}
+	return out
+}
+
+const (
+	stderrTailMaxLines = 20
+	stderrTailMaxBytes = 4096
+)
+
+var (
+	ansiRE       = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]`)
+	secretAuthRE = regexp.MustCompile(`(?i)(authorization:\s*)\S+`)
+	secretTokRE  = regexp.MustCompile(`(?i)((?:token|api[-_]?key|password|secret)=)[^\s&"']+`)
+	secretURLRE  = regexp.MustCompile(`(https?://)[^:\s/@]+:[^@\s/]+@`)
+)
+
+func stripANSI(s string) string { return ansiRE.ReplaceAllString(s, "") }
+
+func redactSecrets(s string) string {
+	s = secretAuthRE.ReplaceAllString(s, "${1}[REDACTED]")
+	s = secretTokRE.ReplaceAllString(s, "${1}[REDACTED]")
+	s = secretURLRE.ReplaceAllString(s, "${1}[REDACTED]@")
+	return s
 }
 
 func firstLine(b []byte) string {

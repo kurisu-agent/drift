@@ -10,11 +10,23 @@ import (
 	"time"
 
 	"github.com/kurisu-agent/drift/internal/devpod"
+	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/slogfmt"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
+
+// wrapDevpod wraps a devpod-originating error with rpcerr, attaching the
+// captured stderr tail (if any) so the client can surface the real cause
+// instead of devpod's first-line summary.
+func wrapDevpod(code rpcerr.Code, typ rpcerr.Type, kart string, err error, format string, args ...any) *rpcerr.Error {
+	re := rpcerr.New(code, typ, format, args...).Wrap(err).With("kart", kart)
+	if tail := driftexec.StderrTail(err); tail != "" {
+		re = re.With(rpcerr.DataKeyDevpodStderr, tail)
+	}
+	return re
+}
 
 // The one-shot SSH channel can't stream, so cap unbounded log responses.
 // Users who want more can page with --since or set --tail explicitly.
@@ -70,8 +82,8 @@ func (d KartDeps) kartStartHandler(ctx context.Context, params json.RawMessage) 
 		return nil, err
 	}
 	if _, err := d.Devpod.Up(ctx, devpod.UpOpts{Name: p.Name}); err != nil {
-		return nil, rpcerr.New(rpcerr.CodeDevpod, rpcerr.TypeDevpodUpFailed,
-			"devpod up %s failed: %v", p.Name, err).Wrap(err).With("kart", p.Name)
+		return nil, wrapDevpod(rpcerr.CodeDevpod, rpcerr.TypeDevpodUpFailed, p.Name, err,
+			"devpod up %s failed: %v", p.Name, err)
 	}
 	return KartLifecycleResult{Name: p.Name, Status: d.statusFor(ctx, p.Name)}, nil
 }
@@ -85,8 +97,8 @@ func (d KartDeps) kartStopHandler(ctx context.Context, params json.RawMessage) (
 		return nil, err
 	}
 	if err := d.Devpod.Stop(ctx, p.Name); err != nil {
-		return nil, rpcerr.New(rpcerr.CodeDevpod, rpcerr.TypeDevpodUnreachable,
-			"devpod stop %s failed: %v", p.Name, err).Wrap(err).With("kart", p.Name)
+		return nil, wrapDevpod(rpcerr.CodeDevpod, rpcerr.TypeDevpodUnreachable, p.Name, err,
+			"devpod stop %s failed: %v", p.Name, err)
 	}
 	return KartLifecycleResult{Name: p.Name, Status: d.statusFor(ctx, p.Name)}, nil
 }
@@ -100,12 +112,12 @@ func (d KartDeps) kartRestartHandler(ctx context.Context, params json.RawMessage
 		return nil, err
 	}
 	if err := d.Devpod.Stop(ctx, p.Name); err != nil {
-		return nil, rpcerr.New(rpcerr.CodeDevpod, rpcerr.TypeDevpodUnreachable,
-			"devpod stop %s failed: %v", p.Name, err).Wrap(err).With("kart", p.Name)
+		return nil, wrapDevpod(rpcerr.CodeDevpod, rpcerr.TypeDevpodUnreachable, p.Name, err,
+			"devpod stop %s failed: %v", p.Name, err)
 	}
 	if _, err := d.Devpod.Up(ctx, devpod.UpOpts{Name: p.Name}); err != nil {
-		return nil, rpcerr.New(rpcerr.CodeDevpod, rpcerr.TypeDevpodUpFailed,
-			"devpod up %s failed: %v", p.Name, err).Wrap(err).With("kart", p.Name)
+		return nil, wrapDevpod(rpcerr.CodeDevpod, rpcerr.TypeDevpodUpFailed, p.Name, err,
+			"devpod up %s failed: %v", p.Name, err)
 	}
 	return KartLifecycleResult{Name: p.Name, Status: d.statusFor(ctx, p.Name)}, nil
 }
@@ -135,8 +147,8 @@ func (d KartDeps) kartDeleteHandler(ctx context.Context, params json.RawMessage)
 	}
 	if inDevpod {
 		if err := d.Devpod.Delete(ctx, p.Name); err != nil {
-			return nil, rpcerr.New(rpcerr.CodeDevpod, rpcerr.TypeDevpodUnreachable,
-				"devpod delete %s failed: %v", p.Name, err).Wrap(err).With("kart", p.Name)
+			return nil, wrapDevpod(rpcerr.CodeDevpod, rpcerr.TypeDevpodUnreachable, p.Name, err,
+				"devpod delete %s failed: %v", p.Name, err)
 		}
 	}
 	if inGarage {
@@ -171,8 +183,8 @@ func (d KartDeps) kartLogsHandler(ctx context.Context, params json.RawMessage) (
 	}
 	out, err := d.Devpod.Logs(ctx, p.Name)
 	if err != nil {
-		return nil, rpcerr.New(rpcerr.CodeDevpod, rpcerr.TypeDevpodUnreachable,
-			"devpod logs %s failed: %v", p.Name, err).Wrap(err).With("kart", p.Name)
+		return nil, wrapDevpod(rpcerr.CodeDevpod, rpcerr.TypeDevpodUnreachable, p.Name, err,
+			"devpod logs %s failed: %v", p.Name, err)
 	}
 	format, lines := classifyLogLines(string(out))
 	lines = filterLogLines(lines, format, p, time.Now())

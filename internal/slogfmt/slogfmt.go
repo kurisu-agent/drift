@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/kurisu-agent/drift/internal/cli/style"
 )
 
 type Record struct {
@@ -68,6 +70,10 @@ func DecodeRecord(raw map[string]any) Record {
 //
 // Attributes sorted by key for deterministic output. Returns false when
 // the record is below min so callers can count filtered records.
+//
+// When w is a TTY (and NO_COLOR is unset) the timestamp is dim, DEBUG is
+// dim, WARN yellow, ERROR red, INFO default. Non-TTY writers (tests, pipes,
+// CI) get plain ASCII so grep/jq stay clean.
 func Emit(w io.Writer, rec Record, min slog.Level) bool {
 	if ParseLevel(rec.Level) < min {
 		return false
@@ -80,7 +86,11 @@ func Emit(w io.Writer, rec Record, min slog.Level) bool {
 	if !rec.Time.IsZero() {
 		stamp = rec.Time.Format("15:04:05")
 	}
-	fmt.Fprintf(w, "%s %-5s %s\n", stamp, level, rec.Msg)
+	p := style.For(w, false)
+	// Pad the level tag before styling so widths (5 chars) stay consistent
+	// whether or not ANSI is emitted.
+	paddedLevel := fmt.Sprintf("%-5s", level)
+	fmt.Fprintf(w, "%s %s %s\n", p.Dim(stamp), styleLevel(p, level, paddedLevel), rec.Msg)
 	if len(rec.Attrs) == 0 {
 		return true
 	}
@@ -93,6 +103,19 @@ func Emit(w io.Writer, rec Record, min slog.Level) bool {
 		writeAttr(w, k, rec.Attrs[k])
 	}
 	return true
+}
+
+func styleLevel(p *style.Palette, level, padded string) string {
+	switch level {
+	case "DEBUG":
+		return p.Dim(padded)
+	case "WARN":
+		return p.Warn(padded)
+	case "ERROR":
+		return p.Error(padded)
+	default:
+		return padded
+	}
 }
 
 // writeAttr indents continuation lines so multi-line values align under

@@ -11,5 +11,5 @@ type restartCmd struct {
 }
 
 func runKartRestart(ctx context.Context, io IO, root *CLI, cmd restartCmd, deps deps) int {
-	return runKartLifecycle(ctx, io, root, cmd.Name, wire.MethodKartRestart, "restarted", deps)
+	return runKartLifecycle(ctx, io, root, cmd.Name, wire.MethodKartRestart, "restarting", "restarted", deps)
 }

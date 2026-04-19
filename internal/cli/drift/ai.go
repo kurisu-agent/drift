@@ -3,10 +3,12 @@ package drift
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	osexec "os/exec"
 
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
+	"github.com/kurisu-agent/drift/internal/cli/style"
 	"github.com/kurisu-agent/drift/internal/connect"
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 )
@@ -31,6 +33,15 @@ func runAI(ctx context.Context, io IO, root *CLI, cmd aiCmd, deps deps) int {
 	useMosh := !cmd.SSH && moshOnPath()
 	bin, argv := buildAIArgv(useMosh, circuit, cmd.ForwardAgent)
 	stdio := connect.Stdio{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
+
+	p := style.For(io.Stderr, root.Output == "json")
+	if p.Enabled {
+		transport := "ssh"
+		if useMosh {
+			transport = "mosh"
+		}
+		fmt.Fprintln(io.Stderr, p.Dim("via "+transport))
+	}
 
 	err = execAI(ctx, bin, argv, stdio)
 	if err == nil {

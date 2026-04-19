@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
+	"github.com/kurisu-agent/drift/internal/cli/progress"
 	"github.com/kurisu-agent/drift/internal/kart"
 	"github.com/kurisu-agent/drift/internal/rpc/client"
 	"github.com/kurisu-agent/drift/internal/wire"
@@ -63,9 +64,15 @@ func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 
 	rpcc := client.New()
 	var result kart.Result
+	// Spinner + transport hint on stderr so `drift new ... | jq` still
+	// captures a clean JSON payload on stdout.
+	msg := fmt.Sprintf("creating kart %q", cmd.Name)
+	ph := progress.Start(io.Stderr, root.Output == "json", msg, "ssh")
 	if err := rpcc.Call(ctx, circuit, wire.MethodKartNew, params, &result); err != nil {
+		ph.Fail()
 		return errfmt.Emit(io.Stderr, err)
 	}
+	ph.Succeed(fmt.Sprintf("created kart %q", result.Name))
 
 	if root.Output == "json" {
 		buf, mErr := json.Marshal(result)

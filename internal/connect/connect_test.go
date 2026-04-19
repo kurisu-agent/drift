@@ -189,6 +189,30 @@ func TestRunAutostartTimeout(t *testing.T) {
 	}
 }
 
+func TestTransport(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		force    bool
+		lookPath func(string) (string, error)
+		want     string
+	}{
+		{"mosh present", false, func(string) (string, error) { return "/usr/bin/mosh", nil }, "mosh"},
+		{"mosh missing", false, func(string) (string, error) { return "", errors.New("not found") }, "ssh"},
+		{"force ssh skips lookup", true, func(string) (string, error) {
+			t.Error("LookPath called despite ForceSSH")
+			return "/usr/bin/mosh", nil
+		}, "ssh"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := connect.Transport(tc.lookPath, tc.force); got != tc.want {
+				t.Errorf("Transport = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func equal(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

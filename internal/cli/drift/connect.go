@@ -3,9 +3,13 @@ package drift
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	osexec "os/exec"
 
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
+	"github.com/kurisu-agent/drift/internal/cli/progress"
+	"github.com/kurisu-agent/drift/internal/cli/style"
 	"github.com/kurisu-agent/drift/internal/connect"
 	"github.com/kurisu-agent/drift/internal/rpc/client"
 )
@@ -22,8 +26,14 @@ func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps
 		return errfmt.Emit(io.Stderr, err)
 	}
 	rpcClient := client.New()
+	transport := connect.Transport(osexec.LookPath, cmd.SSH)
+	ph := progress.Start(io.Stderr, root.Output == "json",
+		"connecting to kart \""+cmd.Name+"\"", transport)
 	d := connect.Deps{
 		Call: rpcClient.Call,
+		// Stop the spinner right before Exec takes the TTY so it doesn't
+		// race the interactive child for cursor control.
+		OnReady: ph.Stop,
 	}
 	opts := connect.Options{
 		Circuit:      circuit,
@@ -33,7 +43,17 @@ func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps
 	}
 	stdio := connect.Stdio{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
 
+	// Transport hint to stderr so stdout stays clean for the remote
+	// session. Silenced in JSON mode / non-TTY via palette gating.
+	p := style.For(io.Stderr, root.Output == "json")
+	if p.Enabled {
+		fmt.Fprintln(io.Stderr, p.Dim("via "+transport))
+	}
+
 	err = connect.Run(ctx, d, opts, stdio)
+	// If Run returned before reaching Exec (RPC error), the spinner is
+	// still running — make sure it cleans up before errfmt writes.
+	ph.Stop()
 	if err == nil {
 		return 0
 	}

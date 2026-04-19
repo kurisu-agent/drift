@@ -14,6 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+	figure "github.com/common-nighthawk/go-figure"
+	"github.com/kurisu-agent/drift/internal/cli/style"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
@@ -53,6 +56,9 @@ func Run(ctx context.Context, opts Options, deps Deps, stdin io.Reader, stdout i
 			"drift warmup requires a TTY on stdin (scripted equivalents: drift circuit add, drift character add, drift chest set)")
 	}
 
+	p := style.For(stdout, false)
+	writeBanner(stdout, p)
+
 	br := bufio.NewReader(stdin)
 	cfg, err := deps.LoadClientConfig()
 	if err != nil {
@@ -79,9 +85,37 @@ func Run(ctx context.Context, opts Options, deps Deps, stdin io.Reader, stdout i
 	return runSummary(ctx, opts, deps, stdout, cfg, probes)
 }
 
-func runCircuitPhase(ctx context.Context, opts Options, deps Deps, br *bufio.Reader, w io.Writer, cfg *config.Client, probes map[string]*ProbeResult) error {
+// writeBanner prints the one-time go-figure "drift" banner at wizard start
+// when styling is enabled (real TTY, NO_COLOR unset). Disabled palettes
+// skip it so tests and piped invocations don't see ASCII art.
+func writeBanner(w io.Writer, p *style.Palette) {
+	if p == nil || !p.Enabled {
+		return
+	}
+	banner := figure.NewFigure("drift", "slant", true).String()
+	fmt.Fprintln(w, p.Accent(banner))
+}
+
+// sectionHeader renders `== Title ==` (plain) or a thin bordered panel
+// (styled). Plain form is a single line the existing tests assert against.
+func sectionHeader(w io.Writer, p *style.Palette, title string) {
+	if p == nil || !p.Enabled {
+		fmt.Fprintln(w, "")
+		fmt.Fprintf(w, "== %s ==\n", title)
+		return
+	}
+	panel := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("8")).
+		Padding(0, 1).
+		Bold(true).
+		Render(title)
 	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "== Circuits ==")
+	fmt.Fprintln(w, panel)
+}
+
+func runCircuitPhase(ctx context.Context, opts Options, deps Deps, br *bufio.Reader, w io.Writer, cfg *config.Client, probes map[string]*ProbeResult) error {
+	sectionHeader(w, style.For(w, false), "Circuits")
 	if len(cfg.Circuits) > 0 {
 		fmt.Fprintln(w, "already configured:")
 		names := sortedKeys(cfg.Circuits)
@@ -192,8 +226,7 @@ func addOneCircuit(ctx context.Context, opts Options, deps Deps, br *bufio.Reade
 }
 
 func runCharacterPhase(ctx context.Context, deps Deps, br *bufio.Reader, w io.Writer, cfg *config.Client) error {
-	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "== Characters ==")
+	sectionHeader(w, style.For(w, false), "Characters")
 	if len(cfg.Circuits) == 0 {
 		fmt.Fprintln(w, "no circuits configured; skipping characters")
 		return nil
@@ -322,8 +355,7 @@ func pickCircuit(br *bufio.Reader, w io.Writer, cfg *config.Client) (string, err
 }
 
 func runSummary(ctx context.Context, opts Options, deps Deps, w io.Writer, cfg *config.Client, probes map[string]*ProbeResult) error {
-	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "== Summary ==")
+	sectionHeader(w, style.For(w, false), "Summary")
 	names := sortedKeys(cfg.Circuits)
 	if len(names) == 0 {
 		fmt.Fprintln(w, "no circuits configured")
