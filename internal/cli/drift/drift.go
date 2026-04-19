@@ -67,6 +67,20 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return rc
 	}
 
+	// No-arg invocation on a real terminal drops into an interactive menu
+	// (see menu.go). Non-TTY callers fall through to Kong so scripts and
+	// agents continue to see the existing "expected command" error.
+	if len(argv) == 0 && stdinIsTTY(io.Stdin) && stdoutIsTTY(io.Stdout) {
+		chosen, err := runMenu(io)
+		if err != nil {
+			return errfmt.Emit(io.Stderr, err)
+		}
+		if len(chosen) == 0 {
+			return 0
+		}
+		argv = chosen
+	}
+
 	var cli CLI
 	parser, err := kong.New(&cli,
 		kong.Name("drift"),
