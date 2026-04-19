@@ -1,9 +1,6 @@
-// Package errfmt is the shared formatter for CLI errors on the human path.
-//
-// The format is a header line, then indented `key: value` context lines
-// drawn from rpcerr.Error's Type and Data fields. [Emit] is the single
-// entry point that realises that contract so every drift and lakitu
-// command reports failures the same way.
+// Package errfmt is the shared human-CLI error formatter: header line,
+// then indented sorted `key: value` context from rpcerr.Error.Data. Every
+// drift/lakitu command reports failures through [Emit].
 package errfmt
 
 import (
@@ -15,20 +12,13 @@ import (
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 )
 
-// Emit writes a human-readable error representation to w and returns the
-// exit code the caller should propagate. Behavior:
+// Emit returns the exit code the caller should propagate. Behavior:
+//   - *rpcerr.Error (directly or via errors.As): rendered with type + data
+//     lines, returns the rpcerr's Code.
+//   - Any other error: rendered as `error: <err.Error()>`, returns CodeInternal.
+//   - nil: returns CodeOK without writing.
 //
-//   - A *rpcerr.Error (including one reachable via errors.As) is rendered as:
-//     `error: <Message>` on line 1, then indented `  type: <Type>` and one
-//     `  <key>: <value>` line per entry in Data (sorted for determinism).
-//     Returns the rpcerr's Code as the exit status.
-//   - Any other error type falls back to `error: <err.Error()>` and returns
-//     rpcerr.CodeInternal (1), the documented default for untyped failures.
-//   - A nil error is treated as success and returns CodeOK (0) without
-//     writing anything.
-//
-// Emit never panics and never returns early on an I/O error — the process is
-// already exiting; best-effort writes are sufficient.
+// Never panics; I/O failures are swallowed (process is already exiting).
 func Emit(w io.Writer, err error) int {
 	if err == nil {
 		return int(rpcerr.CodeOK)

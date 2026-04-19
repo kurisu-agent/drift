@@ -13,28 +13,18 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// KartAutostartDeps bundles the collaborators the kart.enable / kart.disable
-// handlers need. It is a separate dep struct from [KartDeps] so Phase 12 can
-// land without touching Phase 7/9 wiring.
 type KartAutostartDeps struct {
-	// GarageDir is the absolute path to ~/.drift/garage. The handlers
-	// maintain an `autostart` marker file under karts/<name>/ in sync with
-	// systemd state.
 	GarageDir string
-	// Systemd is the thin systemctl --user wrapper. Required.
-	Systemd *systemd.Client
+	Systemd   *systemd.Client
 }
 
-// RegisterKartAutostart wires the Phase 12 handlers into reg.
 func RegisterKartAutostart(reg *rpc.Registry, d KartAutostartDeps) {
 	reg.Register(wire.MethodKartEnable, d.kartEnableHandler)
 	reg.Register(wire.MethodKartDisable, d.kartDisableHandler)
 }
 
-// AutostartResult is the envelope returned by kart.enable / kart.disable.
-// `enabled` reflects the final state — after a successful enable it's true,
-// after disable it's false. Both fields are populated on every success so
-// drift can render a one-line status without a second RPC.
+// AutostartResult.Enabled reflects the final state so drift can render a
+// one-line status without a second RPC.
 type AutostartResult struct {
 	Name    string `json:"name"`
 	Enabled bool   `json:"enabled"`
@@ -80,8 +70,8 @@ func (d *KartAutostartDeps) kartDisableHandler(ctx context.Context, params json.
 	return AutostartResult{Name: p.Name, Enabled: false}, nil
 }
 
-// autostartMarkerPath returns the path of the presence-marker file that
-// signals "this kart has autostart on" to lakitu init's reconciliation pass.
+// autostartMarkerPath: presence of this file signals "autostart on" to
+// lakitu init's reconciliation pass.
 func (d *KartAutostartDeps) autostartMarkerPath(kart string) string {
 	return filepath.Join(d.GarageDir, "karts", kart, "autostart")
 }
@@ -91,7 +81,6 @@ func (d *KartAutostartDeps) writeAutostartMarker(kart string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	// Empty file; the presence of the path is the signal.
 	return os.WriteFile(path, nil, 0o600)
 }
 
@@ -103,10 +92,8 @@ func (d *KartAutostartDeps) removeAutostartMarker(kart string) error {
 	return nil
 }
 
-// wrapSystemdError maps systemd-specific errors to the rpcerr catalog: a
-// *systemd.DenialError becomes code:6 systemd_denied with a suggestion;
-// anything else is surfaced as code:5 (the systemd integration belongs to
-// the devpod-adjacent "external process failure" bucket).
+// wrapSystemdError: *DenialError becomes code:6 (systemd_denied) with a
+// linger suggestion; anything else is code:5 (external-process-failure).
 func wrapSystemdError(err error) error {
 	if err == nil {
 		return nil
@@ -119,9 +106,6 @@ func wrapSystemdError(err error) error {
 	return rpcerr.New(rpcerr.CodeDevpod, "systemctl_failed", "%v", err).Wrap(err)
 }
 
-// requireKartName mirrors the shared validator used elsewhere in this
-// package. Kept as a thin wrapper so we don't drift from the existing
-// check in kart_lifecycle.go.
 func requireKartName(n string) error {
 	if n == "" {
 		return rpcerr.UserError(rpcerr.TypeInvalidFlag, "kart name is required")

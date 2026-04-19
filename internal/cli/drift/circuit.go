@@ -16,7 +16,6 @@ import (
 	"github.com/kurisu-agent/drift/internal/sshconf"
 )
 
-// circuitCmd groups the `drift circuit …` subcommands.
 type circuitCmd struct {
 	Add  circuitAddCmd  `cmd:"" help:"Register a circuit (updates client config + SSH config)."`
 	Rm   circuitRmCmd   `cmd:"" help:"Unregister a circuit."`
@@ -37,9 +36,7 @@ type circuitRmCmd struct {
 
 type circuitListCmd struct{}
 
-// runCircuitAdd registers the circuit, updates SSH config (unless opted out),
-// and probes server.version. Probe failures are reported but do not abort the
-// add — the user can retry later.
+// runCircuitAdd: probe failures are reported but don't abort — user retries.
 func runCircuitAdd(ctx context.Context, io IO, root *CLI, cmd circuitAddCmd, deps deps) int {
 	if err := name.Validate("circuit", cmd.Name); err != nil {
 		return emitError(io, err)
@@ -71,7 +68,6 @@ func runCircuitAdd(ctx context.Context, io IO, root *CLI, cmd circuitAddCmd, dep
 		return emitError(io, err)
 	}
 
-	// Manage SSH config unless the command or the config disabled it.
 	manageSSH := cfg.ManagesSSHConfig() && !cmd.NoSSHConfig
 	if manageSSH {
 		mgr, err := sshManagerFor(cfgPath)
@@ -92,7 +88,6 @@ func runCircuitAdd(ctx context.Context, io IO, root *CLI, cmd circuitAddCmd, dep
 		}
 	}
 
-	// Probe server.version so users see immediate feedback on reachability.
 	var probe *probeResult
 	var probeErr error
 	if !cmd.NoProbe && deps.probe != nil {
@@ -102,8 +97,7 @@ func runCircuitAdd(ctx context.Context, io IO, root *CLI, cmd circuitAddCmd, dep
 	return emitCircuitAdd(io, root, cmd.Name, cfg, manageSSH, probe, probeErr)
 }
 
-// runCircuitRm removes the circuit from config and deletes its managed SSH
-// block. The Include line in ~/.ssh/config is left intact — other circuits
+// runCircuitRm leaves the ~/.ssh/config Include intact — other circuits
 // may still need it.
 func runCircuitRm(io IO, root *CLI, cmd circuitRmCmd, deps deps) int {
 	if err := name.Validate("circuit", cmd.Name); err != nil {
@@ -141,8 +135,6 @@ func runCircuitRm(io IO, root *CLI, cmd circuitRmCmd, deps deps) int {
 	return emitCircuitRm(io, root, cmd.Name)
 }
 
-// runCircuitList prints the configured circuits. JSON output is selected via
-// the global `--output json` flag.
 func runCircuitList(io IO, root *CLI, deps deps) int {
 	cfgPath, err := deps.clientConfigPath()
 	if err != nil {
@@ -203,7 +195,6 @@ func runCircuitList(io IO, root *CLI, deps deps) int {
 	return 0
 }
 
-// emitCircuitAdd formats the `drift circuit add` result for text or JSON.
 func emitCircuitAdd(io IO, root *CLI, circuitName string, cfg *config.Client, manageSSH bool, probe *probeResult, probeErr error) int {
 	if root.Output == "json" {
 		payload := struct {
@@ -264,15 +255,10 @@ func emitCircuitRm(io IO, root *CLI, circuitName string) int {
 	return 0
 }
 
-// emitError is the drift-side entry point for error reporting. It delegates
-// to errfmt.Emit so every command produces the shared stderr format.
 func emitError(io IO, err error) int {
 	return errfmt.Emit(io.Stderr, err)
 }
 
-// sshManagerFor builds a sshconf.Manager rooted at the drift config dir
-// inferred from cfgPath. The user's ~/.ssh/config is resolved relative to
-// $HOME (honoring what os.UserHomeDir returns, which tests can override).
 func sshManagerFor(cfgPath string) (*sshconf.Manager, error) {
 	cfgDir := filepath.Dir(cfgPath)
 	managed := filepath.Join(cfgDir, "ssh_config")
@@ -284,7 +270,6 @@ func sshManagerFor(cfgPath string) (*sshconf.Manager, error) {
 	}, sshconf.Options{Manage: true}), nil
 }
 
-// userSSHConfigPath returns ~/.ssh/config honoring os.UserHomeDir.
 func userSSHConfigPath() string {
 	home, err := userHome()
 	if err != nil {
@@ -293,9 +278,7 @@ func userSSHConfigPath() string {
 	return filepath.Join(home, ".ssh", "config")
 }
 
-// splitUserHost extracts the user part from a `user@host[:port]` spec so the
-// sshconf block gets a clean HostName + User pair. host may itself include a
-// colon+port; sshconf records the host verbatim.
+// splitUserHost: host may include a colon+port; sshconf records verbatim.
 func splitUserHost(target string) (user, host string, err error) {
 	target = strings.TrimSpace(target)
 	if target == "" {

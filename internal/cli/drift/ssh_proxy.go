@@ -15,19 +15,13 @@ import (
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 )
 
-// sshProxyCmd is the Kong command for `drift ssh-proxy <alias> <port>`.
-// OpenSSH invokes it as the ProxyCommand for the wildcard `Host drift.*.*`
-// block written by internal/sshconf. Users never run it directly — the Kong
-// struct tag carries `hidden:""` so it doesn't show in help output.
+// sshProxyCmd is invoked by OpenSSH as the ProxyCommand for the wildcard
+// `Host drift.*.*` block. Users never run it directly.
 type sshProxyCmd struct {
 	Alias string `arg:"" help:"Per-kart SSH alias, e.g. drift.<circuit>.<kart>."`
 	Port  string `arg:"" optional:"" help:"Destination port passed by ssh %p (unused; accepted for OpenSSH ProxyCommand compat)."`
 }
 
-// runSSHProxy parses the alias, resolves the circuit's managed SSH alias, and
-// execs `ssh drift.<circuit> devpod ssh <kart> --stdio`, piping its stdio
-// directly to our own. Exit code mirrors the child's so OpenSSH can diagnose
-// transport failures correctly.
 func runSSHProxy(ctx context.Context, io IO, _ *CLI, cmd sshProxyCmd, deps deps) int {
 	circuit, kart, err := parseKartAlias(cmd.Alias)
 	if err != nil {
@@ -53,10 +47,8 @@ func runSSHProxy(ctx context.Context, io IO, _ *CLI, cmd sshProxyCmd, deps deps)
 	return execSSHProxy(ctx, io, "ssh", []string{"drift." + circuit, "devpod", "ssh", kart, "--stdio"})
 }
 
-// parseKartAlias extracts the circuit and kart names from
-// `drift.<circuit>.<kart>`. Both names must satisfy the shared kart-name
-// regex so invalid input fails fast with a clear message rather than a
-// confusing downstream SSH error.
+// parseKartAlias validates both names against the shared regex so invalid
+// input fails fast, rather than producing a confusing downstream SSH error.
 func parseKartAlias(alias string) (circuit, kart string, err error) {
 	parts := strings.Split(alias, ".")
 	if len(parts) != 3 || parts[0] != "drift" {
@@ -76,12 +68,9 @@ func parseKartAlias(alias string) (circuit, kart string, err error) {
 	return circuit, kart, nil
 }
 
-// execSSHProxy runs `bin argv...` with stdin/stdout/stderr wired directly to
-// our own, mirrors the child's exit code, and enforces the SIGTERM → SIGKILL
-// ladder.
-//
-// internal/exec.Run isn't suitable here because it captures stdio into
-// buffers; ProxyCommand semantics require transparent pass-through.
+// execSSHProxy wires stdio directly (internal/exec.Run buffers, which
+// breaks ProxyCommand semantics) and reproduces the Cancel/WaitDelay
+// ladder inline.
 func execSSHProxy(ctx context.Context, io IO, bin string, argv []string) int {
 	c := osexec.CommandContext(ctx, bin, argv...)
 	c.Stdin = io.Stdin
@@ -98,9 +87,8 @@ func execSSHProxy(ctx context.Context, io IO, bin string, argv []string) int {
 	if errors.As(err, &ee) {
 		return ee.ExitCode()
 	}
-	// Transport failure before ssh produced an exit code (e.g. binary not
-	// found). Surface the message and exit 1 — OpenSSH treats non-zero as a
-	// ProxyCommand failure regardless of the specific code.
+	// Transport failure before ssh produced an exit (e.g. binary missing).
+	// OpenSSH treats any non-zero as ProxyCommand failure anyway.
 	fmt.Fprintln(io.Stderr, "drift ssh-proxy:", err.Error())
 	return 1
 }

@@ -1,11 +1,6 @@
-// Package server holds the lakitu-side handler implementations for every
-// RPC method except the devpod-backed kart lifecycle (owned by Phase 7).
-// Handlers are pure functions over a [Deps] bundle so both the JSON-RPC
-// dispatch path and the human `lakitu <subcommand>` path can call them.
-//
-// Deps resolves garage paths and opens the chest backend at call time so
-// `server.version` keeps working on a circuit that hasn't yet run
-// `lakitu init`.
+// Package server holds the lakitu-side handler implementations. Handlers
+// are pure functions over a [Deps] bundle so both the JSON-RPC path and
+// human `lakitu <subcommand>` path can call them.
 package server
 
 import (
@@ -16,22 +11,16 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// Deps bundles everything the handlers in this package need. The fields are
-// resolved lazily — a zero Deps is usable and defers every filesystem probe
-// to the moment a handler actually needs the garage.
+// Deps resolves garage paths and opens the chest backend lazily so
+// `server.version` keeps working on a circuit that hasn't run `lakitu init`.
 type Deps struct {
-	// GarageDir overrides the resolved garage path. Tests set this to a
-	// tempdir; production leaves it empty and relies on [config.GarageDir].
+	// GarageDir overrides the resolved path. Tests set this to a tempdir.
 	GarageDir string
-	// OpenChest overrides the chest backend factory. When nil, a per-call
-	// [chest.Open] runs against the current server config so a backend
-	// swap via `config.set` takes effect on the next RPC.
+	// OpenChest: nil runs per-call [chest.Open] against the current server
+	// config so a backend swap via `config.set` takes effect next RPC.
 	OpenChest func(garageDir string, cfg config.ChestConfig) (chest.Backend, error)
 }
 
-// RegisterServer wires every Phase 6 handler into reg. server.init stays in
-// cli/lakitu so the existing wiring is untouched; RegisterServer handles
-// everything else the phase owns.
 func RegisterServer(reg *rpc.Registry, d *Deps) {
 	if d == nil {
 		d = &Deps{}
@@ -58,8 +47,6 @@ func RegisterServer(reg *rpc.Registry, d *Deps) {
 	reg.Register(wire.MethodChestRemove, d.ChestRemoveHandler)
 }
 
-// garageDir returns the effective garage root. Overrides win so test setup
-// stays a single struct-literal away.
 func (d *Deps) garageDir() (string, error) {
 	if d.GarageDir != "" {
 		return d.GarageDir, nil
@@ -67,8 +54,8 @@ func (d *Deps) garageDir() (string, error) {
 	return config.GarageDir()
 }
 
-// openChest loads the server config, then opens the active chest backend.
-// Called lazily — `server.version` must not need the garage to exist.
+// openChest is called lazily — `server.version` must not require the
+// garage to exist.
 func (d *Deps) openChest() (chest.Backend, error) {
 	garage, err := d.garageDir()
 	if err != nil {

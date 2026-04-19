@@ -2,8 +2,7 @@ package config
 
 import "fmt"
 
-// Server is the circuit-side config — the fields settable via
-// `lakitu config set` / the `config.set` RPC method.
+// Server holds the fields settable via `lakitu config set` / config.set RPC.
 type Server struct {
 	DefaultTune      string      `yaml:"default_tune"`
 	DefaultCharacter string      `yaml:"default_character"`
@@ -11,29 +10,21 @@ type Server struct {
 	Chest            ChestConfig `yaml:"chest"`
 }
 
-// ChestConfig selects the active chest backend and holds any backend-
-// specific knobs. MVP ships only the yamlfile backend.
 type ChestConfig struct {
 	Backend string `yaml:"backend"`
 }
 
-// ChestBackendYAMLFile is the MVP backend name. The YAML format replaces
-// the earlier shell-quoted envfile so multi-line secrets (SSH keys,
-// PEM-encoded PATs) round-trip via YAML's block scalars without custom
-// escaping. Other backends (age, 1password, vault) are reserved for
-// post-MVP work.
 const ChestBackendYAMLFile = "yamlfile"
 
-// validChestBackends is the exhaustive set of acceptable backend values.
-// Validation rejects anything outside this list so typos surface during
-// `lakitu init` instead of at `chest.set` time.
+// Reject unknown backends so typos surface at `lakitu init` rather than
+// the first `chest.set`.
 var validChestBackends = map[string]struct{}{
 	ChestBackendYAMLFile: {},
 }
 
-// DefaultServer is the config that `lakitu init` writes on a fresh garage.
-// default_tune is "default" — a tune literally named "default" becomes the
-// implicit preset when --tune is omitted.
+// DefaultServer is what `lakitu init` writes. "default" as default_tune
+// means a user-created tune literally named "default" becomes implicit
+// when --tune is omitted.
 func DefaultServer() *Server {
 	return &Server{
 		DefaultTune: "default",
@@ -43,8 +34,6 @@ func DefaultServer() *Server {
 	}
 }
 
-// Validate checks field-level invariants. Callers are expected to run this
-// after loading and before writing.
 func (s *Server) Validate() error {
 	if s.DefaultTune == "" {
 		return fmt.Errorf("config: default_tune is required")
@@ -58,9 +47,8 @@ func (s *Server) Validate() error {
 	return nil
 }
 
-// LoadServer decodes a server config from path. Unlike the client config, a
-// missing server config is an error — `lakitu init` is responsible for
-// creating it.
+// LoadServer: unlike the client config, a missing server config is an
+// error — `lakitu init` is responsible for creating it.
 func LoadServer(path string) (*Server, error) {
 	var s Server
 	found, err := loadYAMLStrict(path, &s)
@@ -76,8 +64,7 @@ func LoadServer(path string) (*Server, error) {
 	return &s, nil
 }
 
-// SaveServer atomically writes s to path after validating it. The file is
-// 0644 — it contains no secrets, only pointers to them.
+// SaveServer writes 0644 — no secrets, only pointers to them.
 func SaveServer(path string, s *Server) error {
 	if err := s.Validate(); err != nil {
 		return err

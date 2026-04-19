@@ -12,14 +12,9 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// Kong command types for the human CLI surface. Each command parses argv
-// into the same params struct the RPC handlers consume, dispatches through
-// the registry, and formats the result for the terminal.
-//
-// Using the registry here (rather than calling handler functions directly)
-// keeps the RPC path and the human path exercising the same dispatch code —
-// the stdout invariant test in cliscript protects the RPC side; the human
-// side gets the same behavior for free.
+// Routing every human subcommand through the registry keeps the RPC and
+// human paths exercising the same dispatch code — stdout-invariant
+// coverage carries over for free.
 
 type kartListCmd struct{}
 
@@ -111,8 +106,6 @@ type chestRemoveCmd struct {
 	Name string `arg:""`
 }
 
-// runConfigShow dispatches config.show through the registry and prints the
-// JSON result to stdout.
 func runConfigShow(ctx context.Context, io IO) int {
 	return callAndPrint(ctx, io, wire.MethodConfigShow, struct{}{})
 }
@@ -169,10 +162,9 @@ func runTuneRemove(ctx context.Context, io IO, cmd tuneRemoveCmd) int {
 	return callAndPrint(ctx, io, wire.MethodTuneRemove, server.TuneNameOnly{Name: cmd.Name})
 }
 
-// runChestSet reads the secret value from stdin (never a flag) and
-// dispatches chest.set. One trailing newline is stripped — the usual POSIX
-// convention for piped secrets — but embedded newlines survive untouched
-// for callers that need multi-line values.
+// runChestSet reads stdin (never a flag). Strips one trailing newline
+// (POSIX pipe convention) but embedded newlines survive for multi-line
+// secrets.
 func runChestSet(ctx context.Context, io IO, cmd chestSetCmd) int {
 	value, err := io.ReadAll()
 	if err != nil {
@@ -199,10 +191,6 @@ func runChestRemove(ctx context.Context, io IO, cmd chestRemoveCmd) int {
 	return callAndPrint(ctx, io, wire.MethodChestRemove, server.ChestNameOnly{Name: cmd.Name})
 }
 
-// callAndPrint is the shared in-process dispatch helper for every human
-// subcommand. It marshals params, runs them through the live [*rpc.Registry],
-// and then renders the response — either the JSON result on stdout or the
-// structured error on stderr via errfmt.Emit.
 func callAndPrint(ctx context.Context, io IO, method string, params any) int {
 	raw, err := json.Marshal(params)
 	if err != nil {
@@ -218,8 +206,8 @@ func callAndPrint(ctx context.Context, io IO, method string, params any) int {
 	if resp.Error != nil {
 		return errfmt.Emit(io.Stderr, rpcerr.FromWire(resp.Error))
 	}
-	// Result is already JSON. Pretty-print for humans; machine callers use
-	// `lakitu rpc` for the raw envelope anyway.
+	// Pretty-print for humans; machine callers use `lakitu rpc` for the
+	// raw envelope.
 	var v any
 	if err := json.Unmarshal(resp.Result, &v); err != nil {
 		return errfmt.Emit(io.Stderr, fmt.Errorf("decode result: %w", err))
@@ -232,8 +220,6 @@ func callAndPrint(ctx context.Context, io IO, method string, params any) int {
 	return 0
 }
 
-// ReadAll pulls every byte from IO.Stdin. Centralized so tests can swap in
-// a bytes.Buffer and get the same behavior as a real terminal pipe.
 func (iob IO) ReadAll() ([]byte, error) {
 	if iob.Stdin == nil {
 		return nil, nil

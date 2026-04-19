@@ -17,8 +17,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Tune mirrors the on-disk shape at `garage/tunes/<name>.yaml`. All fields
-// are optional — tunes exist to compose defaults at `drift new` time.
+// Tune: all fields optional — tunes compose defaults at `drift new` time.
 type Tune struct {
 	Starter      string `yaml:"starter,omitempty" json:"starter,omitempty"`
 	Devcontainer string `yaml:"devcontainer,omitempty" json:"devcontainer,omitempty"`
@@ -26,15 +25,12 @@ type Tune struct {
 	Features     string `yaml:"features,omitempty" json:"features,omitempty"`
 }
 
-// TuneResult is the JSON shape returned by list/show/set — the tune with its
-// name spliced in so renderers don't need to key the map themselves.
+// TuneResult splices the name in so renderers don't need to key the map.
 type TuneResult struct {
 	Name string `json:"name"`
 	Tune
 }
 
-// TuneSetParams is the RPC param shape for `tune.set`. The fields match
-// Tune directly; name is validated separately.
 type TuneSetParams struct {
 	Name         string `json:"name"`
 	Starter      string `json:"starter,omitempty"`
@@ -43,15 +39,13 @@ type TuneSetParams struct {
 	Features     string `json:"features,omitempty"`
 }
 
-// TuneNameOnly is the param shape for tune.show / tune.remove.
 type TuneNameOnly struct {
 	Name string `json:"name"`
 }
 
-// tuneNameRE is deliberately local to this package — unlike characters and
-// karts, `default` is a *legitimate* tune name (the literal tune named
-// `default` is what `--tune default` resolves to). Only `none` is reserved,
-// since it's the sentinel for "no tune at all".
+// Local regex: unlike characters/karts, `default` is a legitimate tune
+// name (`--tune default` resolves to it). Only `none` is reserved — it's
+// the sentinel for "no tune at all".
 var tuneNameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
 func validateTuneName(n string) error {
@@ -67,7 +61,6 @@ func validateTuneName(n string) error {
 	return nil
 }
 
-// TuneListHandler enumerates `garage/tunes/*.yaml`.
 func (d *Deps) TuneListHandler(_ context.Context, params json.RawMessage) (any, error) {
 	var p struct{}
 	if err := rpc.BindParams(params, &p); err != nil {
@@ -97,7 +90,6 @@ func (d *Deps) TuneListHandler(_ context.Context, params json.RawMessage) (any, 
 	return out, nil
 }
 
-// TuneShowHandler returns a single tune.
 func (d *Deps) TuneShowHandler(_ context.Context, params json.RawMessage) (any, error) {
 	var p TuneNameOnly
 	if err := rpc.BindParams(params, &p); err != nil {
@@ -113,8 +105,7 @@ func (d *Deps) TuneShowHandler(_ context.Context, params json.RawMessage) (any, 
 	return TuneResult{Name: p.Name, Tune: *t}, nil
 }
 
-// TuneSetHandler creates or updates a tune — `tune.set` is idempotent
-// ("creates or updates").
+// TuneSetHandler is idempotent — creates or updates.
 func (d *Deps) TuneSetHandler(_ context.Context, params json.RawMessage) (any, error) {
 	var p TuneSetParams
 	if err := rpc.BindParams(params, &p); err != nil {
@@ -139,8 +130,8 @@ func (d *Deps) TuneSetHandler(_ context.Context, params json.RawMessage) (any, e
 	return TuneResult{Name: p.Name, Tune: t}, nil
 }
 
-// TuneRemoveHandler deletes a tune file. Rejects with `code:4` if any kart
-// references it, mirroring character.remove.
+// TuneRemoveHandler rejects with code:4 if any kart references the tune
+// (mirrors character.remove).
 func (d *Deps) TuneRemoveHandler(_ context.Context, params json.RawMessage) (any, error) {
 	var p TuneNameOnly
 	if err := rpc.BindParams(params, &p); err != nil {
@@ -195,8 +186,6 @@ func (d *Deps) loadTune(n string) (*Tune, error) {
 	return &t, nil
 }
 
-// typeTuneNotFound is a local error type — tune-specific not-found. The
-// canonical set in rpcerr covers devpod-adjacent resources; tunes are
-// file-backed and exclusive to this package, so a local constant avoids
-// widening the shared enum for a single Phase 6 case.
+// Local constant — tunes are file-backed and exclusive to this package,
+// so the canonical rpcerr enum isn't widened for a single case.
 const typeTuneNotFound = rpcerr.Type("tune_not_found")

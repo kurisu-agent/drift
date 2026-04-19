@@ -12,23 +12,18 @@ import (
 	"github.com/kurisu-agent/drift/internal/connect"
 )
 
-// aiCmd is `drift ai`. It mosh/ssh's into the target circuit and execs
-// `claude --dangerously-skip-permissions` from $HOME/.drift, where
-// `lakitu init` has dropped a CLAUDE.md describing drift's commands and
-// state layout.
+// aiCmd mosh/ssh's into the circuit and execs claude from $HOME/.drift,
+// where `lakitu init` dropped a CLAUDE.md describing drift's surface.
 type aiCmd struct {
 	SSH          bool `name:"ssh" help:"Force plain SSH (skip mosh)."`
 	ForwardAgent bool `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
 }
 
-// remoteAICmd is the single-line shell snippet handed to mosh/ssh's remote
-// shell. We `cd` into ~/.drift so Claude picks up the CLAUDE.md there, then
-// exec so the process tree is claude directly (not a wrapper sh).
+// exec so the process tree is claude directly, not a wrapper sh.
 const remoteAICmd = `cd "$HOME/.drift" && exec claude --dangerously-skip-permissions`
 
-// runAI connects to the circuit host directly (not a kart) and execs claude
-// in ~/.drift. Unlike `drift connect`, there's no kart state machine — the
-// remote shell is plain lakitu-less ssh into the circuit user's $HOME.
+// runAI has no kart state machine — it's plain ssh into the circuit user's
+// $HOME, unlike `drift connect` which targets a kart.
 func runAI(ctx context.Context, io IO, root *CLI, cmd aiCmd, deps deps) int {
 	circuit, err := resolveCircuit(root, deps)
 	if err != nil {
@@ -49,9 +44,7 @@ func runAI(ctx context.Context, io IO, root *CLI, cmd aiCmd, deps deps) int {
 	return emitError(io, err)
 }
 
-// buildAIArgv constructs the command to exec. For mosh, remoteAICmd goes
-// after `--` so mosh hands it straight to the remote shell; ssh uses `-t`
-// to force a pty since claude is interactive.
+// buildAIArgv: ssh uses -t to force a pty since claude is interactive.
 func buildAIArgv(useMosh bool, circuit string, forwardAgent bool) (string, []string) {
 	target := "drift." + circuit
 	if useMosh {
@@ -65,17 +58,14 @@ func buildAIArgv(useMosh bool, circuit string, forwardAgent bool) (string, []str
 	return "ssh", args
 }
 
-// moshOnPath returns true iff mosh is available on the client's PATH. We
-// don't probe the remote — a client without mosh falls back to ssh even if
-// the circuit has mosh-server installed.
+// moshOnPath checks the client PATH only — a client without mosh falls
+// back to ssh even when the circuit has mosh-server.
 func moshOnPath() bool {
 	_, err := osexec.LookPath("mosh")
 	return err == nil
 }
 
-// execAI wires stdio straight through (so claude owns the TTY) and maps a
-// non-zero child exit into a connect.ExitError so runAI can pass it up to
-// os.Exit without errfmt wrapping.
+// execAI wires stdio straight through so claude owns the TTY.
 func execAI(ctx context.Context, bin string, argv []string, stdio connect.Stdio) error {
 	c := osexec.CommandContext(ctx, bin, argv...)
 	c.Stdin = stdio.Stdin
