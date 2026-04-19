@@ -3,9 +3,14 @@
 #   curl -fsSL https://raw.githubusercontent.com/kurisu-agent/drift/main/scripts/install.sh | sh
 #
 # Env overrides:
-#   DRIFT_INSTALL_DIR   target dir (default: $HOME/.local/bin, or /usr/local/bin if root)
+#   DRIFT_INSTALL_DIR   target dir (default: $HOME/.local/bin, or /usr/local/bin if root, or $PREFIX/bin on Termux)
 #   DRIFT_VERSION       tag to install (default: latest)
 #   DRIFT_REPO          owner/repo (default: kurisu-agent/drift)
+
+# Bumped on every installer-script change. Gets logged up front so a stale
+# raw.githubusercontent.com cache is visible to the user ("I got v3 but the
+# repo's on v5 — wait a few minutes and retry").
+INSTALLER_VERSION=3
 
 set -eu
 
@@ -14,6 +19,8 @@ VERSION="${DRIFT_VERSION:-latest}"
 
 log() { printf 'drift-install: %s\n' "$*" >&2; }
 die() { log "error: $*"; exit 1; }
+
+log "installer v${INSTALLER_VERSION}"
 
 command -v curl >/dev/null 2>&1 || die "curl is required"
 command -v tar  >/dev/null 2>&1 || die "tar is required"
@@ -31,14 +38,19 @@ case "$uname_m" in
   *)             die "unsupported arch: $uname_m" ;;
 esac
 
-# Termux exposes itself as Linux but prefers the android/arm64 asset.
-# $PREFIX/bin is always on PATH there, so install to it by default — avoids
-# the ~/.local/bin PATH dance that would otherwise leave `drift` unfound.
+# Termux exposes itself as Linux but prefers the android/arm64 asset, and
+# $PREFIX/bin is always on PATH there — so install to it by default to
+# avoid the ~/.local/bin PATH dance. Detection via TERMUX_VERSION (always
+# exported) or PREFIX pointing inside com.termux (set in every Termux shell).
 is_termux=0
-if [ -n "${PREFIX:-}" ] && [ -d "${PREFIX}/com.termux" ] 2>/dev/null || \
-   [ -n "${TERMUX_VERSION:-}" ]; then
-  goos=android
+case "${PREFIX:-}" in
+  */com.termux/*) is_termux=1 ;;
+esac
+if [ -n "${TERMUX_VERSION:-}" ]; then
   is_termux=1
+fi
+if [ "$is_termux" -eq 1 ]; then
+  goos=android
 fi
 
 if [ "$VERSION" = "latest" ]; then
