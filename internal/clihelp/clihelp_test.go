@@ -48,10 +48,9 @@ func TestRender_CommandsAndFlagsAndSections(t *testing.T) {
 	for _, want := range []string{
 		"NAME\n  tool — A test CLI.",
 		"Point of context.",
-		"GLOBAL FLAGS",
-		"--debug",
-		"COMMANDS",
-		"foo — Foo-related commands.",
+		// COMMANDS header directs callers to per-command --help for flags;
+		// the catalog itself is leaf-only to stay terse.
+		"COMMANDS (run `tool <cmd> --help` for flags)",
 		"foo bar — Do the Bar thing.",
 		"RPC METHODS",
 		"server.version",
@@ -64,9 +63,10 @@ func TestRender_CommandsAndFlagsAndSections(t *testing.T) {
 	if strings.Contains(got, "hidden") {
 		t.Errorf("hidden command leaked into output:\n%s", got)
 	}
-	// Kong's auto-generated --help flag is noise to an LLM.
-	if strings.Contains(got, "--help") {
-		t.Errorf("--help flag should be filtered, got:\n%s", got)
+	// Branch nodes without their own semantics are elided — we render
+	// leaves only ("foo bar"), not the "foo" parent entry.
+	if strings.Contains(got, "foo — Foo-related commands.") {
+		t.Errorf("branch node leaked into leaf-only catalog:\n%s", got)
 	}
 	// Empty-body section is dropped.
 	if strings.Contains(got, "SKIP ME") {

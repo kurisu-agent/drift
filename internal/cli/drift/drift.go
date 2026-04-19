@@ -94,7 +94,7 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 	switch kctx.Command() {
 	case "help":
 		return runHelp(io, parser)
-	case "circuit add <user@host>":
+	case "circuit add", "circuit add <user@host>":
 		return runCircuitAdd(ctx, io, &cli, cli.Circuit_.Add, deps)
 	case "circuit rm <name>":
 		return runCircuitRm(io, &cli, cli.Circuit_.Rm, deps)

@@ -1,6 +1,7 @@
 // Package clihelp renders an LLM-oriented help document for a Kong CLI:
-// flat command catalog, per-command flags, and caller-supplied extra
-// sections. Dense and grep-friendly — humans use Kong's own --help.
+// a terse one-line-per-leaf-command catalog plus caller-supplied extra
+// sections. Flags and branch nodes are intentionally omitted — callers
+// run `<tool> <cmd> --help` for that detail.
 package clihelp
 
 import (
@@ -48,17 +49,7 @@ func Render(w io.Writer, d Doc) error {
 		}
 	}
 
-	if flags := filterFlags(app.Flags); len(flags) > 0 {
-		if _, err := fmt.Fprintln(w, "GLOBAL FLAGS"); err != nil {
-			return err
-		}
-		writeFlags(w, flags)
-		if _, err := fmt.Fprintln(w); err != nil {
-			return err
-		}
-	}
-
-	if _, err := fmt.Fprintln(w, "COMMANDS"); err != nil {
+	if _, err := fmt.Fprintf(w, "COMMANDS (run `%s <cmd> --help` for flags)\n", app.Name); err != nil {
 		return err
 	}
 	cmds := collectCommands(app.Node, nil)
@@ -66,9 +57,6 @@ func Render(w io.Writer, d Doc) error {
 	for _, c := range cmds {
 		if _, err := fmt.Fprintf(w, "  %s — %s\n", c.path, c.help); err != nil {
 			return err
-		}
-		if len(c.flags) > 0 {
-			writeFlags(w, c.flags)
 		}
 	}
 	if _, err := fmt.Fprintln(w); err != nil {
@@ -87,11 +75,13 @@ func Render(w io.Writer, d Doc) error {
 }
 
 type renderedCmd struct {
-	path  string
-	help  string
-	flags []*kong.Flag
+	path string
+	help string
 }
 
+// collectCommands returns leaf-only commands: branch nodes like `circuit`
+// are skipped since their children carry the real semantics and the
+// catalog stays tight.
 func collectCommands(n *kong.Node, prefix []string) []renderedCmd {
 	var out []renderedCmd
 	for _, child := range n.Children {
@@ -99,41 +89,23 @@ func collectCommands(n *kong.Node, prefix []string) []renderedCmd {
 			continue
 		}
 		path := append(append([]string(nil), prefix...), child.Name)
-		// Include intermediate nodes too — a branch like `circuit` is
-		// itself meaningful even though children carry the real semantics.
-		out = append(out, renderedCmd{
-			path:  strings.Join(path, " "),
-			help:  child.Help,
-			flags: filterFlags(child.Flags),
-		})
-		out = append(out, collectCommands(child, path)...)
-	}
-	return out
-}
-
-// filterFlags drops Kong's auto-generated --help, which carries no info
-// an LLM doesn't already know.
-func filterFlags(in []*kong.Flag) []*kong.Flag {
-	out := in[:0:0]
-	for _, f := range in {
-		if f == nil || f.Hidden || f.Name == "help" {
+		if hasCommandChildren(child) {
+			out = append(out, collectCommands(child, path)...)
 			continue
 		}
-		out = append(out, f)
+		out = append(out, renderedCmd{
+			path: strings.Join(path, " "),
+			help: child.Help,
+		})
 	}
 	return out
 }
 
-func writeFlags(w io.Writer, flags []*kong.Flag) {
-	for _, f := range flags {
-		name := "--" + f.Name
-		if f.Short != 0 {
-			name = fmt.Sprintf("-%c, %s", f.Short, name)
+func hasCommandChildren(n *kong.Node) bool {
+	for _, c := range n.Children {
+		if !c.Hidden && c.Type == kong.CommandNode {
+			return true
 		}
-		help := f.Help
-		if help == "" {
-			help = "(no description)"
-		}
-		_, _ = fmt.Fprintf(w, "      %s  %s\n", name, help)
 	}
+	return false
 }
