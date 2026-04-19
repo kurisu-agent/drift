@@ -14,8 +14,36 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    name: test (unit + integration)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Unit tests (race)
+        run: go test -race ./...
+
+      # Integration tests build integration/Dockerfile.circuit and drive
+      # drift over a real SSH transport. ubuntu-latest ships docker.
+      - name: Integration tests
+        run: make integration
+
   release:
     name: goreleaser
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
