@@ -210,6 +210,12 @@ func (c *Circuit) runContainer(ctx context.Context) {
 	if err := os.MkdirAll(c.sharedScratch, 0o777); err != nil {
 		c.t.Fatalf("mkdir shared scratch: %v", err)
 	}
+	// MkdirAll applies the parent's umask, so the mode arg is a ceiling, not
+	// a guarantee. GitHub Actions runners are UID 1001; the circuit user is
+	// UID 1000. An 0o755 dir owned by the runner blocks writes from the
+	// circuit, so chmod 0o777 is required for devpod-inside-circuit to
+	// populate DEVPOD_HOME. Local devcontainer happens to run UID 1000
+	// (matching circuit), which masked the bug.
 	if err := os.Chmod(c.sharedScratch, 0o777); err != nil {
 		c.t.Fatalf("chmod shared scratch: %v", err)
 	}
@@ -217,6 +223,9 @@ func (c *Circuit) runContainer(ctx context.Context) {
 	devpodHome := c.sharedScratch + "/.devpod-home"
 	if err := os.MkdirAll(devpodHome, 0o777); err != nil {
 		c.t.Fatalf("mkdir devpod home: %v", err)
+	}
+	if err := os.Chmod(devpodHome, 0o777); err != nil {
+		c.t.Fatalf("chmod devpod home: %v", err)
 	}
 
 	args := []string{
@@ -678,8 +687,14 @@ func (c *Circuit) SSH(ctx context.Context, args ...string) (stdout, stderr strin
 	// the parent's PATH, not cmd.Env, so plain "ssh" would pick up the
 	// system binary instead of the shim.
 	cmd := osexec.CommandContext(ctx, filepath.Join(c.shimDir, "ssh"), args...)
+	// XDG_CONFIG_HOME must be pinned alongside HOME — otherwise a parent-env
+	// value leaks through to the ProxyCommand's `drift ssh-proxy`, which
+	// then reads the wrong config.yaml and reports circuit_not_found even
+	// though drift circuit add wrote to the per-test HOME. Keep this in sync
+	// with Drift() above, where the same overlay is applied.
 	cmd.Env = overlayEnv(map[string]string{
-		"HOME": c.driftHome,
+		"HOME":            c.driftHome,
+		"XDG_CONFIG_HOME": filepath.Join(c.driftHome, ".config"),
 		"PATH": c.shimDir +
 			string(os.PathListSeparator) + c.DriftBinDir() +
 			string(os.PathListSeparator) + os.Getenv("PATH"),
