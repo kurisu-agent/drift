@@ -1,6 +1,6 @@
 # drift — completed MVP work (archived)
 
-Phases that are fully `[x]` done, archived from [TODO.md](../TODO.md).
+Phases that are fully `[x]` done, archived from [TODO.md](../../TODO.md).
 Kept for historical reference — the living checklist only tracks open work.
 
 PLAN.md section links are relative to `plans/PLAN.md`.
@@ -153,6 +153,24 @@ Order matters: trivial handlers first to validate the dispatch path end-to-end b
 - [x] Re-runnable; each phase skippable (`--skip-circuits`, `--skip-characters`, `--no-probe`)
 - [x] Detects non-TTY stdin and returns `code:2 user_error`
 - [x] Probe uses Phase 1 RPC client; install hints printed on failure
+
+---
+
+## Phase 14 — Human CLI error formatting
+
+- [x] stderr format ([PLAN.md § stderr format](../PLAN.md#stderr-format-human-cli-path)): line 1 `error: <message>`, line 2 single-line JSON of the error object; exit code mirrors `Code` — implemented by `internal/cli/errfmt.Emit`; drift + lakitu CLIs refactored to route through it
+- [x] Idempotency contract verified per verb ([PLAN.md § Idempotency](../PLAN.md#idempotency)) — start/stop/restart/delete covered by `internal/server/kart_lifecycle_test.go`; enable/disable pinned at the handler level by `TestKartEnableIsIdempotent` and `TestKartDisableIsIdempotent` in `internal/server/kart_autostart_test.go`, which dispatch the handler twice and assert both calls succeed, marker state converges, and one systemctl invocation lands per call
+- [x] Unit tests assert the two-line format + exit code for every error code category (2 user, 3 not_found, 4 conflict, 5 devpod, 6 auth) in `internal/cli/errfmt/errfmt_test.go`; testscript-level golden tests deferred — unit coverage is stricter and easier to maintain
+
+---
+
+## Phase 15 — Integration harness (tier-2 tests)
+
+- [x] Dockerfile for a "circuit" image at `integration/Dockerfile.circuit`: Debian-slim + sshd + devpod + lakitu (docker access is delegated to the devcontainer's outer daemon via socket bind, matching plans/PLAN.md § "Integration harness")
+- [x] Test driver at `integration/harness.go`: builds the image, spins a per-test container on an ephemeral port, generates an ed25519 keypair, writes a per-test ssh config, and exposes `Circuit.Drift(ctx, args...)` so tests drive the real `drift` binary over real SSH
+- [x] Build-tag-gated (`//go:build integration`) so unit `go test ./...` stays fast
+- [x] Cover: warmup probe, kart.new with `--clone`, connect via ssh fallback, kart.delete, character add+list, chest set+get. Done in `integration/`: init+version (`TestDriftInitAndServerVersion`), probe via circuit add (`TestCircuitAddProbe`), character add/list/show/remove (`TestCharacterLifecycle`), chest set/get/list/rm incl. multiline values (`TestChestLifecycle`), end-to-end ssh-proxy (`TestSSHProxyEchoOK`), tune/features/dotfiles coverage (`TestTuneStarter`, `TestTuneDevcontainer`, `TestTuneDotfilesRepo`, `TestTuneFeatures`, `TestFeaturesFlagExplicit`, `TestFeaturesAdditiveMerge`, `TestLayer1Dotfilesland`), AI command (`TestAICommand`), full `drift new --starter` + `drift delete` against real devpod (`TestRealDevpodUpAndDelete`), full `drift new --clone` + workspace introspection asserting git is installed and `.git/` is preserved (`TestRealDevpodCloneAndDelete` in `realdevpod_clone_test.go`), and `drift connect --ssh` driving kart.info → ssh → devpod ssh end-to-end (`TestDriftConnectSSH` in `connect_test.go`)
+- [x] CI job target in `Makefile`: `make integration`
 
 ---
 

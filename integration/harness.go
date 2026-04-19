@@ -80,6 +80,7 @@ type Circuit struct {
 	// circuit's TMPDIR so drift scratch dirs created there are also
 	// resolvable by the outer dockerd when devpod bind-mounts the source.
 	sharedScratch string
+
 }
 
 // StartCircuit builds the circuit image (idempotently, based on file
@@ -288,6 +289,10 @@ func (c *Circuit) runContainer(ctx context.Context) {
 		c.t.Fatalf("chmod shared scratch: %v", err)
 	}
 	c.t.Cleanup(func() { _ = os.RemoveAll(c.sharedScratch) })
+	devpodHome := c.sharedScratch + "/.devpod-home"
+	if err := os.MkdirAll(devpodHome, 0o777); err != nil {
+		c.t.Fatalf("mkdir devpod home: %v", err)
+	}
 
 	args := []string{
 		"run", "-d", "--rm",
@@ -298,6 +303,12 @@ func (c *Circuit) runContainer(ctx context.Context) {
 		"-v", "/var/run/docker.sock:/var/run/docker.sock",
 		"-v", c.sharedScratch + ":" + c.sharedScratch,
 		"-e", "TMPDIR=" + c.sharedScratch,
+		// DEVPOD_HOME is set as a docker run env var so it applies to BOTH
+		// `docker exec` (used by SSHCommand for one-time setup like `lakitu
+		// init`) AND sshd-spawned sessions (used by `drift` over real SSH).
+		// Keeping a single source of truth prevents provider registrations
+		// written under one devpod home from being invisible to the other.
+		"-e", "DEVPOD_HOME=" + devpodHome,
 		"--group-add", strconv.Itoa(dockerGID),
 		"drift-integration-circuit",
 	}
@@ -331,11 +342,18 @@ func (c *Circuit) runContainer(ctx context.Context) {
 		c.t.Fatalf("chmod authorized_keys: %v", err)
 	}
 
-	// Pin TMPDIR for ssh sessions via ~/.ssh/environment (sshd's
-	// PermitUserEnvironment is enabled in the Dockerfile). lakitu's kart.new
-	// uses os.MkdirTemp("", …) which honors TMPDIR, so scratch dirs land in
-	// the shared bind mount path devpod can resolve.
-	envLine := "TMPDIR=" + c.sharedScratch + "\n"
+	// Pin TMPDIR + DEVPOD_HOME for ssh sessions via ~/.ssh/environment
+	// (sshd's PermitUserEnvironment is enabled in the Dockerfile). lakitu's
+	// kart.new uses os.MkdirTemp("", …) which honors TMPDIR, so scratch
+	// dirs land in the shared bind mount path devpod can resolve.
+	// DEVPOD_HOME redirects devpod's agent/contexts/... tree into the
+	// shared mount too so --clone of a file:// URL produces a workspace
+	// source the outer dockerd can bind-mount into the devcontainer.
+	// The docker run -e above covers docker-exec entry points; this
+	// ~/.ssh/environment entry covers sshd-spawned sessions, which don't
+	// inherit PID 1's env.
+	envLine := "TMPDIR=" + c.sharedScratch + "\n" +
+		"DEVPOD_HOME=" + devpodHome + "\n"
 	envPath := filepath.Join(c.WorkDir, "ssh_environment")
 	if err := os.WriteFile(envPath, []byte(envLine), 0o600); err != nil {
 		c.t.Fatalf("stage ssh environment: %v", err)
@@ -542,6 +560,55 @@ func (c *Circuit) StageStarter(ctx context.Context, name string, files map[strin
 	setup.WriteString("git clone -q --bare . " + bare + "\n")
 	if err := SSHCommand(ctx, c, "sh", "-c", setup.String()); err != nil {
 		c.t.Fatalf("stage starter %s: %v", name, err)
+	}
+	return "file://" + bare
+}
+
+// StageCloneFixture stages a bare git repo at /srv/gitrepos/<name>.git on
+// the circuit and returns a file:// URL pointing at it.
+//
+// The flow assumes the circuit's DEVPOD_HOME is under sharedScratch (set in
+// [Circuit.runContainer] via ~/.ssh/environment) so devpod v0.22's agent
+// clone writes into a path the outer dockerd can also resolve when it
+// bind-mounts the workspace source into the devcontainer.
+//
+// The bare repo is chowned to UID 1000 — the circuit user — so git on the
+// circuit side doesn't trip its "dubious ownership" safety check when
+// cloning.
+func (c *Circuit) StageCloneFixture(ctx context.Context, name string, files map[string]string) string {
+	c.t.Helper()
+
+	work := "/srv/gitrepos/" + name + "-work"
+	bare := "/srv/gitrepos/" + name + ".git"
+	var setup strings.Builder
+	setup.WriteString("set -e\n")
+	setup.WriteString("mkdir -p /srv/gitrepos\n")
+	setup.WriteString("rm -rf " + work + " " + bare + "\n")
+	setup.WriteString("mkdir -p " + work + "\n")
+	setup.WriteString("cd " + work + "\n")
+	setup.WriteString("git init -q -b main\n")
+	setup.WriteString("git config user.email t@example.com\n")
+	setup.WriteString("git config user.name T\n")
+	for path, body := range files {
+		setup.WriteString("mkdir -p " + filepath.ToSlash(filepath.Dir(path)) + "\n")
+		setup.WriteString("cat > " + path + " <<'__DRIFT_EOF__'\n")
+		setup.WriteString(body)
+		if !strings.HasSuffix(body, "\n") {
+			setup.WriteString("\n")
+		}
+		setup.WriteString("__DRIFT_EOF__\n")
+		setup.WriteString("git add " + path + "\n")
+	}
+	setup.WriteString("git commit -qm init\n")
+	setup.WriteString("git clone -q --bare . " + bare + "\n")
+	// Circuit user runs the clone; match the bare repo's owner so git's
+	// dubious-ownership guard doesn't trip.
+	setup.WriteString("chown -R 1000:1000 /srv/gitrepos\n")
+	setup.WriteString("chmod -R a+rX /srv/gitrepos\n")
+	// -u root: staging writes under /srv/gitrepos, which the circuit user
+	// cannot create. The chown line hands the final tree back to UID 1000.
+	if err := run(ctx, "docker", "exec", "-u", "root", c.ContainerID, "sh", "-c", setup.String()); err != nil {
+		c.t.Fatalf("stage clone fixture %s: %v", name, err)
 	}
 	return "file://" + bare
 }
