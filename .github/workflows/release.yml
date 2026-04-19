@@ -21,25 +21,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
 
-      - name: Download modules
-        run: go mod download
+      - name: Set up Nix cache
+        uses: DeterminateSystems/flakehub-cache-action@main
 
+      # `nix develop` gives us the exact toolchain pinned in flake.nix
+      # (go 1.26, golangci-lint, govulncheck, devpod, make, git) so local
+      # dev and CI run against the same bits. The `-c` form avoids spawning
+      # an interactive shell.
       - name: Vet
-        run: go vet ./...
+        run: nix develop --command go vet ./...
 
       - name: Unit tests (race)
-        run: go test -race ./...
+        run: nix develop --command go test -race ./...
 
-      # Integration tests build integration/Dockerfile.circuit and drive
-      # drift over a real SSH transport. ubuntu-latest ships docker.
       - name: Integration tests
-        run: make integration
+        run: nix develop --command make integration
 
   release:
     name: goreleaser
@@ -51,6 +50,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Set up Nix cache
+        uses: DeterminateSystems/flakehub-cache-action@main
+
+      # GoReleaser runs outside the devShell: its config embeds ldflags
+      # and mod_timestamp that the nix devShell doesn't wire. The action
+      # pins its own goreleaser binary; the devShell's goreleaser is for
+      # local dry-runs (`make release` equivalent, if we add one).
       - name: Set up Go
         uses: actions/setup-go@v5
         with:

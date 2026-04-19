@@ -13,9 +13,42 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	osexec "os/exec"
 
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 )
+
+// IsNotInstalled reports whether err indicates the devpod binary wasn't
+// found on PATH (as opposed to a real devpod-side failure). Callers use
+// this to render a single actionable message instead of two copies of
+// os/exec's nested wrapping.
+func IsNotInstalled(err error) bool {
+	return errors.Is(err, osexec.ErrNotFound)
+}
+
+// InstallHint returns a one-line copy-paste install command for the
+// pinned devpod release. When ExpectedVersion is empty (dev build) the
+// hint points at `latest` — good enough for humans to fix a missing
+// binary on their workstation.
+func InstallHint() string {
+	ver := ExpectedVersion
+	if ver == "" {
+		ver = "latest"
+	}
+	return fmt.Sprintf(
+		"curl -fsSL https://github.com/skevetter/devpod/releases/%s/download/devpod-linux-amd64 | sudo install /dev/stdin /usr/local/bin/devpod",
+		tagOrLatest(ver),
+	)
+}
+
+// tagOrLatest picks the URL path segment for ver: GitHub's release
+// download URL is `/releases/latest/download/…` OR `/releases/download/<tag>/…`.
+func tagOrLatest(ver string) string {
+	if ver == "" || ver == "latest" {
+		return "latest"
+	}
+	return "download/" + ver
+}
 
 // DefaultBinary is the devpod executable name looked up on $PATH when a
 // [Client] is constructed without an override. Tests inject a fake via

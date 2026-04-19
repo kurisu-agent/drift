@@ -200,9 +200,22 @@ func runInit(ctx context.Context, io IO) int {
 		}
 	}
 	added, perr := ensureDockerProvider(ctx)
+
+	// Merge the provider-check and version-check cases: when devpod is
+	// simply absent, both fail with the same root cause and we'd rather
+	// print one actionable warning than two copies of os/exec's nested
+	// "exec: devpod: exec: …" string. Tests can match on the single line.
+	if devpod.IsNotInstalled(perr) {
+		fmt.Fprintf(io.Stderr,
+			"warning: devpod not installed — circuit won't be usable until it is.\n"+
+				"  install: %s\n",
+			devpod.InstallHint())
+		return 0
+	}
+
 	switch {
 	case perr != nil:
-		// Don't fail init on this — a circuit with a missing devpod binary
+		// Don't fail init on this — a circuit with a broken devpod binary
 		// is a real problem, but the garage is already set up and the user
 		// can fix devpod without re-running init.
 		fmt.Fprintf(io.Stderr, "warning: devpod provider check failed: %v\n", perr)
@@ -254,11 +267,11 @@ func serverInitHandler(ctx context.Context, params json.RawMessage) (any, error)
 	} else if created {
 		res.Created = append(res.Created, "../CLAUDE.md")
 	}
-	if _, perr := ensureDockerProvider(ctx); perr != nil {
-		// Same rationale as runInit: the garage exists; surface the devpod
-		// hiccup but don't let it mask a successful init.
-		res.Created = append(res.Created, fmt.Sprintf("warning: devpod provider check failed: %v", perr))
-	}
+	// Best-effort: register the docker provider if devpod is present.
+	// We intentionally swallow the error here — `Created` is for filesystem
+	// paths that were brought into existence, not for diagnostic lines. The
+	// drift client sees devpod problems the first time it invokes kart.new.
+	_, _ = ensureDockerProvider(ctx)
 	return res, nil
 }
 

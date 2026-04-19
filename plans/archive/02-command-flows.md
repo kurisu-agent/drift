@@ -1,11 +1,11 @@
 # drift — command flow breakdown
 
-For each CLI command, traces the path from **client (`drift`)** → **server (`lakitu`)** → **`devpod`**. Companion to [PLAN.md](./PLAN.md).
+For each CLI command, traces the path from **client (`drift`)** → **server (`lakitu`)** → **`devpod`**. Companion to [01-original-plan.md](./01-original-plan.md).
 
 **Conventions used below:**
-- Every drift→lakitu call is a **JSON-RPC 2.0 request** piped over `ssh <host> lakitu rpc`. Per-command flows show the method name and key params only; the SSH + JSON-RPC plumbing is uniform and documented in [PLAN.md § RPC protocol](./PLAN.md#rpc-protocol).
-- **Authentication is out of scope** — whatever makes `ssh <user>@<circuit>` work on the user's machine (keys, agent, CA, jumphost, Tailscale SSH, etc.) is what drift uses. See [PLAN.md § Transport and authentication](./PLAN.md#transport-and-authentication).
-- Version check (`server.version` RPC) and config load happen on every drift invocation that contacts a circuit; omitted from per-command flows to reduce noise. See [PLAN.md § Version compatibility](./PLAN.md#version-compatibility).
+- Every drift→lakitu call is a **JSON-RPC 2.0 request** piped over `ssh <host> lakitu rpc`. Per-command flows show the method name and key params only; the SSH + JSON-RPC plumbing is uniform and documented in [§ RPC protocol](./01-original-plan.md#rpc-protocol).
+- **Authentication is out of scope** — whatever makes `ssh <user>@<circuit>` work on the user's machine (keys, agent, CA, jumphost, Tailscale SSH, etc.) is what drift uses. See [§ Transport and authentication](./01-original-plan.md#transport-and-authentication).
+- Version check (`server.version` RPC) and config load happen on every drift invocation that contacts a circuit; omitted from per-command flows to reduce noise. See [§ Version compatibility](./01-original-plan.md#version-compatibility).
 - "Garage" refers to `~/.drift/garage/` on the circuit.
 
 ---
@@ -22,7 +22,7 @@ For each CLI command, traces the path from **client (`drift`)** → **server (`l
 
 **Server (`lakitu new`):**
 1. Re-validate name; reject with a name-collision error if `garage/karts/<name>/` already exists.
-2. Resolve flag composition: server defaults → tune → explicit flags ([PLAN.md § Flag composition](./PLAN.md#flag-composition-and-resolution)).
+2. Resolve flag composition: server defaults → tune → explicit flags ([§ Flag composition](./01-original-plan.md#flag-composition-and-resolution)).
 3. Resolve chest references (`chest:<name>`) in the attached character via `ChestBackend.Get`.
 4. If `--starter <url>`: clone to tmpdir, `rm -rf .git`, `git init`, initial commit authored by character.
 5. Build layer-1 dotfiles scratch dir from character (`.gitconfig`, `~/.config/gh/hosts.yml`, SSH key, credential helper).
@@ -58,7 +58,7 @@ devpod status <name> --output json              # verify running, included in fi
 **Purpose:** Attach an interactive terminal to a kart. Auto-starts the kart if it is stopped — users never have to manually `start` before `connect`.
 
 **Client (`drift`):**
-1. RPC: `kart.info` with params `{name}` → result is the kart-info payload ([schema](./PLAN.md#lakitu-info-kart--json-schema)).
+1. RPC: `kart.info` with params `{name}` → result is the kart-info payload ([schema](./01-original-plan.md#lakitu-info-kart--json-schema)).
 2. Branch on `status`:
    - `not_found` → error.
    - `stopped` → RPC `kart.start` with params `{name}` (auto-start), then continue.

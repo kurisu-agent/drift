@@ -21,12 +21,12 @@
         owner   = "skevetter";
         repo    = "devpod";
         version = "v0.22.0";
-        # Placeholder hashes — re-run `nix build .#devpod` on a Nix-enabled
-        # host; the build fails with the real `got: sha256-…` values which
-        # should be pasted back here (srcHash first, then vendorHash after
-        # rerunning). Keep both entries in sync with the version field.
-        srcHash    = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-        vendorHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        # When bumping `version`, both hashes need refreshing. The idiom:
+        # set each to "sha256-AAAA...=" (44 As), run `nix build .#devpod`,
+        # and paste the `got:` value from the first failure into srcHash;
+        # rerun and paste the second `got:` into vendorHash.
+        srcHash    = "sha256-MWl+c/IdrizoUMwlMegvJXJ8oerbVw3OPzxHuzMvZSc=";
+        vendorHash = "sha256-hCFvOVqtjvbP+pCbAS1LOcFHLFJLkki7DnZmQDr6QFQ=";
       };
     in
     flake-utils.lib.eachSystem
@@ -88,11 +88,20 @@
           };
         in
         {
-          packages = {
+          packages = rec {
             inherit devpod;
             drift   = mkDriftBinary "drift";
             lakitu  = mkDriftBinary "lakitu";
-            default = mkDriftBinary "drift";
+            default = drift;
+
+            # Circuit-side runtime: one install target for provisioning a
+            # remote devcontainer host. `nix profile install
+            # github:kurisu-agent/drift#circuit` drops lakitu + pinned
+            # devpod + mosh into the user's profile.
+            circuit = pkgs.symlinkJoin {
+              name = "drift-circuit";
+              paths = [ lakitu devpod pkgs.mosh ];
+            };
           };
 
           devShells.default = pkgs.mkShell {
@@ -120,6 +129,6 @@
   # Manual install (buildGoModule output is now a first-class flake package —
   # `nix build .#drift`, `.#lakitu`, `.#devpod` — but the tarball flow from
   # GoReleaser remains the documented production path until the NixOS module
-  # lands. See plans/PLAN.md § Future and § Bootstrap / install.
+  # lands. See plans/archive/01-original-plan.md § Future and § Bootstrap / install.
   # ---------------------------------------------------------------------------
 }

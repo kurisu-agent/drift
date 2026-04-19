@@ -1,5 +1,5 @@
 # `drift circuit add` registers a circuit, updates the client config,
-# and writes the managed SSH config blocks per plans/PLAN.md.
+# and writes the managed SSH config blocks per plans/archive/01-original-plan.md.
 
 # Sanity — clean slate under $HOME (cliscript points HOME at the workdir).
 ! exists $HOME/.config/drift/config.yaml
@@ -17,7 +17,7 @@ exists $HOME/.config/drift/config.yaml
 grep 'default_circuit: my-server' $HOME/.config/drift/config.yaml
 grep 'host: dev@my-server.example.com' $HOME/.config/drift/config.yaml
 
-# Managed ssh_config holds the full block from plans/PLAN.md.
+# Managed ssh_config holds the full block from plans/archive/01-original-plan.md.
 exists $HOME/.config/drift/ssh_config
 grep '^Host drift.my-server$' $HOME/.config/drift/ssh_config
 grep '  HostName my-server.example.com' $HOME/.config/drift/ssh_config
