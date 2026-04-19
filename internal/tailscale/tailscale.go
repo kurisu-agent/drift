@@ -80,6 +80,7 @@ func Peers(ctx context.Context) ([]Peer, error) {
 // --json`. Unknown fields are silently dropped so a tailscale version
 // bump that adds fields is additive.
 type rawStatus struct {
+	Self *rawPeer           `json:"Self"`
 	Peer map[string]rawPeer `json:"Peer"`
 }
 
@@ -95,12 +96,23 @@ func parseStatus(buf []byte) ([]Peer, error) {
 	if err := json.Unmarshal(buf, &raw); err != nil {
 		return nil, err
 	}
+	var suffix string
+	if raw.Self != nil {
+		self := strings.TrimSuffix(raw.Self.DNSName, ".")
+		if i := strings.IndexByte(self, '.'); i >= 0 {
+			suffix = self[i+1:]
+		}
+	}
 	peers := make([]Peer, 0, len(raw.Peer))
 	for _, p := range raw.Peer {
 		if !p.Online {
 			continue
 		}
 		dns := strings.TrimSuffix(p.DNSName, ".")
+		// Drop peers outside our tailnet (Mullvad exits, shared-in nodes).
+		if suffix != "" && !strings.HasSuffix(dns, "."+suffix) {
+			continue
+		}
 		peers = append(peers, Peer{
 			HostName: p.HostName,
 			DNSName:  dns,

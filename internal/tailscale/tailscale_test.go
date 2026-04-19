@@ -55,6 +55,26 @@ func TestParseStatus_NoDNSName_FallsBackToHostName(t *testing.T) {
 	}
 }
 
+func TestParseStatus_FiltersForeignTailnetPeers(t *testing.T) {
+	// Suffix is derived from Self.DNSName. Mullvad exits and shared-in
+	// peers from other tailnets should be dropped.
+	raw := `{
+		"Self": {"HostName":"leaf","DNSName":"leaf.tail-abc123.ts.net.","Online":true},
+		"Peer": {
+			"pk-own":  {"HostName":"devbox","DNSName":"devbox.tail-abc123.ts.net.","TailscaleIPs":["100.1.2.3"],"Online":true},
+			"pk-mull": {"HostName":"al-tia-wg-003","DNSName":"al-tia-wg-003.mullvad.ts.net.","TailscaleIPs":["100.111.189.27"],"Online":true},
+			"pk-share":{"HostName":"friend","DNSName":"friend.other-net.ts.net.","TailscaleIPs":["100.9.9.9"],"Online":true}
+		}
+	}`
+	peers, err := parseStatus([]byte(raw))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(peers) != 1 || peers[0].HostName != "devbox" {
+		t.Fatalf("got %+v, want only devbox", peers)
+	}
+}
+
 func TestParseStatus_NoPeers(t *testing.T) {
 	peers, err := parseStatus([]byte(`{}`))
 	if err != nil {
