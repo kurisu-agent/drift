@@ -75,7 +75,8 @@ func Interactive(ctx context.Context, bin string, argv []string, stdin io.Reader
 		return errors.New("exec: Interactive: bin is required")
 	}
 
-	c := osexec.CommandContext(ctx, bin, argv...)
+	execBin, execArgv := termuxLinkerWrap(bin, argv)
+	c := osexec.CommandContext(ctx, execBin, execArgv...)
 	c.Stdin = stdin
 	c.Stdout = stdout
 	c.Stderr = stderr
@@ -118,7 +119,8 @@ func Run(ctx context.Context, cmd Cmd) (Result, error) {
 		return Result{}, errors.New("exec: Cmd.Name is required")
 	}
 
-	c := osexec.CommandContext(ctx, cmd.Name, cmd.Args...)
+	execName, execArgs := termuxLinkerWrap(cmd.Name, cmd.Args)
+	c := osexec.CommandContext(ctx, execName, execArgs...)
 	c.Dir = cmd.Dir
 	c.Env = cmd.Env
 	c.Stdin = cmd.Stdin
