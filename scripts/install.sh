@@ -32,9 +32,13 @@ case "$uname_m" in
 esac
 
 # Termux exposes itself as Linux but prefers the android/arm64 asset.
+# $PREFIX/bin is always on PATH there, so install to it by default — avoids
+# the ~/.local/bin PATH dance that would otherwise leave `drift` unfound.
+is_termux=0
 if [ -n "${PREFIX:-}" ] && [ -d "${PREFIX}/com.termux" ] 2>/dev/null || \
    [ -n "${TERMUX_VERSION:-}" ]; then
   goos=android
+  is_termux=1
 fi
 
 if [ "$VERSION" = "latest" ]; then
@@ -57,7 +61,9 @@ asset_url=$(curl -fsSL "$api" \
 [ -n "$asset_url" ] || die "no drift asset found for ${goos}/${goarch} in ${VERSION}"
 
 if [ -z "${DRIFT_INSTALL_DIR:-}" ]; then
-  if [ "$(id -u)" -eq 0 ]; then
+  if [ "$is_termux" -eq 1 ] && [ -n "${PREFIX:-}" ]; then
+    DRIFT_INSTALL_DIR="${PREFIX}/bin"
+  elif [ "$(id -u)" -eq 0 ]; then
     DRIFT_INSTALL_DIR=/usr/local/bin
   else
     DRIFT_INSTALL_DIR="${HOME}/.local/bin"
