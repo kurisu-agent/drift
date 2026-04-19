@@ -12,25 +12,17 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// KartNewDeps wires kart.new to its collaborators. Field ownership is split
-// with Phase 9's lifecycle handlers (they register kart.start/stop/etc via
-// RegisterKartLifecycle). Keeping kart.new's deps separate lets both phases
-// evolve independently until a future consolidation.
+// KartNewDeps is split from KartDeps so kart.new can evolve independently
+// from the lifecycle handlers.
 type KartNewDeps struct {
-	// Deps gives kart.new access to the per-circuit config (default tune,
-	// default character) and the chest backend (for PAT resolution from
-	// character files).
 	Deps *Deps
-	// Kart is the underlying orchestrator configuration. The handler
-	// overrides Kart.Resolver and Kart.GarageDir at call time; tests pre-
-	// populate the devpod client and starter here. The zero value is
-	// acceptable in production because RegisterKartNew defaults Kart.Devpod.
+	// Kart: the handler overrides Resolver and GarageDir at call time.
+	// Tests pre-populate Devpod/Starter/Fetcher/Clock here.
 	Kart kart.NewDeps
 }
 
-// KartNewParams is the RPC param shape for kart.new. Field names mirror
-// the `drift new` flags so the drift and lakitu schemas align without a
-// translation layer.
+// KartNewParams field names mirror `drift new` flags so drift and lakitu
+// schemas align without translation.
 type KartNewParams struct {
 	Name         string `json:"name"`
 	Clone        string `json:"clone,omitempty"`
@@ -43,17 +35,10 @@ type KartNewParams struct {
 	Autostart    bool   `json:"autostart,omitempty"`
 }
 
-// RegisterKartNew wires kart.new into reg. Split from RegisterKart so
-// Phase 9's lifecycle handlers can register in parallel without touching
-// the same function. Both phases add one Register call in
-// internal/cli/lakitu/lakitu.go.
 func RegisterKartNew(reg *rpc.Registry, kd KartNewDeps) {
 	reg.Register(wire.MethodKartNew, kd.kartNewHandler)
 }
 
-// kartNewHandler parses params, builds a [kart.Resolver] that reads tunes
-// and characters from the garage, resolves PAT references via the chest
-// backend, and hands the resolved flags to [kart.New].
 func (kd KartNewDeps) kartNewHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	var p KartNewParams
 	if err := rpc.BindParams(params, &p); err != nil {
@@ -107,10 +92,8 @@ func (kd KartNewDeps) kartNewHandler(ctx context.Context, params json.RawMessage
 		},
 	}
 
-	// Preserve whatever the caller pre-populated (devpod client, starter,
-	// fetcher, clock) while overriding the garage-dependent fields. Tests
-	// pass a fully-prepared kd.Kart; production wiring supplies just the
-	// devpod client via Registry() in cli/lakitu.
+	// Preserve caller-pre-populated fields (devpod, starter, fetcher, clock)
+	// while overriding the garage-dependent ones.
 	kd.Kart.Resolver = resolver
 	if kd.Kart.GarageDir == "" {
 		garage, derr := kd.Deps.garageDir()
@@ -135,10 +118,8 @@ func (kd KartNewDeps) kartNewHandler(ctx context.Context, params json.RawMessage
 }
 
 // resolvePATSecret turns a `chest:<name>` reference into the literal token
-// the layer-1 dotfiles generator embeds in gh hosts.yml and the git
-// credential helper. Empty input returns empty output — the character has
-// no PAT attached. Non-chest-prefixed values are rejected; character.add
-// enforces the same shape.
+// the layer-1 dotfiles generator embeds. Empty input returns empty output.
+// Non-chest-prefixed values are rejected — character.add enforces the shape.
 func (kd KartNewDeps) resolvePATSecret(ref string) (string, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
@@ -160,8 +141,8 @@ func (kd KartNewDeps) resolvePATSecret(ref string) (string, error) {
 	return string(val), nil
 }
 
-// openChestBackend delegates to Deps; named uniquely so it doesn't collide
-// with the private Deps.openChest method already defined in server.go.
+// openChestBackend exists separately from Deps.openChest to avoid colliding
+// with the private method already defined in server.go.
 func (kd KartNewDeps) openChestBackend() (chest.Backend, error) {
 	if kd.Deps == nil {
 		return nil, rpcerr.Internal("kart.new: deps not configured")

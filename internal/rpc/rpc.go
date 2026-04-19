@@ -1,9 +1,7 @@
 // Package rpc implements the JSON-RPC 2.0 method registry and dispatcher
-// shared by both the `lakitu rpc` stdio path and lakitu's human subcommands.
-//
-// A [Registry] holds a map of method name → [Handler]. [Registry.Dispatch]
-// is the single place where a Go error is translated into a [wire.Error];
-// handlers themselves return plain Go values and errors.
+// shared by `lakitu rpc` and lakitu's human subcommands. [Registry.Dispatch]
+// is the single place Go errors become [wire.Error] — handlers return plain
+// Go values and errors.
 package rpc
 
 import (
@@ -17,25 +15,20 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// Handler executes a single JSON-RPC method. Implementations should return a
-// value ready for `json.Marshal` on success, or an error on failure. Returning
-// a `*rpcerr.Error` preserves structured fields; any other error is converted
-// to a generic internal error at the dispatch boundary.
+// Handler returns a json-marshallable value on success. Returning a
+// *rpcerr.Error preserves structured fields; any other error becomes
+// CodeInternal at the dispatch boundary.
 type Handler func(ctx context.Context, params json.RawMessage) (any, error)
 
-// Registry maps method names to their handlers. The zero value is not usable;
-// construct with [NewRegistry].
 type Registry struct {
 	methods map[string]Handler
 }
 
-// NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
 	return &Registry{methods: make(map[string]Handler)}
 }
 
-// Register associates name with h. A second call with the same name panics —
-// duplicate registrations are a programmer bug.
+// Register panics on duplicate names — that's a programmer bug.
 func (r *Registry) Register(name string, h Handler) {
 	if _, ok := r.methods[name]; ok {
 		panic(fmt.Sprintf("rpc: method %q already registered", name))
@@ -43,17 +36,14 @@ func (r *Registry) Register(name string, h Handler) {
 	r.methods[name] = h
 }
 
-// Has reports whether name has a registered handler.
 func (r *Registry) Has(name string) bool {
 	_, ok := r.methods[name]
 	return ok
 }
 
-// Dispatch looks up the handler for req.Method, runs it, and returns a fully
-// populated response envelope. It never returns an error: every failure mode
-// (unknown method, handler error, result-marshal failure, handler panic) is
-// represented in the response's Error field. The returned response always
-// echoes req.ID.
+// Dispatch never returns an error: every failure (unknown method, handler
+// error, marshal failure, handler panic) surfaces in resp.Error. The
+// response always echoes req.ID.
 func (r *Registry) Dispatch(ctx context.Context, req *wire.Request) *wire.Response {
 	resp := &wire.Response{JSONRPC: wire.Version, ID: req.ID}
 
@@ -80,8 +70,8 @@ func (r *Registry) Dispatch(ctx context.Context, req *wire.Request) *wire.Respon
 	return resp
 }
 
-// call invokes h while recovering from handler panics so a buggy handler
-// cannot escape the dispatcher and corrupt stdout.
+// call recovers handler panics so a buggy handler cannot escape the
+// dispatcher and corrupt stdout.
 func call(ctx context.Context, h Handler, params json.RawMessage) (result any, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -91,9 +81,6 @@ func call(ctx context.Context, h Handler, params json.RawMessage) (result any, e
 	return h(ctx, params)
 }
 
-// toWire converts an arbitrary error into a wire-level error object. Non-
-// rpcerr errors are wrapped as CodeInternal so clients see a structured
-// payload instead of a bare string.
 func toWire(err error) *wire.Error {
 	var re *rpcerr.Error
 	if errors.As(err, &re) {
@@ -102,13 +89,10 @@ func toWire(err error) *wire.Error {
 	return rpcerr.Internal("%v", err).Wire()
 }
 
-// BindParams decodes a JSON-RPC params blob into dst. Unknown fields are
-// rejected so handlers fail fast on client/server schema drift, and the
-// resulting error is already a user-facing rpcerr.Error.
+// BindParams decodes with DisallowUnknownFields so handlers fail fast on
+// client/server schema drift.
 func BindParams(raw json.RawMessage, dst any) error {
 	if len(bytes.TrimSpace(raw)) == 0 {
-		// No params supplied — leave dst as the zero value. Handlers that
-		// require fields should validate after binding.
 		return nil
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))

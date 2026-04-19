@@ -1,8 +1,6 @@
-// Package lakitu contains the Kong CLI definition for the lakitu server binary.
-//
-// Scaffolding covers `version` and `rpc`. The `rpc` command dispatches to
-// handlers registered in a [*rpc.Registry]; wiring for specific methods lands
-// in later phases.
+// Package lakitu is the Kong CLI for the lakitu server binary. `rpc`
+// dispatches to handlers in a [*rpc.Registry]; other subcommands are
+// human-facing counterparts.
 package lakitu
 
 import (
@@ -25,7 +23,6 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// CLI is the root argument parser for lakitu.
 type CLI struct {
 	Debug bool `help:"Verbose output." env:"LAKITU_DEBUG"`
 
@@ -49,14 +46,12 @@ type initCmd struct{}
 
 type rpcCmd struct{}
 
-// IO bundles the stdio streams.
 type IO struct {
 	Stdout io.Writer
 	Stderr io.Writer
 	Stdin  io.Reader
 }
 
-// Run parses argv and dispatches. Returns the process exit code.
 func Run(ctx context.Context, argv []string, io IO) int {
 	var cli CLI
 	parser, err := kong.New(&cli,
@@ -135,9 +130,7 @@ func runVersion(io IO, cmd versionCmd) int {
 	return 0
 }
 
-// Registry returns the method registry used by `lakitu rpc`. Handlers are
-// registered here as they come online in later phases. The registry is
-// rebuilt on every Run call so tests can swap it out.
+// Registry is rebuilt on every Run call so tests can swap handlers.
 func Registry() *rpc.Registry {
 	reg := rpc.NewRegistry()
 	reg.Register(wire.MethodServerInit, serverInitHandler)
@@ -165,10 +158,6 @@ func Registry() *rpc.Registry {
 	return reg
 }
 
-// runInit is the human-CLI counterpart of the server.init RPC. It bootstraps
-// the garage, ensures the devpod docker provider is registered, and prints
-// a short, stable summary to stdout. Errors flow through errfmt.Emit for
-// the two-line format.
 func runInit(ctx context.Context, io IO) int {
 	root, err := config.GarageDir()
 	if err != nil {
@@ -201,10 +190,9 @@ func runInit(ctx context.Context, io IO) int {
 	}
 	added, perr := ensureDockerProvider(ctx)
 
-	// Merge the provider-check and version-check cases: when devpod is
-	// simply absent, both fail with the same root cause and we'd rather
-	// print one actionable warning than two copies of os/exec's nested
-	// "exec: devpod: exec: …" string. Tests can match on the single line.
+	// When devpod is simply absent the provider check and version check
+	// both fail with the same root cause — collapse to one actionable
+	// warning instead of two copies of os/exec's nested "exec: devpod: …".
 	if devpod.IsNotInstalled(perr) {
 		fmt.Fprintf(io.Stderr,
 			"warning: devpod not installed — circuit won't be usable until it is.\n"+
@@ -215,16 +203,15 @@ func runInit(ctx context.Context, io IO) int {
 
 	switch {
 	case perr != nil:
-		// Don't fail init on this — a circuit with a broken devpod binary
-		// is a real problem, but the garage is already set up and the user
-		// can fix devpod without re-running init.
+		// Don't fail init — the garage is already set up and the user can
+		// fix devpod without re-running init.
 		fmt.Fprintf(io.Stderr, "warning: devpod provider check failed: %v\n", perr)
 	case added:
 		fmt.Fprintln(io.Stdout, "  + devpod provider: docker")
 	}
 
-	// Surface the devpod version check so a mismatched binary is visible
-	// immediately rather than showing up as mystery errors on kart.new.
+	// Surface the version check so a mismatched binary is visible
+	// immediately, not as mystery errors on kart.new.
 	dev := &devpod.Client{}
 	if vc, verr := dev.Verify(ctx); verr != nil {
 		fmt.Fprintf(io.Stderr, "warning: could not determine devpod version: %v\n", verr)
@@ -240,12 +227,7 @@ func runInit(ctx context.Context, io IO) int {
 	return 0
 }
 
-// serverInitHandler is the RPC-facing counterpart of `lakitu init`. It
-// resolves the garage root from the server's environment ($HOME) and
-// returns the same InitResult both paths share.
 func serverInitHandler(ctx context.Context, params json.RawMessage) (any, error) {
-	// server.init takes no params. Strict binding rejects stray fields
-	// instead of silently ignoring them.
 	var p struct{}
 	if err := rpc.BindParams(params, &p); err != nil {
 		return nil, err
@@ -267,31 +249,28 @@ func serverInitHandler(ctx context.Context, params json.RawMessage) (any, error)
 	} else if created {
 		res.Created = append(res.Created, "../CLAUDE.md")
 	}
-	// Best-effort: register the docker provider if devpod is present.
-	// We intentionally swallow the error here — `Created` is for filesystem
-	// paths that were brought into existence, not for diagnostic lines. The
-	// drift client sees devpod problems the first time it invokes kart.new.
+	// Best-effort provider registration. Errors are swallowed — `Created`
+	// is for filesystem paths, not diagnostic lines. The drift client sees
+	// devpod problems on the first kart.new.
 	_, _ = ensureDockerProvider(ctx)
 	return res, nil
 }
 
-// ensureDockerProvider idempotently registers the docker provider with
-// devpod. First-run `devpod up` fails with "provider with name docker not
-// found" unless this has run — folding it into init saves users the
-// surprise of a broken first `drift new`.
+// ensureDockerProvider: first-run `devpod up` fails with "provider with
+// name docker not found" unless this has run — folding it into init saves
+// users a broken first `drift new`.
 func ensureDockerProvider(ctx context.Context) (added bool, err error) {
 	dev := &devpod.Client{}
 	return dev.EnsureProvider(ctx, "docker")
 }
 
-// runRPC is the one-shot dispatch entry point. It honors the stdout
-// invariant: only the JSON-RPC response (or nothing on a hard crash) ever
-// goes to stdout.
+// runRPC honors the stdout invariant: only the JSON-RPC response (or
+// nothing on a hard crash) ever goes to stdout.
 func runRPC(ctx context.Context, io IO, reg *rpc.Registry) int {
 	req, err := wire.DecodeRequest(io.Stdin)
 	if err != nil {
-		// Parse error — no valid id to echo. Emit a response with a null id
-		// per JSON-RPC 2.0 so drift can still branch on the envelope shape.
+		// Parse error — no valid id to echo. Emit a response with null id
+		// per JSON-RPC 2.0 so drift can still branch on the envelope.
 		e := rpcerr.New(rpcerr.CodeInternal, "parse_error", "parse error: %v", err)
 		resp := &wire.Response{
 			JSONRPC: wire.Version,
