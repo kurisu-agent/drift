@@ -83,7 +83,8 @@ func (kd KartNewDeps) kartNewHandler(ctx context.Context, params json.RawMessage
 				PAT:        pat,
 			}, nil
 		},
-		ResolveEnv: kd.resolveTuneEnv,
+		ResolveEnv:      kd.resolveTuneEnv,
+		ResolveChestRef: kd.resolveChestRef,
 	}
 
 	// Preserve caller-pre-populated fields (devpod, starter, fetcher, clock)
@@ -124,6 +125,23 @@ func (kd KartNewDeps) resolvePATSecret(ref string) (string, error) {
 			"kart.new: character pat_secret must be a chest:<name> reference")
 	}
 	key := strings.TrimPrefix(ref, "chest:")
+	backend, err := kd.openChestBackend()
+	if err != nil {
+		return "", err
+	}
+	val, err := backend.Get(key)
+	if err != nil {
+		return "", err
+	}
+	return string(val), nil
+}
+
+// resolveChestRef dechests a single `chest:<name>` value. Caller has already
+// verified the prefix; passes through the chest backend's own
+// chest_entry_not_found rpcerr so the resolver can wrap it with field
+// context.
+func (kd KartNewDeps) resolveChestRef(ref string) (string, error) {
+	key := strings.TrimPrefix(strings.TrimSpace(ref), "chest:")
 	backend, err := kd.openChestBackend()
 	if err != nil {
 		return "", err

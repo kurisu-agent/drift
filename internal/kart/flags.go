@@ -96,6 +96,13 @@ type Resolver struct {
 	// skip injection. Errors must surface as rpcerr (e.g.
 	// chest_entry_not_found with block + key in Data).
 	ResolveEnv func(TuneEnv) (ResolvedTuneEnv, error)
+	// ResolveChestRef dechests a single `chest:<name>` reference. Used to
+	// inline secrets that ride on opaque values like dotfiles_repo (where
+	// the chest entry stores e.g. an HTTPS URL with a PAT pre-embedded).
+	// Caller has already verified the `chest:` prefix. nil means chest
+	// refs in non-env fields will fail with internal_error — wire it
+	// whenever ResolveEnv is wired.
+	ResolveChestRef func(ref string) (string, error)
 }
 
 // Resolve applies: server defaults → tune → explicit flags, with --features
@@ -172,6 +179,26 @@ func (r *Resolver) Resolve(f Flags) (*Resolved, error) {
 	dotfiles := f.Dotfiles
 	if dotfiles == "" && tune != nil {
 		dotfiles = tune.DotfilesRepo
+	}
+	// dotfiles_repo accepts a `chest:<name>` ref so the auth token can stay
+	// in the chest while the URL (with PAT embedded) flows through opaquely.
+	if strings.HasPrefix(dotfiles, "chest:") {
+		if r.ResolveChestRef == nil {
+			return nil, rpcerr.Internal(
+				"kart.new: dotfiles_repo references chest but no chest resolver is configured")
+		}
+		val, err := r.ResolveChestRef(dotfiles)
+		if err != nil {
+			name := strings.TrimPrefix(dotfiles, "chest:")
+			var rpcErr *rpcerr.Error
+			if errors.As(err, &rpcErr) && rpcErr.Type == rpcerr.TypeChestEntryNotFound {
+				return nil, rpcerr.New(rpcerr.CodeNotFound, rpcerr.TypeChestEntryNotFound,
+					"kart.new: dotfiles_repo references missing chest entry %q", name).
+					With("field", "dotfiles_repo").With("name", name)
+			}
+			return nil, err
+		}
+		dotfiles = val
 	}
 
 	features, err := mergeFeatures(tuneFeatures(tune), f.Features)
