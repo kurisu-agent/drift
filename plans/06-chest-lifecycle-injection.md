@@ -164,9 +164,16 @@ env:
   map to `--set-env KEY=VALUE` in `args()`.
 - At `internal/kart/new.go:150`, populate `up.SetEnv` from
   `resolved.Env.Workspace` (`KEY=VALUE`, stable order).
-- Persist the set of workspace-env keys (NOT values) into the kart
-  config so `kart.start`/`kart.restart` can re-resolve them from chest
-  on re-up without the user re-specifying.
+- Persist the resolved env **references** (keys + `chest:<name>` source,
+  never literal values) for each block into the kart config so:
+  (a) `kart.start`/`kart.restart` can re-resolve from chest on re-up
+  without the user re-specifying, and
+  (b) `kart info` can render what was loaded (see Step 8).
+- Document on the tune validator and in the CLI help that
+  `env.workspace` values are visible to every process in the container
+  (via `/proc/<pid>/environ`, `printenv`, etc.) for the container's
+  lifetime. Prefer `build` or `session` when a value doesn't need to
+  be globally available.
 
 ### Step 4 — wrap `env.build` around the install-dotfiles call
 
@@ -174,14 +181,9 @@ env:
   prepend `env KEY=VALUE …` to the command string drift sends through
   `devpod.InstallDotfiles` (which today is `devpod agent workspace
   install-dotfiles --repository <file://…>`). The values live as
-  process-env of the install-dotfiles process for its lifetime only.
-- No file is written; nothing persists into `containerEnv`,
-  `~/.profile`, or docker's container config. The secret exists on
-  argv of the ssh-forwarded command for the duration of the clone —
-  document that as the leak surface.
-- Alternative to explore during implementation: pipe a heredoc
-  `env -i KEY=VAL bash -c '…'` over stdin to keep values off argv.
-  Decide after measuring devpod's tolerance for wrapped commands.
+  process-env of the install-dotfiles process only; they never land in
+  `containerEnv`, `/proc/1/environ`, or any persistent on-container
+  state.
 
 ### Step 5 — re-apply workspace env on lifecycle verbs
 
@@ -202,7 +204,20 @@ env:
 - Per-invocation resolution: rotated chest values show up on the next
   `drift connect`.
 
-### Step 7 — integration tests
+### Step 7 — surface loaded env refs in `kart info`
+
+- When a kart has any persisted env refs (from Step 3), `kart info`
+  renders them grouped by block as `KEY: chest:<name>` per entry.
+  Missing blocks are omitted so the output stays tight for karts with
+  no env.
+- Values are never rendered — only the chest reference (`chest:<name>`)
+  and env key. Useful for debugging ("is this kart loading the right
+  chest slot?") without exposing secrets.
+- Client-side only: `drift info <kart>` shows the refs; nothing about
+  loaded env is written into the container (no in-container `drift
+  info` surface to scrape).
+
+### Step 8 — integration tests
 
 Mirror `integration/dotfiles_test.go` shape. One scenario per injection
 site so regressions in one block can't mask the others:
@@ -221,30 +236,18 @@ site so regressions in one block can't mask the others:
   new kart, then `drift ssh <name> --command 'printenv
   ANTHROPIC_API_KEY'` matches; `devpod ssh` outside drift does NOT see
   it (proves session-only scope).
+- **kart info rendering** — a kart with env entries in all three
+  blocks surfaces them as `KEY: chest:<name>` per block in
+  `drift info <kart>`; values never appear anywhere in the output.
 
 Plus a negative test: unresolvable `chest:missing` in any block →
 `kart.new` returns `chest_entry_not_found` with `block` and `key` in
 the error data, and no container is left behind.
 
-## Open questions
+## Deferred decisions
 
-- **Leak surface — workspace.** `devpod up --set-env KEY=VALUE` puts
-  the value on argv of the host-side `devpod` process during `up`, and
-  (more persistently) docker writes the env into
-  `/var/lib/docker/containers/<id>/config.v2.json` — visible via
-  `docker inspect`. Alternatives: write a tmpfile and use `--env-file`
-  if devpod supports it, or ship an extra-devcontainer-path that
-  declares `containerEnv` (displaces the leak to a JSON file on disk,
-  doesn't remove it). Decide before implementation.
-- **Leak surface — build.** The proposed `env KEY=VAL …` wrap puts
-  values on argv of the ssh-forwarded install-dotfiles command. Window
-  is short (seconds), but visible on `ps` during the clone. Heredoc
-  over stdin (`env -i KEY=VAL bash -c '…'`) avoids argv entirely — try
-  that first.
-- **Leak surface — session.** `devpod ssh --set-env` also crosses
-  argv, briefly, once per connect. Lowest persistence of the three
-  (nothing on disk, dies with the channel).
-- **Precedence.** If a future character-level env map overlaps a tune
-  env map, character wins or tune wins? Defer but record the choice.
-- **Status rendering.** Should `drift kart info` list the env keys (not
-  values) the kart was booted with? Useful for debugging, cheap to add.
+- **Character env precedence.** A future character-level env map is
+  out of scope here. When it lands, **character wins** on key
+  collision with the tune — mirrors the existing character-wins
+  behaviour for identity fields (`git_name`, `pat_secret`). Recorded
+  so the later implementation doesn't have to re-litigate it.
