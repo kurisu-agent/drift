@@ -67,9 +67,17 @@
           # Shared ldflags for drift + lakitu: version info + the devpod pin
           # so `lakitu init` can compare the circuit's devpod against what
           # this binary was built against.
+          #
+          # Version stays "dev" for nix-built binaries — there's no native
+          # way to pluck the latest git tag from a flake attribute, and
+          # release builds come through goreleaser (.goreleaser.yaml) which
+          # injects Version={{.Version}} + Commit={{.Commit}} itself.
+          # Commit is wired so `drift --version` renders a short hash
+          # suffix even on untagged dev builds.
           driftLdflags = [
             "-s" "-w"
-            "-X github.com/kurisu-agent/drift/internal/version.Version=${self.shortRev or "dev"}"
+            "-X github.com/kurisu-agent/drift/internal/version.Version=dev"
+            "-X github.com/kurisu-agent/drift/internal/version.Commit=${self.rev or "dirty"}"
             "-X github.com/kurisu-agent/drift/internal/devpod.ExpectedVersion=${devpodPin.version}"
           ];
 

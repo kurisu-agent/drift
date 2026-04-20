@@ -185,8 +185,29 @@ func emitVersion(io IO, outputFormat string) int {
 		fmt.Fprintln(io.Stdout, string(buf))
 		return 0
 	}
-	fmt.Fprintf(io.Stdout, "drift %s\n", info.Version)
+	fmt.Fprintln(io.Stdout, formatVersionText(info))
 	return 0
+}
+
+// formatVersionText renders `drift <Version> (<short-commit>)` — the
+// commit is appended only when it's populated AND doesn't already
+// appear in Version (avoids `drift caa63a8 (caa63a8)` for dev builds
+// that stuff the hash into Version via ldflags).
+func formatVersionText(info version.Info) string {
+	out := "drift " + info.Version
+	c := shortCommit(info.Commit)
+	if c != "" && !strings.Contains(info.Version, c) {
+		out += " (" + c + ")"
+	}
+	return out
+}
+
+func shortCommit(c string) string {
+	const short = 7
+	if len(c) > short {
+		return c[:short]
+	}
+	return c
 }
 
 // outputFromArgv mirrors Kong's --output / -o parsing closely enough to pick
