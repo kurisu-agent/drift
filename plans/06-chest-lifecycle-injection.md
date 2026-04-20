@@ -1,9 +1,5 @@
 # Chest lifecycle env-var injection
 
-Status: proposed
-Owner: unassigned
-Related: `internal/chest/`, `internal/server/chest.go`, `internal/server/kart_new.go`, `internal/kart/new.go`, `internal/kart/dotfiles.go`, `internal/kart/flags.go`, `internal/model/types.go`, `internal/devpod/devpod.go`
-
 ## Problem
 
 Chest secrets are only consumable through one narrow path today: a

@@ -7,3 +7,12 @@ authorize follow-up tags — each release tag is its own explicit request.
 A user saying "commit and push" does not imply tagging. A user saying
 "release" or "cut a release" does imply a tag, but confirm the version
 number before pushing.
+
+# External repo references
+
+Never reference other repositories, organisations, or user handles in
+anything that lands in this repo — commits, code, docs, plans,
+commit messages, tests, examples. Only this repo (`kurisu-agent/drift`)
+and its dependencies may appear. Unless the user explicitly requires it
+in the current turn, use generic placeholders (`example-org`,
+`<your-org>`, etc.) in examples and documentation.
