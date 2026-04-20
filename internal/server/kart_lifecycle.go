@@ -38,6 +38,7 @@ func RegisterKartLifecycle(reg *rpc.Registry, d KartDeps) {
 	reg.Register(wire.MethodKartRestart, d.kartRestartHandler)
 	reg.Register(wire.MethodKartDelete, d.kartDeleteHandler)
 	reg.Register(wire.MethodKartLogs, d.kartLogsHandler)
+	reg.Register(wire.MethodKartSessionEnv, d.kartSessionEnvHandler)
 }
 
 type KartLifecycleParams struct {
@@ -81,7 +82,11 @@ func (d KartDeps) kartStartHandler(ctx context.Context, params json.RawMessage) 
 	if err := d.requireDevpod(); err != nil {
 		return nil, err
 	}
-	if _, err := d.Devpod.Up(ctx, devpod.UpOpts{Name: p.Name}); err != nil {
+	setEnv, err := d.workspaceSetEnv(p.Name)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := d.Devpod.Up(ctx, devpod.UpOpts{Name: p.Name, SetEnv: setEnv}); err != nil {
 		return nil, wrapDevpod(rpcerr.CodeDevpod, rpcerr.TypeDevpodUpFailed, p.Name, err,
 			"devpod up %s failed: %v", p.Name, err)
 	}
@@ -111,11 +116,17 @@ func (d KartDeps) kartRestartHandler(ctx context.Context, params json.RawMessage
 	if err := d.requireDevpod(); err != nil {
 		return nil, err
 	}
+	// Resolve env BEFORE the stop so a chest miss fails fast without
+	// leaving the kart stopped with no re-up coming.
+	setEnv, err := d.workspaceSetEnv(p.Name)
+	if err != nil {
+		return nil, err
+	}
 	if err := d.Devpod.Stop(ctx, p.Name); err != nil {
 		return nil, wrapDevpod(rpcerr.CodeDevpod, rpcerr.TypeDevpodUnreachable, p.Name, err,
 			"devpod stop %s failed: %v", p.Name, err)
 	}
-	if _, err := d.Devpod.Up(ctx, devpod.UpOpts{Name: p.Name}); err != nil {
+	if _, err := d.Devpod.Up(ctx, devpod.UpOpts{Name: p.Name, SetEnv: setEnv}); err != nil {
 		return nil, wrapDevpod(rpcerr.CodeDevpod, rpcerr.TypeDevpodUpFailed, p.Name, err,
 			"devpod up %s failed: %v", p.Name, err)
 	}
@@ -289,6 +300,60 @@ func (d KartDeps) requireDevpod() error {
 		return rpcerr.Internal("kart: devpod client not configured")
 	}
 	return nil
+}
+
+// KartSessionEnvResult is the response for kart.session_env — returns
+// resolved KEY=VALUE pairs the client appends to the remote devpod ssh
+// invocation as --set-env flags. Empty Env means nothing to inject.
+type KartSessionEnvResult struct {
+	Name string   `json:"name"`
+	Env  []string `json:"env"`
+}
+
+// kartSessionEnvHandler re-resolves env.session from chest on every call
+// so rotated secrets land on the next `drift connect`. Values never
+// persist on the client — caller appends them to the ssh command and
+// lets the ssh channel carry them to the circuit.
+func (d KartDeps) kartSessionEnvHandler(_ context.Context, params json.RawMessage) (any, error) {
+	p, err := bindLifecycleParams(params, "kart.session_env")
+	if err != nil {
+		return nil, err
+	}
+	cfg, ok, err := d.readKartConfig(p.Name)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, rpcerr.NotFound(rpcerr.TypeKartNotFound,
+			"kart %q not found", p.Name).With("kart", p.Name)
+	}
+	if len(cfg.Env.Session) == 0 {
+		return KartSessionEnvResult{Name: p.Name, Env: []string{}}, nil
+	}
+	resolved, err := d.resolveEnvBlock("session", cfg.Env.Session)
+	if err != nil {
+		return nil, err
+	}
+	return KartSessionEnvResult{Name: p.Name, Env: envKVPairs(resolved)}, nil
+}
+
+// workspaceSetEnv re-reads chest-backed workspace env for a kart so
+// start / restart pick up rotated secrets. Missing kart config, empty
+// env block, or no chest wiring return (nil, nil) — the caller just
+// omits SetEnv from UpOpts.
+func (d KartDeps) workspaceSetEnv(name string) ([]string, error) {
+	cfg, ok, err := d.readKartConfig(name)
+	if err != nil {
+		return nil, err
+	}
+	if !ok || len(cfg.Env.Workspace) == 0 {
+		return nil, nil
+	}
+	resolved, err := d.resolveEnvBlock("workspace", cfg.Env.Workspace)
+	if err != nil {
+		return nil, err
+	}
+	return envKVPairs(resolved), nil
 }
 
 func (d KartDeps) removeKartDir(name string) error {

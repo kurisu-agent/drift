@@ -59,12 +59,37 @@ func Run(ctx context.Context, d Deps, opts Options, stdio Stdio) error {
 		return err
 	}
 
+	sessionEnv, err := fetchSessionEnv(ctx, d, opts)
+	if err != nil {
+		return err
+	}
+
 	useMosh := !opts.ForceSSH && moshAvailable(d)
-	bin, argv := buildConnectArgv(useMosh, opts)
+	bin, argv := buildConnectArgv(useMosh, opts, sessionEnv)
 	if d.OnReady != nil {
 		d.OnReady()
 	}
 	return d.Exec(ctx, bin, argv, stdio)
+}
+
+// fetchSessionEnv pulls resolved env.session KEY=VALUE pairs for the kart.
+// Values resolve fresh on every call so rotated secrets show up on the
+// next `drift connect` without a container restart. A circuit that
+// predates this RPC (method_not_found) returns nil silently — the
+// connect path stays forward-compatible.
+func fetchSessionEnv(ctx context.Context, d Deps, opts Options) ([]string, error) {
+	var res struct {
+		Env []string `json:"env"`
+	}
+	if err := d.Call(ctx, opts.Circuit, wire.MethodKartSessionEnv,
+		map[string]string{"name": opts.Kart}, &res); err != nil {
+		var rpcErr *rpcerr.Error
+		if errors.As(err, &rpcErr) && rpcErr.Type == "method_not_found" {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return res.Env, nil
 }
 
 func withDefaults(d Deps) Deps {
@@ -110,9 +135,16 @@ func Transport(lookPath func(string) (string, error), forceSSH bool) string {
 	return "ssh"
 }
 
-func buildConnectArgv(useMosh bool, opts Options) (string, []string) {
+func buildConnectArgv(useMosh bool, opts Options, sessionEnv []string) (string, []string) {
 	target := "drift." + opts.Circuit
 	remote := []string{"devpod", "ssh", opts.Kart}
+	// --set-env flags go on the remote devpod ssh invocation so the env
+	// lives inside the ssh channel and dies with the session. Literal
+	// values appear on the remote argv briefly; on the client they only
+	// traverse the encrypted ssh transport.
+	for _, kv := range sessionEnv {
+		remote = append(remote, "--set-env", kv)
+	}
 	if useMosh {
 		argv := append([]string{target, "--"}, remote...)
 		return "mosh", argv

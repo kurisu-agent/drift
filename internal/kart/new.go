@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/kurisu-agent/drift/internal/config"
@@ -166,6 +167,7 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 		AdditionalFeatures:    resolved.Features,
 		ExtraDevcontainerPath: dcPath,
 		Dotfiles:              resolved.Dotfiles,
+		SetEnv:                envKVPairs(resolved.Env.Workspace),
 		ConfigureSSH:          false,
 	}
 	if _, err := d.Devpod.Up(ctx, up); err != nil {
@@ -185,7 +187,10 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 	// land in the container. Planned follow-up: post-up `devpod ssh
 	// --command` with the script piped over stdin.
 	fileURL := "file://" + df.Path
-	if err := d.Devpod.InstallDotfiles(ctx, fileURL); err != nil {
+	if err := d.Devpod.InstallDotfilesWithOpts(ctx, devpod.InstallDotfilesOpts{
+		URL:        fileURL,
+		ProcessEnv: envKVPairs(resolved.Env.Build),
+	}); err != nil {
 		return &Result{
 			Name:      resolved.Name,
 			Source:    KartSource{Mode: resolved.SourceMode, URL: resolved.SourceURL},
@@ -233,11 +238,12 @@ func writeKartConfig(kartDir string, r *Resolved, now time.Time) error {
 		return err
 	}
 	type onDisk struct {
-		Repo       string `yaml:"repo,omitempty"`
-		Tune       string `yaml:"tune,omitempty"`
-		Character  string `yaml:"character,omitempty"`
-		SourceMode string `yaml:"source_mode,omitempty"`
-		CreatedAt  string `yaml:"created_at,omitempty"`
+		Repo       string   `yaml:"repo,omitempty"`
+		Tune       string   `yaml:"tune,omitempty"`
+		Character  string   `yaml:"character,omitempty"`
+		SourceMode string   `yaml:"source_mode,omitempty"`
+		CreatedAt  string   `yaml:"created_at,omitempty"`
+		Env        *TuneEnv `yaml:"env,omitempty"`
 	}
 	cfg := onDisk{
 		Repo:       r.SourceURL,
@@ -245,6 +251,13 @@ func writeKartConfig(kartDir string, r *Resolved, now time.Time) error {
 		Character:  r.CharacterName,
 		SourceMode: r.SourceMode,
 		CreatedAt:  now.Format(time.RFC3339),
+	}
+	// Persist the chest:<name> refs — never the resolved values. Lets
+	// start/restart re-resolve from chest without the user re-declaring,
+	// and `kart info` can render what's wired without exposing secrets.
+	if !r.EnvRefs.IsEmpty() {
+		refs := r.EnvRefs
+		cfg.Env = &refs
 	}
 	buf, err := yaml.Marshal(&cfg)
 	if err != nil {
@@ -272,6 +285,24 @@ func (d NewDeps) now() time.Time {
 		return d.Now()
 	}
 	return time.Now().UTC()
+}
+
+// envKVPairs renders a resolved env map as sorted KEY=VALUE strings.
+// Sorted so devpod argv is stable across runs (tests and log diffs).
+func envKVPairs(m map[string]string) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, k+"="+m[k])
+	}
+	return out
 }
 
 func ctxErr(ctx context.Context) error {

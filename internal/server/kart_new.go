@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/kurisu-agent/drift/internal/chest"
@@ -82,6 +83,7 @@ func (kd KartNewDeps) kartNewHandler(ctx context.Context, params json.RawMessage
 				PAT:        pat,
 			}, nil
 		},
+		ResolveEnv: kd.resolveTuneEnv,
 	}
 
 	// Preserve caller-pre-populated fields (devpod, starter, fetcher, clock)
@@ -140,4 +142,63 @@ func (kd KartNewDeps) openChestBackend() (chest.Backend, error) {
 		return nil, rpcerr.Internal("kart.new: deps not configured")
 	}
 	return kd.Deps.openChest()
+}
+
+// resolveTuneEnv turns every chest:<name> reference in the tune's env map
+// into its literal value, grouped by injection site. Values never leave
+// this handler's memory; persistence stores only the original chest
+// references (see writeKartConfig).
+func (kd KartNewDeps) resolveTuneEnv(refs kart.TuneEnv) (kart.ResolvedTuneEnv, error) {
+	if refs.IsEmpty() {
+		return kart.ResolvedTuneEnv{}, nil
+	}
+	// Open the backend once so a big env map doesn't pay per-key
+	// file-load overhead.
+	var backend chest.Backend
+	var out kart.ResolvedTuneEnv
+	blocks := []struct {
+		name string
+		src  map[string]string
+		dst  *map[string]string
+	}{
+		{"build", refs.Build, &out.Build},
+		{"workspace", refs.Workspace, &out.Workspace},
+		{"session", refs.Session, &out.Session},
+	}
+	for _, b := range blocks {
+		if len(b.src) == 0 {
+			continue
+		}
+		resolved := make(map[string]string, len(b.src))
+		for k, ref := range b.src {
+			if !strings.HasPrefix(ref, "chest:") {
+				return kart.ResolvedTuneEnv{}, rpcerr.UserError(rpcerr.TypeInvalidFlag,
+					"kart.new: env.%s.%s must be a chest:<name> reference", b.name, k).
+					With("block", b.name).With("key", k)
+			}
+			name := strings.TrimPrefix(ref, "chest:")
+			if backend == nil {
+				var err error
+				backend, err = kd.openChestBackend()
+				if err != nil {
+					return kart.ResolvedTuneEnv{}, err
+				}
+			}
+			val, err := backend.Get(name)
+			if err != nil {
+				var rpcErr *rpcerr.Error
+				if errors.As(err, &rpcErr) && rpcErr.Type == rpcerr.TypeChestEntryNotFound {
+					return kart.ResolvedTuneEnv{}, rpcerr.New(rpcerr.CodeNotFound,
+						rpcerr.TypeChestEntryNotFound,
+						"kart.new: env.%s.%s references missing chest entry %q",
+						b.name, k, name).
+						With("block", b.name).With("key", k).With("name", name)
+				}
+				return kart.ResolvedTuneEnv{}, err
+			}
+			resolved[k] = string(val)
+		}
+		*b.dst = resolved
+	}
+	return out, nil
 }

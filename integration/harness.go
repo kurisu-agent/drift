@@ -550,10 +550,12 @@ func (c *Circuit) InstallBin(ctx context.Context, name, body string) {
 // DevpodInvocation captures one recorded `devpod …` call. ArtifactDir is
 // the path inside the circuit where the shim preserved file/dir args
 // (starter source, layer-1 dotfiles, extra-devcontainer file) so tests
-// can inspect what drift materialized.
+// can inspect what drift materialized. Env is the process env at
+// invocation time — used by env-injection tests.
 type DevpodInvocation struct {
 	Argv        []string `json:"argv"`
 	ArtifactDir string   `json:"artifact_dir,omitempty"`
+	Env         []string `json:"env,omitempty"`
 }
 
 type DevpodRecorder struct {

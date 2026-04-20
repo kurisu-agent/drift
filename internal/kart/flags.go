@@ -18,6 +18,24 @@ import (
 // a cycle (server imports kart).
 type Tune = model.Tune
 
+// TuneEnv is an alias for model.TuneEnv — carries chest:<name> references
+// grouped by injection site (build/workspace/session).
+type TuneEnv = model.TuneEnv
+
+// ResolvedTuneEnv mirrors TuneEnv but holds literal values resolved from
+// the chest. One map per injection site; stages stay independent
+// downstream.
+type ResolvedTuneEnv struct {
+	Build     map[string]string
+	Workspace map[string]string
+	Session   map[string]string
+}
+
+// IsEmpty reports whether no env vars were resolved across any block.
+func (e ResolvedTuneEnv) IsEmpty() bool {
+	return len(e.Build) == 0 && len(e.Workspace) == 0 && len(e.Session) == 0
+}
+
 type Character struct {
 	GitName    string
 	GitEmail   string
@@ -58,6 +76,11 @@ type Resolved struct {
 	Devcontainer  string // raw; normalized later
 	Dotfiles      string
 	Autostart     bool
+	// Env carries chest-resolved literal env vars per injection site. Held
+	// only in memory; never persisted. EnvRefs holds the parallel
+	// chest:<name> references for persistence and `kart info` rendering.
+	Env     ResolvedTuneEnv
+	EnvRefs TuneEnv
 }
 
 type Resolver struct {
@@ -67,6 +90,12 @@ type Resolver struct {
 	// resolved — downstream code never touches the chest.
 	LoadTune      func(name string) (*Tune, error)
 	LoadCharacter func(name string) (*Character, error)
+	// ResolveEnv turns a TuneEnv full of chest:<name> refs into literal
+	// values per injection site. nil means "no env resolution" — callers
+	// that don't wire a chest backend get an empty ResolvedTuneEnv and
+	// skip injection. Errors must surface as rpcerr (e.g.
+	// chest_entry_not_found with block + key in Data).
+	ResolveEnv func(TuneEnv) (ResolvedTuneEnv, error)
 }
 
 // Resolve applies: server defaults → tune → explicit flags, with --features
@@ -150,6 +179,20 @@ func (r *Resolver) Resolve(f Flags) (*Resolved, error) {
 		return nil, err
 	}
 
+	var (
+		envRefs     TuneEnv
+		resolvedEnv ResolvedTuneEnv
+	)
+	if tune != nil {
+		envRefs = tune.Env
+		if !envRefs.IsEmpty() && r.ResolveEnv != nil {
+			resolvedEnv, err = r.ResolveEnv(envRefs)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	return &Resolved{
 		Name:          f.Name,
 		SourceMode:    sourceMode,
@@ -162,6 +205,8 @@ func (r *Resolver) Resolve(f Flags) (*Resolved, error) {
 		Devcontainer:  devcontainer,
 		Dotfiles:      dotfiles,
 		Autostart:     f.Autostart,
+		Env:           resolvedEnv,
+		EnvRefs:       envRefs,
 	}, nil
 }
 

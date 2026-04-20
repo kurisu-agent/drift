@@ -9,10 +9,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	osexec "os/exec"
 
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 )
+
+// osEnviron is a package-level indirection so tests that stub the runner
+// don't need to manipulate the real process env.
+var osEnviron = os.Environ
 
 // IsNotInstalled reports whether err came from devpod being absent on PATH
 // (as opposed to a real devpod-side failure). Callers use it to render one
@@ -92,6 +97,10 @@ type UpOpts struct {
 	DevcontainerImage     string
 	FallbackImage         string
 	GitCloneStrategy      string
+	// SetEnv is rendered as --set-env KEY=VALUE pairs; each entry becomes
+	// part of the container's containerEnv for the workspace's lifetime.
+	// Symmetric with SSHOpts.SetEnv.
+	SetEnv []string
 	// ConfigureSSH: drift manages its own SSH config and keeps this off.
 	ConfigureSSH bool
 }
@@ -124,6 +133,9 @@ func (o UpOpts) args() ([]string, error) {
 	}
 	if o.GitCloneStrategy != "" {
 		args = append(args, "--git-clone-strategy", o.GitCloneStrategy)
+	}
+	for _, v := range o.SetEnv {
+		args = append(args, "--set-env", v)
 	}
 	if o.ConfigureSSH {
 		args = append(args, "--configure-ssh")
@@ -370,6 +382,15 @@ func (c *Client) EnsureProvider(ctx context.Context, name string) (added bool, e
 	return true, nil
 }
 
+// InstallDotfilesOpts carries optional configuration for InstallDotfiles.
+// ProcessEnv is set as additional environment on the local devpod
+// invocation; values forwarded this way live for the lifetime of that
+// single process — they never land in the container's containerEnv.
+type InstallDotfilesOpts struct {
+	URL        string
+	ProcessEnv []string
+}
+
 // InstallDotfiles invokes `devpod agent workspace install-dotfiles`. A
 // file:// URL is valid — lakitu writes the generated layer-1 script to a
 // tmpdir and passes it here.
@@ -378,10 +399,33 @@ func (c *Client) EnsureProvider(ctx context.Context, name string) (added bool, e
 // pins the fork so this flag is correct. A future rename would motivate a
 // fallback probe.
 func (c *Client) InstallDotfiles(ctx context.Context, url string) error {
-	if url == "" {
+	return c.InstallDotfilesWithOpts(ctx, InstallDotfilesOpts{URL: url})
+}
+
+// InstallDotfilesWithOpts extends InstallDotfiles with extra per-invocation
+// process env — used to deliver chest-backed build-time secrets to the
+// install-dotfiles process (e.g. a GITHUB_TOKEN for a private
+// dotfiles_repo clone) without writing them anywhere on disk or into the
+// container's persistent env.
+func (c *Client) InstallDotfilesWithOpts(ctx context.Context, opts InstallDotfilesOpts) error {
+	if opts.URL == "" {
 		return errors.New("devpod: InstallDotfiles: url is required")
 	}
-	_, err := c.run(ctx, "agent", "workspace", "install-dotfiles", "--repository", url)
+	env := c.envOrNil()
+	if len(opts.ProcessEnv) > 0 {
+		// Inherit the parent env (usual case: Client.Env is nil) so PATH,
+		// HOME, TMPDIR, DEVPOD_HOME still reach the child — then layer the
+		// secret env on top so a name collision lets the caller override.
+		if env == nil {
+			env = append(env, osEnviron()...)
+		}
+		env = append(env, opts.ProcessEnv...)
+	}
+	_, err := c.runner().Run(ctx, driftexec.Cmd{
+		Name: c.binary(),
+		Args: []string{"agent", "workspace", "install-dotfiles", "--repository", opts.URL},
+		Env:  env,
+	})
 	return err
 }
 

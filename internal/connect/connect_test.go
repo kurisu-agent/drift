@@ -43,6 +43,11 @@ func (f *fakeServer) call(ctx context.Context, circuit, method string, params, r
 			*m = map[string]any{"name": p["name"], "status": "running"}
 		}
 		return nil
+	case wire.MethodKartSessionEnv:
+		// No tune env configured in these tests — leave result's Env
+		// field at its zero value (empty slice). fetchSessionEnv reads
+		// .Env off an anonymous struct, so nothing else to do.
+		return nil
 	}
 	return errors.New("unknown method " + method)
 }

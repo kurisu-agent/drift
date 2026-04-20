@@ -55,6 +55,12 @@ func (d *Deps) garageDir() (string, error) {
 	return config.GarageDir()
 }
 
+// OpenChestForLifecycle is the exported adapter kart-lifecycle handlers
+// bind to KartDeps.OpenChest so start/restart can re-resolve chest refs
+// from the current on-disk backend. Thin wrapper around openChest so the
+// lazy-on-demand contract (tolerate a missing garage) is preserved.
+func (d *Deps) OpenChestForLifecycle() (chest.Backend, error) { return d.openChest() }
+
 // openChest is called lazily — `server.version` must not require the
 // garage to exist.
 func (d *Deps) openChest() (chest.Backend, error) {

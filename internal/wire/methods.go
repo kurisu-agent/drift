@@ -8,16 +8,17 @@ const (
 	MethodServerInit    = "server.init"
 	MethodServerVerify  = "server.verify"
 
-	MethodKartNew     = "kart.new"
-	MethodKartStart   = "kart.start"
-	MethodKartStop    = "kart.stop"
-	MethodKartRestart = "kart.restart"
-	MethodKartDelete  = "kart.delete"
-	MethodKartList    = "kart.list"
-	MethodKartInfo    = "kart.info"
-	MethodKartEnable  = "kart.enable"
-	MethodKartDisable = "kart.disable"
-	MethodKartLogs    = "kart.logs"
+	MethodKartNew        = "kart.new"
+	MethodKartStart      = "kart.start"
+	MethodKartStop       = "kart.stop"
+	MethodKartRestart    = "kart.restart"
+	MethodKartDelete     = "kart.delete"
+	MethodKartList       = "kart.list"
+	MethodKartInfo       = "kart.info"
+	MethodKartEnable     = "kart.enable"
+	MethodKartDisable    = "kart.disable"
+	MethodKartLogs       = "kart.logs"
+	MethodKartSessionEnv = "kart.session_env"
 
 	MethodCharacterAdd    = "character.add"
 	MethodCharacterList   = "character.list"
@@ -47,6 +48,7 @@ func Methods() []string {
 		MethodKartNew, MethodKartStart, MethodKartStop, MethodKartRestart,
 		MethodKartDelete, MethodKartList, MethodKartInfo,
 		MethodKartEnable, MethodKartDisable, MethodKartLogs,
+		MethodKartSessionEnv,
 		MethodCharacterAdd, MethodCharacterList, MethodCharacterShow, MethodCharacterRemove,
 		MethodChestSet, MethodChestGet, MethodChestList, MethodChestRemove,
 		MethodTuneList, MethodTuneShow, MethodTuneSet, MethodTuneRemove,

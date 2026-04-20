@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
+	"github.com/kurisu-agent/drift/internal/chest"
 	"github.com/kurisu-agent/drift/internal/devpod"
 	"github.com/kurisu-agent/drift/internal/model"
 	"github.com/kurisu-agent/drift/internal/rpc"
@@ -20,6 +22,11 @@ import (
 type KartDeps struct {
 	Devpod    *devpod.Client
 	GarageDir string
+	// OpenChest lets the lifecycle handlers re-resolve persisted env refs
+	// on start/restart. Production binds this to server.Deps.openChest so
+	// rotated secrets land on the next re-up. nil means "no chest" — the
+	// workspace env stays empty even when the kart config names refs.
+	OpenChest func() (chest.Backend, error)
 }
 
 func RegisterKart(reg *rpc.Registry, d KartDeps) {
@@ -31,15 +38,16 @@ func RegisterKart(reg *rpc.Registry, d KartDeps) {
 // identifiers (tune, character, source) round-trip — runtime details come
 // from devpod at query time.
 type KartConfig struct {
-	Repo       string `yaml:"repo,omitempty"`
-	Tune       string `yaml:"tune,omitempty"`
-	Character  string `yaml:"character,omitempty"`
-	SourceMode string `yaml:"source_mode,omitempty"`
-	User       string `yaml:"user,omitempty"`
-	Shell      string `yaml:"shell,omitempty"`
-	Image      string `yaml:"image,omitempty"`
-	Workdir    string `yaml:"workdir,omitempty"`
-	CreatedAt  string `yaml:"created_at,omitempty"`
+	Repo       string        `yaml:"repo,omitempty"`
+	Tune       string        `yaml:"tune,omitempty"`
+	Character  string        `yaml:"character,omitempty"`
+	SourceMode string        `yaml:"source_mode,omitempty"`
+	User       string        `yaml:"user,omitempty"`
+	Shell      string        `yaml:"shell,omitempty"`
+	Image      string        `yaml:"image,omitempty"`
+	Workdir    string        `yaml:"workdir,omitempty"`
+	CreatedAt  string        `yaml:"created_at,omitempty"`
+	Env        model.TuneEnv `yaml:"env,omitempty"`
 }
 
 // KartSource is aliased to model.KartSource so server and kart packages
@@ -71,9 +79,21 @@ type KartInfo struct {
 	Autostart bool           `json:"autostart"`
 	Container *KartContainer `json:"container,omitempty"`
 	Devpod    *KartDevpod    `json:"devpod,omitempty"`
+	// Env surfaces the chest references (never values) for each injection
+	// site; omitted entirely when no env is configured. Present-but-empty
+	// blocks are not emitted — keeps the info JSON tight.
+	Env *KartInfoEnv `json:"env,omitempty"`
 	// Stale: garage-known without a matching devpod workspace. List surfaces
 	// `status:error` + `stale:true`; info returns a stale_kart error instead.
 	Stale bool `json:"stale,omitempty"`
+}
+
+// KartInfoEnv groups persisted env refs by injection site for `kart info`.
+// Values are never rendered — only the chest reference per key.
+type KartInfoEnv struct {
+	Build     map[string]string `json:"build,omitempty"`
+	Workspace map[string]string `json:"workspace,omitempty"`
+	Session   map[string]string `json:"session,omitempty"`
 }
 
 // KartListResult is wrapped in an object so additive top-level fields
@@ -188,6 +208,12 @@ func (d KartDeps) buildInfo(
 		Source:    sourceFromConfig(cfg, ws),
 		CreatedAt: cfg.CreatedAt,
 	}
+	// Env refs attach unconditionally so `kart.list` surfaces what's
+	// wired on a stale kart too — useful for debugging a restart that
+	// can't re-up because a chest ref is missing.
+	if env := envFromConfig(cfg.Env); env != nil {
+		info.Env = env
+	}
 	if !inDevpod && inGarage {
 		info.Status = devpod.StatusError
 		info.Stale = true
@@ -207,6 +233,34 @@ func (d KartDeps) buildInfo(
 		}
 	}
 	return info
+}
+
+// envFromConfig lifts persisted env refs into the info response. Empty
+// blocks are dropped; an entirely empty TuneEnv returns nil so the top-
+// level `env` key is omitted from JSON.
+func envFromConfig(e model.TuneEnv) *KartInfoEnv {
+	if e.IsEmpty() {
+		return nil
+	}
+	out := &KartInfoEnv{}
+	if len(e.Build) > 0 {
+		out.Build = copyStringMap(e.Build)
+	}
+	if len(e.Workspace) > 0 {
+		out.Workspace = copyStringMap(e.Workspace)
+	}
+	if len(e.Session) > 0 {
+		out.Session = copyStringMap(e.Session)
+	}
+	return out
+}
+
+func copyStringMap(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 // statusFor folds devpod status errors to StatusError — lakitu never leaks
@@ -338,3 +392,61 @@ func containerFromConfig(cfg KartConfig) *KartContainer {
 		Image:   cfg.Image,
 	}
 }
+
+// resolveEnvBlock de-chests a single env block (build / workspace /
+// session) against the current chest state. Rotated secrets land on the
+// next call. Unresolvable refs surface as chest_entry_not_found with
+// block + key in Data, mirroring the kart.new resolver.
+//
+// A nil OpenChest or empty input returns an empty map without touching
+// any backend — callers can pass the result straight to devpod.
+func (d KartDeps) resolveEnvBlock(block string, refs map[string]string) (map[string]string, error) {
+	if len(refs) == 0 || d.OpenChest == nil {
+		return nil, nil
+	}
+	backend, err := d.OpenChest()
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(refs))
+	for k, ref := range refs {
+		if !strings.HasPrefix(ref, "chest:") {
+			return nil, rpcerr.UserError(rpcerr.TypeInvalidFlag,
+				"kart: env.%s.%s is not a chest reference", block, k).
+				With("block", block).With("key", k)
+		}
+		name := strings.TrimPrefix(ref, "chest:")
+		val, err := backend.Get(name)
+		if err != nil {
+			var rpcErr *rpcerr.Error
+			if errors.As(err, &rpcErr) && rpcErr.Type == rpcerr.TypeChestEntryNotFound {
+				return nil, rpcerr.New(rpcerr.CodeNotFound, rpcerr.TypeChestEntryNotFound,
+					"env.%s.%s references missing chest entry %q", block, k, name).
+					With("block", block).With("key", k).With("name", name)
+			}
+			return nil, err
+		}
+		out[k] = string(val)
+	}
+	return out, nil
+}
+
+// envKVPairs renders a resolved env map as sorted KEY=VALUE pairs — same
+// deterministic ordering kart.new uses, so start/restart don't churn argv
+// across runs.
+func envKVPairs(m map[string]string) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, k+"="+m[k])
+	}
+	return out
+}
+

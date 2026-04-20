@@ -137,9 +137,11 @@ func Registry() *rpc.Registry {
 	server.RegisterServer(reg, &server.Deps{})
 	garage, err := config.GarageDir()
 	if err == nil {
+		lifeDeps := &server.Deps{GarageDir: garage}
 		kartDeps := server.KartDeps{
 			Devpod:    &devpod.Client{},
 			GarageDir: garage,
+			OpenChest: lifeDeps.OpenChestForLifecycle,
 		}
 		server.RegisterKart(reg, kartDeps)
 		server.RegisterKartLifecycle(reg, kartDeps)

@@ -25,6 +25,10 @@ const (
 type record struct {
 	Argv        []string `json:"argv"`
 	ArtifactDir string   `json:"artifact_dir,omitempty"`
+	// Env captures the process env at invocation time — used by env-
+	// injection tests to confirm that chest-backed build-time secrets
+	// reach the install-dotfiles call without landing in containerEnv.
+	Env []string `json:"env,omitempty"`
 }
 
 func main() {
@@ -50,7 +54,7 @@ func main() {
 
 	copyKnownArtifacts(argv, artDir)
 
-	if err := appendLog(record{Argv: argv, ArtifactDir: artDir}); err != nil {
+	if err := appendLog(record{Argv: argv, ArtifactDir: artDir, Env: os.Environ()}); err != nil {
 		fmt.Fprintf(os.Stderr, "devpod-shim: log: %v\n", err)
 		os.Exit(3)
 	}

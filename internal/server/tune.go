@@ -31,11 +31,12 @@ type TuneResult struct {
 }
 
 type TuneSetParams struct {
-	Name         string `json:"name"`
-	Starter      string `json:"starter,omitempty"`
-	Devcontainer string `json:"devcontainer,omitempty"`
-	DotfilesRepo string `json:"dotfiles_repo,omitempty"`
-	Features     string `json:"features,omitempty"`
+	Name         string        `json:"name"`
+	Starter      string        `json:"starter,omitempty"`
+	Devcontainer string        `json:"devcontainer,omitempty"`
+	DotfilesRepo string        `json:"dotfiles_repo,omitempty"`
+	Features     string        `json:"features,omitempty"`
+	Env          model.TuneEnv `json:"env,omitempty"`
 }
 
 type TuneNameOnly struct {
@@ -113,11 +114,15 @@ func (d *Deps) TuneSetHandler(_ context.Context, params json.RawMessage) (any, e
 	if err := validateTuneName(p.Name); err != nil {
 		return nil, err
 	}
+	if err := validateTuneEnv(p.Env); err != nil {
+		return nil, err
+	}
 	t := Tune{
 		Starter:      p.Starter,
 		Devcontainer: p.Devcontainer,
 		DotfilesRepo: p.DotfilesRepo,
 		Features:     p.Features,
+		Env:          p.Env,
 	}
 	buf, err := yaml.Marshal(&t)
 	if err != nil {
@@ -188,3 +193,39 @@ func (d *Deps) loadTune(n string) (*Tune, error) {
 // Local constant — tunes are file-backed and exclusive to this package,
 // so the canonical rpcerr enum isn't widened for a single case.
 const typeTuneNotFound = rpcerr.Type("tune_not_found")
+
+// validateTuneEnv enforces the chest-only invariant: every value across
+// every block must start with `chest:`. Mirrors character.add's PATSecret
+// check so literal secrets never land on disk outside the chest.
+func validateTuneEnv(e model.TuneEnv) error {
+	// Block order matches the struct definition so error messages are
+	// stable; map iteration is sorted per block for the same reason.
+	blocks := []struct {
+		name string
+		m    map[string]string
+	}{
+		{"build", e.Build},
+		{"workspace", e.Workspace},
+		{"session", e.Session},
+	}
+	for _, b := range blocks {
+		if len(b.m) == 0 {
+			continue
+		}
+		keys := make([]string, 0, len(b.m))
+		for k := range b.m {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			v := b.m[k]
+			if !strings.HasPrefix(v, chestRefPrefix) {
+				return rpcerr.UserError(rpcerr.TypeInvalidFlag,
+					"tune.set: env.%s.%s must be a chest reference of the form %q; literal values are not accepted",
+					b.name, k, chestRefPrefix+"<name>").
+					With("block", b.name).With("key", k)
+			}
+		}
+	}
+	return nil
+}

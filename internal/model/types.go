@@ -6,10 +6,39 @@ package model
 // the server handlers (which read/write YAML) and the kart resolver
 // (which composes defaults at kart.new time).
 type Tune struct {
-	Starter      string `yaml:"starter,omitempty" json:"starter,omitempty"`
-	Devcontainer string `yaml:"devcontainer,omitempty" json:"devcontainer,omitempty"`
-	DotfilesRepo string `yaml:"dotfiles_repo,omitempty" json:"dotfiles_repo,omitempty"`
-	Features     string `yaml:"features,omitempty" json:"features,omitempty"`
+	Starter      string  `yaml:"starter,omitempty" json:"starter,omitempty"`
+	Devcontainer string  `yaml:"devcontainer,omitempty" json:"devcontainer,omitempty"`
+	DotfilesRepo string  `yaml:"dotfiles_repo,omitempty" json:"dotfiles_repo,omitempty"`
+	Features     string  `yaml:"features,omitempty" json:"features,omitempty"`
+	Env          TuneEnv `yaml:"env,omitempty" json:"env,omitempty"`
+}
+
+// TuneEnv groups chest-backed env vars by the injection site that
+// consumes them. Every value must be a chest:<name> reference. A key
+// may repeat across blocks; each block is independent with no cross-
+// block precedence.
+type TuneEnv struct {
+	// Build is prepended as process-env on the in-container
+	// install-dotfiles invocation during `devpod up`. Scoped to that
+	// single process; never lands in the container's containerEnv and
+	// gone once provisioning completes.
+	Build map[string]string `yaml:"build,omitempty" json:"build,omitempty"`
+
+	// Workspace is passed to `devpod up --set-env` and becomes part of
+	// the container env for the workspace's lifetime; re-applied on
+	// kart.start / kart.restart. Visible via /proc/<pid>/environ and
+	// `docker inspect`.
+	Workspace map[string]string `yaml:"workspace,omitempty" json:"workspace,omitempty"`
+
+	// Session is passed to `devpod ssh --set-env` each time the user
+	// opens a shell via drift connect / drift ssh. Scoped to the ssh
+	// channel only.
+	Session map[string]string `yaml:"session,omitempty" json:"session,omitempty"`
+}
+
+// IsEmpty reports whether no env vars are configured across any block.
+func (e TuneEnv) IsEmpty() bool {
+	return len(e.Build) == 0 && len(e.Workspace) == 0 && len(e.Session) == 0
 }
 
 // KartSource is the source sub-object of kart.info. Shared because the
