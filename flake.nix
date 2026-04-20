@@ -79,7 +79,7 @@
             src     = pkgs.lib.cleanSource ./.;
             # Recompute with `nix build .#lakitu 2>&1` and paste the hash in
             # when bumping dependencies.
-            vendorHash = "sha256-/VO5hRXWylEkqtAtnnlTN0ySo881+4GjZfnEEbDzT0Q=";
+            vendorHash = "sha256-xeClHP26CzyQ0pVN6mhMha7+DcEpUD/GlarsODn2vNc=";
             subPackages = [ "cmd/${name}" ];
             env.CGO_ENABLED = 0;
             ldflags = driftLdflags;
