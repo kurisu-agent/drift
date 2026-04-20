@@ -28,6 +28,21 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # Several cliscript tests invoke `lakitu init`, which emits warnings
+      # to stderr when devpod isn't on PATH — those warnings then trip the
+      # `! stderr .` assertions. Install the pinned devpod from the flake
+      # so CI exercises the same binary lakitu was built against.
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v14
+
+      - name: Magic Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Build pinned devpod via flake
+        run: |
+          nix build .#devpod --print-build-logs
+          echo "$PWD/result/bin" >> "$GITHUB_PATH"
+
       - name: Download modules
         run: go mod download
 
