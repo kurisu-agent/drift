@@ -39,7 +39,7 @@ var driftHelpSections = []struct {
 		{"start|stop|restart|delete <name>", "Kart lifecycle (idempotent; delete is not)"},
 		{"enable|disable <name>", "Toggle kart autostart on circuit reboot"},
 		{"logs <name>", "Fetch a chunk of kart logs"},
-		{"connect <name>", "mosh (ssh fallback) into a kart; auto-starts"},
+		{"connect|into|attach <name>", "mosh (ssh fallback) into a kart; auto-starts"},
 		{"ai", "Launch claude on the circuit (mosh/ssh)"},
 	}},
 }

@@ -55,12 +55,6 @@ type Deps struct {
 	ProbeInfo func(ctx context.Context, sshArgs []string) (*wire.ServerInfo, error)
 	Call      func(ctx context.Context, circuit, method string, params, out any) error
 
-	// TailscalePicker, when non-nil, is offered to the user at the start of
-	// the circuits phase as an alternative to typing user@host manually.
-	// Returning ok=false means the user declined or the picker was
-	// cancelled — the caller falls back to the manual prompt.
-	TailscalePicker func(ctx context.Context) (userHost string, ok bool, err error)
-
 	Now func() time.Time
 }
 
@@ -149,20 +143,23 @@ func runCircuitPhase(ctx context.Context, opts Options, deps Deps, br *bufio.Rea
 		fmt.Fprintln(w, "(none yet)")
 	}
 
-	for {
-		more, err := promptYesNo(br, w, "Add a circuit?", len(cfg.Circuits) == 0)
-		if err != nil {
-			return err
-		}
-		if !more {
-			return nil
-		}
-		if err := addOneCircuit(ctx, opts, deps, br, w, cfg, probes, withDefaultChar); err != nil {
-			// Surface per-circuit errors inline; the loop continues so one
-			// bad entry doesn't abort the whole wizard.
-			fmt.Fprintf(w, "  error: %v\n", err)
-		}
+	// Init only registers one circuit — additional ones are a `drift
+	// circuit add` concern. Skipping is always offered so re-running init
+	// on an already-configured client doesn't force a redundant add.
+	more, err := promptYesNo(br, w, "Add a circuit?", len(cfg.Circuits) == 0)
+	if err != nil {
+		return err
 	}
+	if !more {
+		return nil
+	}
+	if err := addOneCircuit(ctx, opts, deps, br, w, cfg, probes, withDefaultChar); err != nil {
+		// Surface the error inline; the wizard proceeds to the character
+		// phase (which can be useful even without a circuit when testing
+		// offline) rather than aborting the whole run.
+		fmt.Fprintf(w, "  error: %v\n", err)
+	}
+	return nil
 }
 
 // addOneCircuit: user enters user@host; we probe directly, learn the
@@ -173,29 +170,9 @@ func addOneCircuit(ctx context.Context, opts Options, deps Deps, br *bufio.Reade
 	if deps.ProbeInfo == nil {
 		return fmt.Errorf("ProbeInfo not configured")
 	}
-	var userHost string
-	// When tailscale is available, ask once — no sense prompting
-	// repeatedly for every addOneCircuit loop iteration.
-	if deps.TailscalePicker != nil {
-		useTS, err := promptYesNo(br, w, "  use tailscale peer picker?", true)
-		if err != nil {
-			return err
-		}
-		if useTS {
-			picked, ok, err := deps.TailscalePicker(ctx)
-			if err != nil {
-				fmt.Fprintf(w, "  tailscale picker failed: %v (falling back to manual entry)\n", err)
-			} else if ok {
-				userHost = picked
-			}
-		}
-	}
-	if userHost == "" {
-		var err error
-		userHost, err = promptNonEmpty(br, w, "  SSH target (user@host[:port]): ")
-		if err != nil {
-			return err
-		}
+	userHost, err := promptNonEmpty(br, w, "  SSH target (user@host[:port]): ")
+	if err != nil {
+		return err
 	}
 	userPart, hostPart, err := name.SplitUserHost(userHost)
 	if err != nil {

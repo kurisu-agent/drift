@@ -10,7 +10,6 @@ import (
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
-	"github.com/kurisu-agent/drift/internal/tailscale"
 	"github.com/kurisu-agent/drift/internal/warmup"
 )
 
@@ -70,15 +69,6 @@ func runInit(ctx context.Context, io IO, root *CLI, cmd initCmd, deps deps) int 
 		ProbeInfo: deps.probeInfo,
 		Call:      deps.call,
 		Now:       time.Now,
-	}
-
-	// Only hand the warmup library a tailscale picker when the binary is
-	// actually on PATH — library stays pure, detection lives at the CLI
-	// boundary.
-	if tailscale.Available() {
-		wdeps.TailscalePicker = func(ctx context.Context) (string, bool, error) {
-			return tailscalePicker(ctx, io.Stdin, io.Stderr)
-		}
 	}
 
 	err = warmup.Run(ctx, opts, wdeps, io.Stdin, io.Stdout)

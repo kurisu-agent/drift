@@ -183,7 +183,11 @@ func TestNewClonePathAndConfig(t *testing.T) {
 	}
 }
 
-func TestNewDevpodFailureLeavesStaleMarker(t *testing.T) {
+func TestNewDevpodFailureRollsBackGarageDir(t *testing.T) {
+	// Post-`writeKartConfig` failures roll back: the garage dir is wiped
+	// and `devpod delete` is best-effort-invoked. A stale `status: error`
+	// tombstone only appears if RemoveAll itself fails — exercised
+	// separately (can't force RemoveAll to fail portably in unit tests).
 	garage := t.TempDir()
 
 	rec := &failingRecorder{fail: true}
@@ -206,22 +210,32 @@ func TestNewDevpodFailureLeavesStaleMarker(t *testing.T) {
 	if !errors.As(err, &re) || re.Type != rpcerr.TypeDevpodUpFailed {
 		t.Fatalf("expected devpod_up_failed, got %v", err)
 	}
-	marker := filepath.Join(garage, "karts", "brokenkart", "status")
-	buf, err := os.ReadFile(marker)
-	if err != nil {
-		t.Fatalf("stale-kart status marker missing: %v", err)
+	kartDir := filepath.Join(garage, "karts", "brokenkart")
+	if _, statErr := os.Stat(kartDir); !os.IsNotExist(statErr) {
+		t.Fatalf("kart dir should be removed after rollback, stat err = %v", statErr)
 	}
-	if !contains(buf, "error") {
-		t.Fatalf("marker doesn't say error: %s", buf)
+	// Rollback should have attempted `devpod delete` so a retry sees a
+	// clean slate on both sides of the house.
+	sawDelete := false
+	for _, args := range rec.calls {
+		if len(args) > 0 && args[0] == "delete" {
+			sawDelete = true
+			break
+		}
+	}
+	if !sawDelete {
+		t.Fatalf("rollback did not invoke `devpod delete`: %v", rec.calls)
 	}
 }
 
 // failingRecorder is like recorder but fails `devpod up`.
 type failingRecorder struct {
-	fail bool
+	fail  bool
+	calls [][]string
 }
 
 func (r *failingRecorder) Run(_ context.Context, cmd driftexec.Cmd) (driftexec.Result, error) {
+	r.calls = append(r.calls, append([]string{}, cmd.Args...))
 	if len(cmd.Args) > 0 && cmd.Args[0] == "up" && r.fail {
 		return driftexec.Result{}, errors.New("simulated devpod failure")
 	}

@@ -31,9 +31,7 @@ type circuitCmd struct {
 // canonical circuit name is discovered via server.info — clients don't pick
 // names, circuits advertise them.
 type circuitAddCmd struct {
-	// UserHost is optional when --tailscale is passed (the picker fills it).
-	UserHost    string `arg:"" name:"user@host" optional:"" help:"SSH destination, e.g. alice@devbox or alice@devbox:2222."`
-	Tailscale   bool   `name:"tailscale" help:"Pick the destination from online tailscale peers (mutually exclusive with user@host)."`
+	UserHost    string `arg:"" name:"user@host" help:"SSH destination, e.g. alice@devbox or alice@devbox:2222."`
 	Default     bool   `name:"default" help:"Set as the default circuit."`
 	NoSSHConfig bool   `name:"no-ssh-config" help:"Skip writing ~/.ssh/config and ~/.config/drift/ssh_config."`
 }
@@ -64,25 +62,6 @@ type circuitSetDefaultCmd struct {
 // already-present name pointing at a different host is a collision error —
 // rename on the server first.
 func runCircuitAdd(ctx context.Context, io IO, root *CLI, cmd circuitAddCmd, deps deps) int {
-	if cmd.Tailscale && cmd.UserHost != "" {
-		return errfmt.Emit(io.Stderr, rpcerr.UserError(rpcerr.TypeMutuallyExclusive,
-			"circuit add: --tailscale and user@host are mutually exclusive"))
-	}
-	if cmd.Tailscale {
-		target, ok, err := tailscalePicker(ctx, io.Stdin, io.Stderr)
-		if err != nil {
-			return errfmt.Emit(io.Stderr, err)
-		}
-		if !ok {
-			fmt.Fprintln(io.Stderr, "aborted")
-			return 1
-		}
-		cmd.UserHost = target
-	}
-	if cmd.UserHost == "" {
-		return errfmt.Emit(io.Stderr, rpcerr.UserError(rpcerr.TypeInvalidFlag,
-			"circuit add: user@host is required (or pass --tailscale to pick from peers)"))
-	}
 	userPart, hostPart, err := name.SplitUserHost(cmd.UserHost)
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)

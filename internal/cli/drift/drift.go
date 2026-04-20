@@ -41,7 +41,7 @@ type CLI struct {
 	Logs    logsCmd    `cmd:"" help:"Fetch a chunk of kart logs."`
 	Enable  enableCmd  `cmd:"" help:"Enable kart autostart on circuit reboot (idempotent)."`
 	Disable disableCmd `cmd:"" help:"Disable kart autostart (idempotent)."`
-	Connect connectCmd `cmd:"" help:"Connect to a kart via mosh (ssh fallback); auto-starts if stopped."`
+	Connect connectCmd `cmd:"" aliases:"into,attach" help:"Connect to a kart via mosh (ssh fallback); auto-starts if stopped."`
 	AI      aiCmd      `cmd:"" name:"ai" help:"Launch claude --dangerously-skip-permissions on the circuit (mosh/ssh)."`
 
 	Update updateCmd `cmd:"" name:"update" help:"Check GitHub for a newer drift release and self-install."`

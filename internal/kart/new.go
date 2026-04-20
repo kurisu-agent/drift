@@ -138,10 +138,21 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 		}
 	}
 
-	// From here every error path leaves an `error` marker so the next
-	// `drift new <same-name>` returns stale_kart rather than colliding.
-	kartErrMarker := func(cause error) error {
-		_ = writeErrorMarker(kartDir, cause)
+	// From here every error path runs kartErrCleanup, which tries to roll
+	// back the devpod workspace + garage dir so a retry starts from a
+	// clean slate. If cleanup itself fails mid-rollback (filesystem
+	// busy, etc.) we stamp a `status: error` marker so the next
+	// `drift new <same-name>` returns stale_kart rather than colliding
+	// on a corpse we couldn't remove.
+	kartErrCleanup := func(cause error) error {
+		// Detach from ctx so cleanup still runs when the caller's ctx was
+		// already cancelled (e.g. SIGINT triggered this error path).
+		bg, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_ = d.Devpod.Delete(bg, resolved.Name)
+		if err := os.RemoveAll(kartDir); err != nil {
+			_ = writeErrorMarker(kartDir, cause)
+		}
 		return cause
 	}
 
@@ -164,7 +175,7 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 		if tail := driftexec.StderrTail(err); tail != "" {
 			re = re.With(rpcerr.DataKeyDevpodStderr, tail)
 		}
-		return nil, kartErrMarker(re)
+		return nil, kartErrCleanup(re)
 	}
 
 	// KNOWN LIMITATION (skevetter/devpod v0.22): install-dotfiles runs
