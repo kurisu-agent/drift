@@ -47,20 +47,21 @@ Labelled so later work can reference them by name. Stages run
 top-to-bottom during `drift new`; the last two recur on subsequent
 commands.
 
-| # | Stage                          | When                                                   | Who reads the env                                                                 | Mechanism                                                                                 |
-|---|--------------------------------|--------------------------------------------------------|-----------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
-| 1 | **Layer-1 dotfiles build**    | `kart.new`, drift-side on the host                    | drift's own dotfiles writer + any script sourced from the character layer        | write to a sourced file (e.g. `~/.config/drift/env.sh`) materialised in the Layer-1 tmpdir |
-| 2 | **devpod up `--set-env`**     | `kart.new`, during container provisioning              | every process in the container for its lifetime (container env, persists)        | `devpod up --set-env KEY=VALUE` (already mapped for ssh; add `UpOpts.SetEnv` symmetrically) |
-| 3 | **Layer-2 dotfiles install**  | `devpod up` → `install-dotfiles` inside the container  | the tune `dotfiles_repo` clone + the dotfiles install script it runs             | container env set via stage #2 covers this — `git` picks up `GITHUB_TOKEN` automatically   |
-| 4 | **kart start / restart**      | `kart.start`, `kart.restart`                           | re-hydrated container processes                                                  | same `--set-env` applied on re-up; keep the env source of truth in the kart config         |
-| 5 | **drift connect / ssh**       | `kart.connect`, `kart.ssh`                             | the interactive shell and anything it launches                                   | existing `devpod.SSHOpts.SetEnv` / `SendEnv` (already defined, no current caller)          |
+| # | Stage                                   | When                                                   | Who reads the env                                                                 | Mechanism                                                                                 |
+|---|-----------------------------------------|--------------------------------------------------------|-----------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
+| 1 | **Dotfiles install (build one-shot)**  | `kart.new`, during `devpod up`'s install-dotfiles call | the tune `dotfiles_repo` clone (`git`) + the dotfiles install script it runs      | prepend env on the ssh-forwarded `install-dotfiles` command (`env KEY=VAL /usr/local/bin/devpod agent workspace install-dotfiles …`) — process-env only, never written anywhere |
+| 2 | **devpod up `--set-env`**              | `kart.new`, during container provisioning              | every process in the container for its lifetime (container env, persists)        | `devpod up --set-env KEY=VALUE` (already mapped for ssh; add `UpOpts.SetEnv` symmetrically) |
+| 3 | **kart start / restart**               | `kart.start`, `kart.restart`                           | re-hydrated container processes                                                  | same `--set-env` applied on re-up; keep the env source of truth in the kart config         |
+| 4 | **drift connect / ssh**                | `kart.connect`, `kart.ssh`                             | the interactive shell and anything it launches                                   | existing `devpod.SSHOpts.SetEnv` / `SendEnv` (already defined, no current caller)          |
 
-The five stages collapse to **three distinct injection sites** — stages
-#2/#3/#4 all ride the same `containerEnv` set at `devpod up` time (the
-in-container `install-dotfiles` inherits it; `start`/`restart` re-applies
-it on re-up). Stage #1 is host-side at Layer-1 write time; stage #5 is
-session-scoped. The tune's `env` structure below gives each injection
-site its own named block so the user declares, per var, *where* it lands.
+The four stages collapse to **three distinct injection sites** — stages
+#2 and #3 both ride the same `containerEnv` set at `devpod up` time
+(`start`/`restart` re-applies it on re-up). Stage #1 is one-shot:
+process-env on the install-dotfiles invocation only, gone the moment
+that process exits — secrets never land in the container's `containerEnv`
+and never persist on disk. Stage #4 is session-scoped. The tune's `env`
+structure below gives each injection site its own named block so the
+user declares, per var, *where* it lands.
 
 ## Data model — tune
 
@@ -79,24 +80,30 @@ type Tune struct {
 // TuneEnv groups chest-backed env vars by the injection site that
 // consumes them. Every value must be a chest:<name> reference.
 type TuneEnv struct {
-    // Layer1 is written into the Layer-1 dotfiles tmpdir on the host as a
-    // sourced file (e.g. ~/.config/drift/env.sh) — available to the
-    // character's dotfiles install script and the user's shell via rc-file.
-    // Covers lifecycle stage #1.
-    Layer1 map[string]string `yaml:"layer1,omitempty" json:"layer1,omitempty"`
+    // Build is prepended as process-env on the in-container
+    // `install-dotfiles` invocation during `devpod up`. Scoped to that
+    // single process — the dotfiles install script + the git clone of
+    // the tune's dotfiles_repo see it, nothing else. Never lands in the
+    // container's containerEnv and is gone once provisioning completes;
+    // `kart.restart` does NOT re-run install-dotfiles, so Build values
+    // are genuinely one-shot.
+    // Covers lifecycle stage #1. Fixes the dotfiles_repo 403 case.
+    Build map[string]string `yaml:"build,omitempty" json:"build,omitempty"`
 
-    // Container is passed to `devpod up --set-env` and becomes part of the
-    // container's env for its lifetime. Inherited by the in-container
-    // `install-dotfiles` clone (fixes the tune dotfiles 403 case) and
-    // re-applied on `kart.start` / `kart.restart`.
-    // Covers lifecycle stages #2, #3, and #4.
-    Container map[string]string `yaml:"container,omitempty" json:"container,omitempty"`
+    // Workspace is passed to `devpod up --set-env` and becomes part of
+    // the container's env for the workspace's lifetime — inherited by
+    // every process, login or not, including background daemons and
+    // re-applied on `kart.start` / `kart.restart`. Visible in
+    // `docker inspect` for the workspace container.
+    // Covers lifecycle stages #2 and #3.
+    Workspace map[string]string `yaml:"workspace,omitempty" json:"workspace,omitempty"`
 
-    // Connect is passed to `devpod ssh --set-env` each time the user opens
-    // a session via `drift connect` / `drift ssh`. Does not persist in the
-    // container env — scoped to the ssh channel only.
-    // Covers lifecycle stage #5.
-    Connect map[string]string `yaml:"connect,omitempty" json:"connect,omitempty"`
+    // Session is passed to `devpod ssh --set-env` each time the user
+    // opens a shell via `drift connect` / `drift ssh`. Scoped to the
+    // ssh channel only — dies with the session, does not persist in
+    // the container env, invisible to other processes in the kart.
+    // Covers lifecycle stage #4.
+    Session map[string]string `yaml:"session,omitempty" json:"session,omitempty"`
 }
 ```
 
@@ -104,7 +111,7 @@ Every map value MUST start with `chest:`. Literal env values are rejected
 at tune-write time for the same reason literal PATs are rejected on
 characters (`internal/server/character.go:67`) — keeps secrets off disk
 outside the chest. A key may appear in more than one block (e.g. same
-name for Layer-1 and Container); each block is independent, with no
+name in `build` and `workspace`); each block is independent, with no
 cross-block precedence.
 
 Example (`~/.drift/garage/tunes/default.yaml`):
@@ -113,18 +120,18 @@ Example (`~/.drift/garage/tunes/default.yaml`):
 dotfiles_repo: https://github.com/kurisu-dotto-komu/devpod-dotfiles
 features: '{"ghcr.io/example-org/devpod-features/devtools:2":{}}'
 env:
-  layer1:
-    # sourced by the character dotfiles install script
-    GIT_AUTHOR_EMAIL: chest:git-author-email
-
-  container:
-    # present for every process in the kart; git picks this up during the
-    # tune's dotfiles_repo clone inside `devpod up install-dotfiles`
+  build:
+    # one-shot: visible to the tune's dotfiles_repo clone + install
+    # script during `devpod up`, then gone. Perfect for auth tokens
+    # you don't want persisting in the workspace env.
     GITHUB_TOKEN: chest:github-pat
+
+  workspace:
+    # present for every process in the container for its lifetime
     OPENAI_API_KEY: chest:openai
 
-  connect:
-    # session-only; handy for one-off CLI tools the user runs interactively
+  session:
+    # session-only; scoped to `drift connect` / `drift ssh` channels
     ANTHROPIC_API_KEY: chest:anthropic
 ```
 
@@ -134,7 +141,7 @@ env:
 
 - Add the `TuneEnv` struct and `Env TuneEnv` field on `model.Tune`.
 - Teach `tune.add`/`tune.set` handlers to walk every value across all
-  three blocks (`layer1`, `container`, `connect`) and reject any whose
+  three blocks (`build`, `workspace`, `session`) and reject any whose
   prefix isn't `chest:`. Mirror the character handler's error
   (`rpcerr.TypeInvalidField`, message names the block and key).
 - Assert stable render order across blocks in a tune-dump test
@@ -152,40 +159,48 @@ env:
   downstream.
 - Surface the resolved struct to `kart.New` via a new field on
   `kart.Resolved` next to Character, Tune, Features.
-- No values leave the server handler until steps 3–5; keep them in
+- No values leave the server handler until steps 3–6; keep them in
   memory only, never logged.
 
-### Step 3 — thread `env.container` into `devpod up`
+### Step 3 — thread `env.workspace` into `devpod up`
 
 - Add `SetEnv []string` to `devpod.UpOpts` symmetric with `SSHOpts`, and
   map to `--set-env KEY=VALUE` in `args()`.
 - At `internal/kart/new.go:150`, populate `up.SetEnv` from
-  `resolved.Env.Container` (`KEY=VALUE`, stable order).
-- Persist the set of container-env keys (NOT values) into the kart
+  `resolved.Env.Workspace` (`KEY=VALUE`, stable order).
+- Persist the set of workspace-env keys (NOT values) into the kart
   config so `kart.start`/`kart.restart` can re-resolve them from chest
   on re-up without the user re-specifying.
 
-### Step 4 — write `env.layer1` into the Layer-1 dotfiles tmpdir
+### Step 4 — wrap `env.build` around the install-dotfiles call
 
-- In `internal/kart/dotfiles.go` (`WriteLayer1Dotfiles`), when
-  `resolved.Env.Layer1` is non-empty, emit `~/.config/drift/env.sh` with
-  `export KEY="VALUE"` lines (values shell-quoted) into the Layer-1
-  tmpdir and have the layer-1 install script source it.
-- File mode 0600 inside the tmpdir; devpod's `install-dotfiles` copies
-  it into the container with the same mode.
+- In `internal/kart/new.go`, when `resolved.Env.Build` is non-empty,
+  prepend `env KEY=VALUE …` to the command string drift sends through
+  `devpod.InstallDotfiles` (which today is `devpod agent workspace
+  install-dotfiles --repository <file://…>`). The values live as
+  process-env of the install-dotfiles process for its lifetime only.
+- No file is written; nothing persists into `containerEnv`,
+  `~/.profile`, or docker's container config. The secret exists on
+  argv of the ssh-forwarded command for the duration of the clone —
+  document that as the leak surface.
+- Alternative to explore during implementation: pipe a heredoc
+  `env -i KEY=VAL bash -c '…'` over stdin to keep values off argv.
+  Decide after measuring devpod's tolerance for wrapped commands.
 
-### Step 5 — re-apply container env on lifecycle verbs
+### Step 5 — re-apply workspace env on lifecycle verbs
 
 - `kart.start` and `kart.restart` call `devpod up` under the hood —
-  thread `resolved.Env.Container` through. Re-read chest on each
+  thread `resolved.Env.Workspace` through. Re-read chest on each
   invocation so rotated secrets land on restart.
+- `env.build` is NOT re-applied on restart — install-dotfiles does not
+  re-run. This is the defining property of the `build` bucket.
 - `kart.delete` doesn't touch env; no change.
 
-### Step 6 — thread `env.connect` into `drift connect` / `drift ssh`
+### Step 6 — thread `env.session` into `drift connect` / `drift ssh`
 
 - At the connect call site (`internal/connect/connect.go`), resolve the
   tune via existing paths and populate `devpod.SSHOpts.SetEnv` from
-  `resolved.Env.Connect`. The `SendEnv`/`SetEnv` plumbing on
+  `resolved.Env.Session`. The `SendEnv`/`SetEnv` plumbing on
   `devpod.SSHOpts` already exists (`internal/devpod/devpod.go:189-190`)
   with no current caller — this is the first one.
 - Per-invocation resolution: rotated chest values show up on the next
@@ -196,16 +211,20 @@ env:
 Mirror `integration/dotfiles_test.go` shape. One scenario per injection
 site so regressions in one block can't mask the others:
 
-- **container** — `chest.set github-pat <v>`, tune
-  `env.container.GITHUB_TOKEN = chest:github-pat`, `kart.new`,
-  `devpod ssh <name> --command 'printenv GITHUB_TOKEN'` matches `<v>`.
-- **layer1** — tune `env.layer1.FOO = chest:foo`, new kart, shell
-  into the container, assert `FOO` is set in a login shell (sourced
-  from `~/.config/drift/env.sh` via rc) and NOT in a non-login
-  `docker exec` (layer-1 is rc-scoped, not containerEnv).
-- **connect** — tune `env.connect.BAR = chest:bar`, new kart, then
-  `drift ssh <name> --command 'printenv BAR'` matches; `devpod ssh`
-  outside drift does NOT see it (proves the scope).
+- **build** — tune with a private `dotfiles_repo` + `env.build.GITHUB_TOKEN
+  = chest:github-pat` where the chest value is a PAT with access to
+  that repo. `kart.new` succeeds (proves the env reached the clone).
+  Then `devpod ssh <name> --command 'printenv GITHUB_TOKEN'` returns
+  empty (proves it did NOT leak into workspace env).
+- **workspace** — `chest.set openai <v>`, tune
+  `env.workspace.OPENAI_API_KEY = chest:openai`, `kart.new`,
+  `devpod ssh <name> --command 'printenv OPENAI_API_KEY'` matches `<v>`.
+  Then `kart.stop` + `kart.start` and assert the same printenv still
+  returns the value (proves re-resolution on restart).
+- **session** — tune `env.session.ANTHROPIC_API_KEY = chest:anthropic`,
+  new kart, then `drift ssh <name> --command 'printenv
+  ANTHROPIC_API_KEY'` matches; `devpod ssh` outside drift does NOT see
+  it (proves session-only scope).
 
 Plus a negative test: unresolvable `chest:missing` in any block →
 `kart.new` returns `chest_entry_not_found` with `block` and `key` in
@@ -213,12 +232,22 @@ the error data, and no container is left behind.
 
 ## Open questions
 
-- **Leak surface.** `devpod up --set-env KEY=VALUE` puts the value on
-  argv of the host-side `devpod` process. `ps` on the circuit would see
-  it while up is running. Alternatives: write a tmpfile and use
-  `--env-file` if devpod supports it, or ship an extra-devcontainer-path
-  that declares `containerEnv` and never crosses argv. Decide before
-  implementation.
+- **Leak surface — workspace.** `devpod up --set-env KEY=VALUE` puts
+  the value on argv of the host-side `devpod` process during `up`, and
+  (more persistently) docker writes the env into
+  `/var/lib/docker/containers/<id>/config.v2.json` — visible via
+  `docker inspect`. Alternatives: write a tmpfile and use `--env-file`
+  if devpod supports it, or ship an extra-devcontainer-path that
+  declares `containerEnv` (displaces the leak to a JSON file on disk,
+  doesn't remove it). Decide before implementation.
+- **Leak surface — build.** The proposed `env KEY=VAL …` wrap puts
+  values on argv of the ssh-forwarded install-dotfiles command. Window
+  is short (seconds), but visible on `ps` during the clone. Heredoc
+  over stdin (`env -i KEY=VAL bash -c '…'`) avoids argv entirely — try
+  that first.
+- **Leak surface — session.** `devpod ssh --set-env` also crosses
+  argv, briefly, once per connect. Lowest persistence of the three
+  (nothing on disk, dies with the channel).
 - **Precedence.** If a future character-level env map overlaps a tune
   env map, character wins or tune wins? Defer but record the choice.
 - **Status rendering.** Should `drift kart info` list the env keys (not
