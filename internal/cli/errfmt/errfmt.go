@@ -35,12 +35,18 @@ func Emit(w io.Writer, err error) int {
 		if re.Type != "" {
 			fmt.Fprintf(w, "  %s %s\n", p.Dim("type:"), re.Type)
 		}
-		var devpodTail string
+		var devpodStderr, devpodStdout string
 		keys := make([]string, 0, len(re.Data))
 		for k, v := range re.Data {
 			if k == rpcerr.DataKeyDevpodStderr {
 				if s, ok := v.(string); ok {
-					devpodTail = s
+					devpodStderr = s
+				}
+				continue
+			}
+			if k == rpcerr.DataKeyDevpodStdout {
+				if s, ok := v.(string); ok {
+					devpodStdout = s
 				}
 				continue
 			}
@@ -50,8 +56,11 @@ func Emit(w io.Writer, err error) int {
 		for _, k := range keys {
 			fmt.Fprintf(w, "  %s %v\n", p.Dim(k+":"), re.Data[k])
 		}
-		if devpodTail != "" {
-			writeDevpodTail(w, p, devpodTail)
+		if devpodStderr != "" {
+			writeDevpodTail(w, p, "devpod stderr:", devpodStderr)
+		}
+		if devpodStdout != "" {
+			writeDevpodTail(w, p, "devpod stdout:", devpodStdout)
 		}
 		return int(re.Code)
 	}
@@ -59,15 +68,16 @@ func Emit(w io.Writer, err error) int {
 	return int(rpcerr.CodeInternal)
 }
 
-// writeDevpodTail renders the captured devpod stderr as an indented dim
-// block, ANSI stripped. Blank trailing lines are dropped so the block sits
-// flush against the next piece of output.
-func writeDevpodTail(w io.Writer, p *style.Palette, tail string) {
+// writeDevpodTail renders a captured devpod output stream as an indented
+// dim block, ANSI stripped. Blank trailing lines are dropped so the block
+// sits flush against the next piece of output. label is the header (e.g.
+// "devpod stderr:" / "devpod stdout:") so multiple streams can stack.
+func writeDevpodTail(w io.Writer, p *style.Palette, label, tail string) {
 	cleaned := strings.TrimRight(style.StripANSI(tail), "\n")
 	if cleaned == "" {
 		return
 	}
-	fmt.Fprintln(w, p.Dim("  devpod output:"))
+	fmt.Fprintln(w, p.Dim("  "+label))
 	for _, line := range strings.Split(cleaned, "\n") {
 		fmt.Fprintln(w, p.Dim("    "+line))
 	}

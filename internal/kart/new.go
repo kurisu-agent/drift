@@ -180,6 +180,12 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 		if tail := driftexec.StderrTail(err); tail != "" {
 			re = re.With(rpcerr.DataKeyDevpodStderr, tail)
 		}
+		// devpod up writes the in-container failure detail to stdout, not
+		// stderr — capturing both is what makes silent `devpod_up_failed`
+		// errors actually debuggable.
+		if tail := driftexec.StdoutTail(err); tail != "" {
+			re = re.With(rpcerr.DataKeyDevpodStdout, tail)
+		}
 		return nil, kartErrCleanup(re)
 	}
 

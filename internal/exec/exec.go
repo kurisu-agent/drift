@@ -41,6 +41,7 @@ type Error struct {
 	Args            []string
 	ExitCode        int
 	Stderr          []byte
+	Stdout          []byte
 	FirstStderrLine string
 }
 
@@ -163,6 +164,7 @@ func Run(ctx context.Context, cmd Cmd) (Result, error) {
 			Args:            append([]string(nil), cmd.Args...),
 			ExitCode:        exitErr.ExitCode(),
 			Stderr:          stderr.Bytes(),
+			Stdout:          stdout.Bytes(),
 			FirstStderrLine: firstLine(stderr.Bytes()),
 		}
 	}
@@ -180,10 +182,28 @@ func Run(ctx context.Context, cmd Cmd) (Result, error) {
 // rides through JSON-RPC to the client for rendering.
 func StderrTail(err error) string {
 	var e *Error
-	if !errors.As(err, &e) || len(e.Stderr) == 0 {
+	if !errors.As(err, &e) {
 		return ""
 	}
-	s := stripANSI(string(e.Stderr))
+	return tailBytes(e.Stderr)
+}
+
+// StdoutTail mirrors StderrTail for captured stdout — needed because devpod
+// writes its tunnelserver progress and most in-container failure detail to
+// stdout, leaving stderr empty for the failures users actually care about.
+func StdoutTail(err error) string {
+	var e *Error
+	if !errors.As(err, &e) {
+		return ""
+	}
+	return tailBytes(e.Stdout)
+}
+
+func tailBytes(buf []byte) string {
+	if len(buf) == 0 {
+		return ""
+	}
+	s := stripANSI(string(buf))
 	s = redactSecrets(s)
 	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
 	if len(lines) > stderrTailMaxLines {

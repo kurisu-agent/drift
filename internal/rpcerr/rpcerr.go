@@ -16,6 +16,13 @@ import (
 // below the main error message.
 const DataKeyDevpodStderr = "devpod_stderr"
 
+// DataKeyDevpodStdout is the Data key for captured devpod stdout. Devpod
+// relays its tunnelserver progress AND most in-container failure messages
+// to stdout (not stderr), so a stderr-only capture often comes back empty
+// for real failures. Wrap sites attach both; errfmt renders this as a
+// second dim block below the stderr one.
+const DataKeyDevpodStdout = "devpod_stdout"
+
 // Code doubles as process exit code on the human CLI path and populates
 // JSON-RPC error.code on the RPC path.
 type Code int

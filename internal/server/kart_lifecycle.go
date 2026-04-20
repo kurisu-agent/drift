@@ -18,12 +18,17 @@ import (
 )
 
 // wrapDevpod wraps a devpod-originating error with rpcerr, attaching the
-// captured stderr tail (if any) so the client can surface the real cause
-// instead of devpod's first-line summary.
+// captured stderr AND stdout tails so the client can surface the real
+// cause. devpod relays in-container output through its tunnelserver to
+// stdout, so a stderr-only capture comes back empty for the most common
+// failure shapes (private dotfiles_repo clone, devcontainer build errors).
 func wrapDevpod(code rpcerr.Code, typ rpcerr.Type, kart string, err error, format string, args ...any) *rpcerr.Error {
 	re := rpcerr.New(code, typ, format, args...).Wrap(err).With("kart", kart)
 	if tail := driftexec.StderrTail(err); tail != "" {
 		re = re.With(rpcerr.DataKeyDevpodStderr, tail)
+	}
+	if tail := driftexec.StdoutTail(err); tail != "" {
+		re = re.With(rpcerr.DataKeyDevpodStdout, tail)
 	}
 	return re
 }
