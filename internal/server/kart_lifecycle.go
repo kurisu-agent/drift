@@ -82,11 +82,11 @@ func (d KartDeps) kartStartHandler(ctx context.Context, params json.RawMessage) 
 	if err := d.requireDevpod(); err != nil {
 		return nil, err
 	}
-	setEnv, err := d.workspaceSetEnv(p.Name)
+	wsEnv, err := d.workspaceEnvKVs(p.Name)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := d.Devpod.Up(ctx, devpod.UpOpts{Name: p.Name, SetEnv: setEnv}); err != nil {
+	if _, err := d.Devpod.Up(ctx, devpod.UpOpts{Name: p.Name, WorkspaceEnv: wsEnv}); err != nil {
 		return nil, wrapDevpod(rpcerr.CodeDevpod, rpcerr.TypeDevpodUpFailed, p.Name, err,
 			"devpod up %s failed: %v", p.Name, err)
 	}
@@ -118,7 +118,7 @@ func (d KartDeps) kartRestartHandler(ctx context.Context, params json.RawMessage
 	}
 	// Resolve env BEFORE the stop so a chest miss fails fast without
 	// leaving the kart stopped with no re-up coming.
-	setEnv, err := d.workspaceSetEnv(p.Name)
+	wsEnv, err := d.workspaceEnvKVs(p.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func (d KartDeps) kartRestartHandler(ctx context.Context, params json.RawMessage
 		return nil, wrapDevpod(rpcerr.CodeDevpod, rpcerr.TypeDevpodUnreachable, p.Name, err,
 			"devpod stop %s failed: %v", p.Name, err)
 	}
-	if _, err := d.Devpod.Up(ctx, devpod.UpOpts{Name: p.Name, SetEnv: setEnv}); err != nil {
+	if _, err := d.Devpod.Up(ctx, devpod.UpOpts{Name: p.Name, WorkspaceEnv: wsEnv}); err != nil {
 		return nil, wrapDevpod(rpcerr.CodeDevpod, rpcerr.TypeDevpodUpFailed, p.Name, err,
 			"devpod up %s failed: %v", p.Name, err)
 	}
@@ -337,11 +337,11 @@ func (d KartDeps) kartSessionEnvHandler(_ context.Context, params json.RawMessag
 	return KartSessionEnvResult{Name: p.Name, Env: envKVPairs(resolved)}, nil
 }
 
-// workspaceSetEnv re-reads chest-backed workspace env for a kart so
+// workspaceEnvKVs re-reads chest-backed workspace env for a kart so
 // start / restart pick up rotated secrets. Missing kart config, empty
 // env block, or no chest wiring return (nil, nil) — the caller just
-// omits SetEnv from UpOpts.
-func (d KartDeps) workspaceSetEnv(name string) ([]string, error) {
+// omits WorkspaceEnv from UpOpts.
+func (d KartDeps) workspaceEnvKVs(name string) ([]string, error) {
 	cfg, ok, err := d.readKartConfig(name)
 	if err != nil {
 		return nil, err

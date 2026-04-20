@@ -58,6 +58,8 @@ func TestUpArgsPropagateAllFlags(t *testing.T) {
 		DevcontainerImage:     "alpine",
 		FallbackImage:         "ubuntu",
 		GitCloneStrategy:      "treeless",
+		WorkspaceEnv:          []string{"WS=1"},
+		DotfilesScriptEnv:     []string{"BUILD=2"},
 		ConfigureSSH:          false,
 	})
 	if err != nil {
@@ -82,6 +84,8 @@ func TestUpArgsPropagateAllFlags(t *testing.T) {
 			"--devcontainer-image", "alpine",
 			"--fallback-image", "ubuntu",
 			"--git-clone-strategy", "treeless",
+			"--workspace-env", "WS=1",
+			"--dotfiles-script-env", "BUILD=2",
 			"--id", "proj",
 			"git@github.com:user/repo.git",
 		},

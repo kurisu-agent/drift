@@ -167,8 +167,11 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 		AdditionalFeatures:    resolved.Features,
 		ExtraDevcontainerPath: dcPath,
 		Dotfiles:              resolved.Dotfiles,
-		SetEnv:                envKVPairs(resolved.Env.Workspace),
-		ConfigureSSH:          false,
+		WorkspaceEnv:          envKVPairs(resolved.Env.Workspace),
+		// Build env rides on the dotfiles install script that devpod
+		// kicks off from --dotfiles, scoped to that one process.
+		DotfilesScriptEnv: envKVPairs(resolved.Env.Build),
+		ConfigureSSH:      false,
 	}
 	if _, err := d.Devpod.Up(ctx, up); err != nil {
 		re := rpcerr.New(rpcerr.CodeDevpod,

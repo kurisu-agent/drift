@@ -97,10 +97,17 @@ type UpOpts struct {
 	DevcontainerImage     string
 	FallbackImage         string
 	GitCloneStrategy      string
-	// SetEnv is rendered as --set-env KEY=VALUE pairs; each entry becomes
-	// part of the container's containerEnv for the workspace's lifetime.
-	// Symmetric with SSHOpts.SetEnv.
-	SetEnv []string
+	// WorkspaceEnv renders as --workspace-env KEY=VALUE pairs; each entry
+	// becomes part of the container's containerEnv for the workspace's
+	// lifetime. (SSHOpts.SetEnv uses --set-env because devpod ssh has its
+	// own flag with that name; devpod up does not.)
+	WorkspaceEnv []string
+	// DotfilesScriptEnv renders as --dotfiles-script-env KEY=VALUE pairs.
+	// Each entry is exposed only to the dotfiles install script that
+	// devpod runs from --dotfiles, then gone — never lands in containerEnv.
+	// Used to pass build-time secrets (e.g. a PAT for cloning a private
+	// dotfiles_repo) without persisting them in the workspace.
+	DotfilesScriptEnv []string
 	// ConfigureSSH: drift manages its own SSH config and keeps this off.
 	ConfigureSSH bool
 }
@@ -134,8 +141,11 @@ func (o UpOpts) args() ([]string, error) {
 	if o.GitCloneStrategy != "" {
 		args = append(args, "--git-clone-strategy", o.GitCloneStrategy)
 	}
-	for _, v := range o.SetEnv {
-		args = append(args, "--set-env", v)
+	for _, v := range o.WorkspaceEnv {
+		args = append(args, "--workspace-env", v)
+	}
+	for _, v := range o.DotfilesScriptEnv {
+		args = append(args, "--dotfiles-script-env", v)
 	}
 	if o.ConfigureSSH {
 		args = append(args, "--configure-ssh")

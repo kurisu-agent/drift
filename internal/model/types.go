@@ -18,14 +18,16 @@ type Tune struct {
 // may repeat across blocks; each block is independent with no cross-
 // block precedence.
 type TuneEnv struct {
-	// Build is prepended as process-env on the in-container
-	// install-dotfiles invocation during `devpod up`. Scoped to that
-	// single process; never lands in the container's containerEnv and
-	// gone once provisioning completes.
+	// Build is exposed to the dotfiles install script(s) during
+	// kart.new. Reaches devpod's --dotfiles install via
+	// `devpod up --dotfiles-script-env` and drift's own layer-1
+	// install via process-env on the install-dotfiles invocation.
+	// Scoped to those processes only; never lands in the container's
+	// containerEnv and is gone once provisioning completes.
 	Build map[string]string `yaml:"build,omitempty" json:"build,omitempty"`
 
-	// Workspace is passed to `devpod up --set-env` and becomes part of
-	// the container env for the workspace's lifetime; re-applied on
+	// Workspace is passed to `devpod up --workspace-env` and becomes part
+	// of the container env for the workspace's lifetime; re-applied on
 	// kart.start / kart.restart. Visible via /proc/<pid>/environ and
 	// `docker inspect`.
 	Workspace map[string]string `yaml:"workspace,omitempty" json:"workspace,omitempty"`

@@ -16,9 +16,10 @@ import (
 )
 
 // TestTuneEnvWorkspaceInjection verifies the env.workspace block on a tune
-// lands as --set-env flags on devpod up and persists into the kart config
-// so kart.start re-applies them with the latest chest value on restart.
-// Covers Stage #2 / #3 from plans/06 (workspace lifetime container env).
+// lands as --workspace-env flags on devpod up and persists into the kart
+// config so kart.start re-applies them with the latest chest value on
+// restart. Covers Stage #2 / #3 from plans/06 (workspace lifetime container
+// env).
 func TestTuneEnvWorkspaceInjection(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -56,8 +57,8 @@ func TestTuneEnvWorkspaceInjection(t *testing.T) {
 		t.Fatalf("no devpod up invocation recorded")
 	}
 	wantKV := envKey + "=" + chestValue
-	if !argvHas(up.Argv, "--set-env", wantKV) {
-		t.Errorf("up argv missing --set-env %q, got %v", wantKV, up.Argv)
+	if !argvHas(up.Argv, "--workspace-env", wantKV) {
+		t.Errorf("up argv missing --workspace-env %q, got %v", wantKV, up.Argv)
 	}
 
 	// kart.list surfaces the chest reference (never the value) under
@@ -92,9 +93,9 @@ func TestTuneEnvWorkspaceInjection(t *testing.T) {
 		t.Errorf("kart.list leaked chest value: %s", listRaw)
 	}
 
-	// Restart should re-read chest and re-apply --set-env with the current
-	// value. Rotate the chest entry and assert the restart's devpod up
-	// picks up the new value.
+	// Restart should re-read chest and re-apply --workspace-env with the
+	// current value. Rotate the chest entry and assert the restart's devpod
+	// up picks up the new value.
 	const rotatedValue = "sk-workspace-rotated"
 	if _, err := c.LakituRPC(ctx, wire.MethodChestSet, map[string]string{
 		"name": chestName, "value": rotatedValue,
@@ -110,14 +111,16 @@ func TestTuneEnvWorkspaceInjection(t *testing.T) {
 	}
 	restartUp := ups[len(ups)-1]
 	wantRotated := envKey + "=" + rotatedValue
-	if !argvHas(restartUp.Argv, "--set-env", wantRotated) {
-		t.Errorf("restart up argv missing rotated --set-env %q, got %v", wantRotated, restartUp.Argv)
+	if !argvHas(restartUp.Argv, "--workspace-env", wantRotated) {
+		t.Errorf("restart up argv missing rotated --workspace-env %q, got %v", wantRotated, restartUp.Argv)
 	}
 }
 
-// TestTuneEnvBuildInjection verifies env.build entries land in the process
-// env of the install-dotfiles invocation only — never in the workspace
-// env. Covers Stage #1 (one-shot build-time secret).
+// TestTuneEnvBuildInjection verifies env.build entries reach both
+// dotfiles install paths — drift's layer-1 file:// install (process env)
+// and devpod's --dotfiles install via --dotfiles-script-env on devpod up
+// — without leaking into the workspace's containerEnv. Covers Stage #1
+// (one-shot build-time secret).
 func TestTuneEnvBuildInjection(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -158,10 +161,18 @@ func TestTuneEnvBuildInjection(t *testing.T) {
 	if !envHas(inv.Env, want) {
 		t.Errorf("install-dotfiles env missing %q; got %d vars (not printed to avoid secret leak)", want, len(inv.Env))
 	}
-	// Same secret must NOT ride on the workspace env — build is one-shot.
 	up := rec.FindUp(ctx)
-	if up != nil && argvHasValuePrefix(up.Argv, "--set-env", envKey+"=") {
-		t.Errorf("build secret leaked into devpod up --set-env: argv=%v", up.Argv)
+	if up == nil {
+		t.Fatalf("no devpod up invocation recorded")
+	}
+	// devpod up should carry --dotfiles-script-env so the in-container
+	// dotfiles install script sees the build secret.
+	if !argvHas(up.Argv, "--dotfiles-script-env", want) {
+		t.Errorf("up argv missing --dotfiles-script-env %q, got %v", want, up.Argv)
+	}
+	// Same secret must NOT ride on the workspace env — build is one-shot.
+	if argvHasValuePrefix(up.Argv, "--workspace-env", envKey+"=") {
+		t.Errorf("build secret leaked into devpod up --workspace-env: argv=%v", up.Argv)
 	}
 }
 
@@ -311,7 +322,8 @@ func envHas(env []string, want string) bool {
 }
 
 // findAllUps collects every `devpod up` invocation across the recorder
-// log. Used to compare successive kart.new / kart.restart --set-env sets.
+// log. Used to compare successive kart.new / kart.restart --workspace-env
+// sets.
 func findAllUps(invs []integration.DevpodInvocation) []integration.DevpodInvocation {
 	var out []integration.DevpodInvocation
 	for _, inv := range invs {
