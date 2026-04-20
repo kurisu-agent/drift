@@ -55,31 +55,57 @@ commands.
 | 4 | **kart start / restart**      | `kart.start`, `kart.restart`                           | re-hydrated container processes                                                  | same `--set-env` applied on re-up; keep the env source of truth in the kart config         |
 | 5 | **drift connect / ssh**       | `kart.connect`, `kart.ssh`                             | the interactive shell and anything it launches                                   | existing `devpod.SSHOpts.SetEnv` / `SendEnv` (already defined, no current caller)          |
 
-Stages #2 and #3 share one mechanism: `containerEnv` set at `devpod up`
-time is inherited by every child process, including the in-container
-`install-dotfiles` invocation, so a single injection covers both. Stage
-#5 is session-scoped and orthogonal.
+The five stages collapse to **three distinct injection sites** — stages
+#2/#3/#4 all ride the same `containerEnv` set at `devpod up` time (the
+in-container `install-dotfiles` inherits it; `start`/`restart` re-applies
+it on re-up). Stage #1 is host-side at Layer-1 write time; stage #5 is
+session-scoped. The tune's `env` structure below gives each injection
+site its own named block so the user declares, per var, *where* it lands.
 
 ## Data model — tune
 
-Add an `env` map to `model.Tune`:
+Add a nested `env` object to `model.Tune`, one key per injection site:
 
 ```go
 // internal/model/types.go
 type Tune struct {
-    Starter      string            `yaml:"starter,omitempty" json:"starter,omitempty"`
-    Devcontainer string            `yaml:"devcontainer,omitempty" json:"devcontainer,omitempty"`
-    DotfilesRepo string            `yaml:"dotfiles_repo,omitempty" json:"dotfiles_repo,omitempty"`
-    Features     string            `yaml:"features,omitempty" json:"features,omitempty"`
-    Env          map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
+    Starter      string  `yaml:"starter,omitempty"      json:"starter,omitempty"`
+    Devcontainer string  `yaml:"devcontainer,omitempty" json:"devcontainer,omitempty"`
+    DotfilesRepo string  `yaml:"dotfiles_repo,omitempty" json:"dotfiles_repo,omitempty"`
+    Features     string  `yaml:"features,omitempty"     json:"features,omitempty"`
+    Env          TuneEnv `yaml:"env,omitempty"          json:"env,omitempty"`
+}
+
+// TuneEnv groups chest-backed env vars by the injection site that
+// consumes them. Every value must be a chest:<name> reference.
+type TuneEnv struct {
+    // Layer1 is written into the Layer-1 dotfiles tmpdir on the host as a
+    // sourced file (e.g. ~/.config/drift/env.sh) — available to the
+    // character's dotfiles install script and the user's shell via rc-file.
+    // Covers lifecycle stage #1.
+    Layer1 map[string]string `yaml:"layer1,omitempty" json:"layer1,omitempty"`
+
+    // Container is passed to `devpod up --set-env` and becomes part of the
+    // container's env for its lifetime. Inherited by the in-container
+    // `install-dotfiles` clone (fixes the tune dotfiles 403 case) and
+    // re-applied on `kart.start` / `kart.restart`.
+    // Covers lifecycle stages #2, #3, and #4.
+    Container map[string]string `yaml:"container,omitempty" json:"container,omitempty"`
+
+    // Connect is passed to `devpod ssh --set-env` each time the user opens
+    // a session via `drift connect` / `drift ssh`. Does not persist in the
+    // container env — scoped to the ssh channel only.
+    // Covers lifecycle stage #5.
+    Connect map[string]string `yaml:"connect,omitempty" json:"connect,omitempty"`
 }
 ```
 
-`Env` values follow the existing chest reference shape: every value MUST
-start with `chest:`. Literal env values are rejected at tune-write time
-for the same reason literal PATs are rejected on characters
-(`internal/server/character.go:67`) — keeps secrets off disk outside the
-chest.
+Every map value MUST start with `chest:`. Literal env values are rejected
+at tune-write time for the same reason literal PATs are rejected on
+characters (`internal/server/character.go:67`) — keeps secrets off disk
+outside the chest. A key may appear in more than one block (e.g. same
+name for Layer-1 and Container); each block is independent, with no
+cross-block precedence.
 
 Example (`~/.drift/garage/tunes/default.yaml`):
 
@@ -87,66 +113,103 @@ Example (`~/.drift/garage/tunes/default.yaml`):
 dotfiles_repo: https://github.com/kurisu-dotto-komu/devpod-dotfiles
 features: '{"ghcr.io/example-org/devpod-features/devtools:2":{}}'
 env:
-  GITHUB_TOKEN: chest:github-pat
-  OPENAI_API_KEY: chest:openai
+  layer1:
+    # sourced by the character dotfiles install script
+    GIT_AUTHOR_EMAIL: chest:git-author-email
+
+  container:
+    # present for every process in the kart; git picks this up during the
+    # tune's dotfiles_repo clone inside `devpod up install-dotfiles`
+    GITHUB_TOKEN: chest:github-pat
+    OPENAI_API_KEY: chest:openai
+
+  connect:
+    # session-only; handy for one-off CLI tools the user runs interactively
+    ANTHROPIC_API_KEY: chest:anthropic
 ```
 
 ## Plan
 
 ### Step 1 — extend the tune model + validator
 
-- Add `Env map[string]string` to `model.Tune`.
-- Teach `tune.add`/`tune.set` handlers (wherever they live) to reject any
-  value whose prefix isn't `chest:`. Mirror the character handler's
-  error (`rpcerr.TypeInvalidField`, message names the field).
-- Update any tune-dump path so `env` renders in stable order (YAML maps
-  already alphabetise on write via `yaml.v3` but assert in a test).
+- Add the `TuneEnv` struct and `Env TuneEnv` field on `model.Tune`.
+- Teach `tune.add`/`tune.set` handlers to walk every value across all
+  three blocks (`layer1`, `container`, `connect`) and reject any whose
+  prefix isn't `chest:`. Mirror the character handler's error
+  (`rpcerr.TypeInvalidField`, message names the block and key).
+- Assert stable render order across blocks in a tune-dump test
+  (`yaml.v3` alphabetises maps, but the top-level block order is
+  declaration-order from the struct tags).
 
 ### Step 2 — resolve chest references during `kart.new`
 
-- In `internal/server/kart_new.go`, add `resolveTuneEnv(map[string]string)
-  (map[string]string, error)` alongside `resolvePATSecret`. Reuse the
+- In `internal/server/kart_new.go`, add `resolveTuneEnv(TuneEnv)
+  (ResolvedTuneEnv, error)` alongside `resolvePATSecret`. Reuse the
   same `chest.Get` path; on miss, return `chest_entry_not_found` with
-  the offending key in `rpcerr.Data`.
-- Surface the resolved map to `kart.New` via a new field on
-  `kart.Flags` (or on the resolver output — `kart.Resolved` already
-  holds Character, Tune, Features).
-- No values leave the server handler until step 3; keep them in memory
-  only, never logged.
+  both the offending block and key in `rpcerr.Data`.
+- `ResolvedTuneEnv` mirrors `TuneEnv` but holds literal values — one
+  `map[string]string` per injection site. Keeps stages independent
+  downstream.
+- Surface the resolved struct to `kart.New` via a new field on
+  `kart.Resolved` next to Character, Tune, Features.
+- No values leave the server handler until steps 3–5; keep them in
+  memory only, never logged.
 
-### Step 3 — thread env into `devpod up`
+### Step 3 — thread `env.container` into `devpod up`
 
 - Add `SetEnv []string` to `devpod.UpOpts` symmetric with `SSHOpts`, and
   map to `--set-env KEY=VALUE` in `args()`.
-- At `internal/kart/new.go:150`, populate `up.SetEnv` from the resolved
-  env map (`KEY=VALUE`, stable order).
-- Persist the set of env keys (NOT values) into the kart config so
-  `kart.start`/`kart.restart` can re-resolve them from chest on re-up
-  without the user re-specifying.
+- At `internal/kart/new.go:150`, populate `up.SetEnv` from
+  `resolved.Env.Container` (`KEY=VALUE`, stable order).
+- Persist the set of container-env keys (NOT values) into the kart
+  config so `kart.start`/`kart.restart` can re-resolve them from chest
+  on re-up without the user re-specifying.
 
-### Step 4 — re-apply on lifecycle verbs
+### Step 4 — write `env.layer1` into the Layer-1 dotfiles tmpdir
 
-- `kart.start` and `kart.restart` call `devpod up` under the hood — thread
-  the same resolved env through. Re-read chest on each invocation so
-  rotated secrets land on restart.
+- In `internal/kart/dotfiles.go` (`WriteLayer1Dotfiles`), when
+  `resolved.Env.Layer1` is non-empty, emit `~/.config/drift/env.sh` with
+  `export KEY="VALUE"` lines (values shell-quoted) into the Layer-1
+  tmpdir and have the layer-1 install script source it.
+- File mode 0600 inside the tmpdir; devpod's `install-dotfiles` copies
+  it into the container with the same mode.
+
+### Step 5 — re-apply container env on lifecycle verbs
+
+- `kart.start` and `kart.restart` call `devpod up` under the hood —
+  thread `resolved.Env.Container` through. Re-read chest on each
+  invocation so rotated secrets land on restart.
 - `kart.delete` doesn't touch env; no change.
 
-### Step 5 — (optional, deferred) `drift connect --env-from-tune`
+### Step 6 — thread `env.connect` into `drift connect` / `drift ssh`
 
-A follow-up that pipes the same resolved env through
-`devpod.SSHOpts.SetEnv` for session-scoped use cases. Out of scope for
-this plan; the container-env path covers the motivating failure.
+- At the connect call site (`internal/connect/connect.go`), resolve the
+  tune via existing paths and populate `devpod.SSHOpts.SetEnv` from
+  `resolved.Env.Connect`. The `SendEnv`/`SetEnv` plumbing on
+  `devpod.SSHOpts` already exists (`internal/devpod/devpod.go:189-190`)
+  with no current caller — this is the first one.
+- Per-invocation resolution: rotated chest values show up on the next
+  `drift connect`.
 
-### Step 6 — integration test
+### Step 7 — integration tests
 
-- Mirror `integration/dotfiles_test.go` shape. Scenario:
-  1. `chest.set github-pat <value>`
-  2. Write a tune with `env: { GITHUB_TOKEN: chest:github-pat }`
-  3. `kart.new` with that tune
-  4. `devpod ssh <name> --command 'printenv GITHUB_TOKEN'` matches the
-     value
-- Plus a negative test: unresolvable `chest:missing` → `kart.new`
-  returns `chest_entry_not_found`, no container left behind.
+Mirror `integration/dotfiles_test.go` shape. One scenario per injection
+site so regressions in one block can't mask the others:
+
+- **container** — `chest.set github-pat <v>`, tune
+  `env.container.GITHUB_TOKEN = chest:github-pat`, `kart.new`,
+  `devpod ssh <name> --command 'printenv GITHUB_TOKEN'` matches `<v>`.
+- **layer1** — tune `env.layer1.FOO = chest:foo`, new kart, shell
+  into the container, assert `FOO` is set in a login shell (sourced
+  from `~/.config/drift/env.sh` via rc) and NOT in a non-login
+  `docker exec` (layer-1 is rc-scoped, not containerEnv).
+- **connect** — tune `env.connect.BAR = chest:bar`, new kart, then
+  `drift ssh <name> --command 'printenv BAR'` matches; `devpod ssh`
+  outside drift does NOT see it (proves the scope).
+
+Plus a negative test: unresolvable `chest:missing` in any block →
+`kart.new` returns `chest_entry_not_found` with `block` and `key` in
+the error data, and no container is left behind.
 
 ## Open questions
 
