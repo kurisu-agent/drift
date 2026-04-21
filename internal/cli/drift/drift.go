@@ -111,6 +111,16 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		_ = os.Setenv("NO_COLOR", "1")
 	}
 
+	// --debug populates cli.Debug via Kong's env binding, but downstream
+	// consumers (the SSH RPC transport that forwards LAKITU_DEBUG=1 to
+	// the circuit, any future env-driven verbose toggle) read the env
+	// var directly so they don't need a reference to the CLI struct.
+	// Re-export so flag-only invocations (`drift --debug new …`) work
+	// the same as env-only (`DRIFT_DEBUG=1 drift new …`).
+	if cli.Debug {
+		_ = os.Setenv("DRIFT_DEBUG", "1")
+	}
+
 	switch kctx.Command() {
 	case "help":
 		return runHelp(io, parser, cli.Help)
