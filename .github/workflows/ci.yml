@@ -36,8 +36,14 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v14
 
-      - name: Magic Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@v8
+      # Cachix pulls from our shared binary cache and uploads any
+      # derivations built during the run. Same config release.yml uses;
+      # drops the FlakeHub-nag from magic-nix-cache-action.
+      - name: Set up Nix cache
+        uses: cachix/cachix-action@v15
+        with:
+          name: kurisu
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       - name: Build pinned devpod via flake
         run: |
@@ -79,8 +85,14 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v14
 
-      - name: Magic Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@v8
+      # Cachix pulls from our shared binary cache and uploads any
+      # derivations built during the run. Same config release.yml uses;
+      # drops the FlakeHub-nag from magic-nix-cache-action.
+      - name: Set up Nix cache
+        uses: cachix/cachix-action@v15
+        with:
+          name: kurisu
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       # `nix develop` provides the exact toolchain pinned in flake.nix
       # (go, make, git, pinned devpod) so the real-devpod integration
