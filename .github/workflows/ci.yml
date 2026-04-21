@@ -53,16 +53,14 @@ jobs:
       - name: Test (race)
         run: go test -race ./...
 
+      # Lint + vulncheck run from `nix develop` so they pick the same
+      # toolchain-matched binaries flake.nix pins — golangci-lint-action
+      # otherwise lags the Go version we target.
       - name: Lint
-        uses: golangci/golangci-lint-action@v7
-        with:
-          version: v2.6.0
-
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        run: nix develop --command golangci-lint run ./...
 
       - name: Vulncheck
-        run: govulncheck ./...
+        run: nix develop --command govulncheck ./...
 
   integration:
     name: integration
