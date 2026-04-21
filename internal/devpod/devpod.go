@@ -21,6 +21,11 @@ import (
 // don't need to manipulate the real process env.
 var osEnviron = os.Environ
 
+// EnvOrNilForTest exposes envOrNil to the external test package so
+// tests can assert the DEVPOD_HOME injection without a full exec
+// roundtrip.
+func EnvOrNilForTest(c *Client) []string { return c.envOrNil() }
+
 // IsNotInstalled reports whether err came from devpod being absent on PATH
 // (as opposed to a real devpod-side failure). Callers use it to render one
 // actionable install hint instead of two copies of os/exec's nested wrap.
@@ -61,6 +66,14 @@ type Client struct {
 	// stdout+stderr. Wire to os.Stderr in lakitu's verbose mode so SSH
 	// relays devpod progress to the drift client in real time.
 	Mirror io.Writer
+	// DevpodHome, if non-empty, is injected as DEVPOD_HOME=<val> into
+	// each child's env — even when Env is nil (the usual "inherit
+	// parent" path). Zero value preserves the historical behavior: the
+	// child sees whatever DEVPOD_HOME the parent process has (typically
+	// unset, meaning devpod's own ~/.devpod/ default). Lakitu sets this
+	// to config.DriftDevpodHome() so drift-managed workspaces live in
+	// ~/.drift/devpod/, fully isolated from the user's ~/.devpod/.
+	DevpodHome string
 }
 
 func (c *Client) binary() string {
@@ -118,10 +131,26 @@ func (c *Client) echoArgv(args []string) {
 }
 
 func (c *Client) envOrNil() []string {
-	if c == nil || c.Env == nil {
+	if c == nil {
 		return nil
 	}
-	return append([]string(nil), c.Env...)
+	if c.DevpodHome == "" {
+		if c.Env == nil {
+			return nil
+		}
+		return append([]string(nil), c.Env...)
+	}
+	// DEVPOD_HOME override demands an explicit env because "nil = inherit
+	// parent" would let the parent's DEVPOD_HOME (or lack thereof) leak
+	// through. Synthesize the explicit env from Env-or-parent and append
+	// DEVPOD_HOME last so it wins over any same-named entry.
+	var base []string
+	if c.Env != nil {
+		base = append(base, c.Env...)
+	} else {
+		base = append(base, osEnviron()...)
+	}
+	return append(base, "DEVPOD_HOME="+c.DevpodHome)
 }
 
 type UpOpts struct {

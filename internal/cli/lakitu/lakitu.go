@@ -155,9 +155,19 @@ func Registry() *rpc.Registry {
 		if os.Getenv("LAKITU_DEBUG") != "" {
 			mirror = &driftexec.RedactingWriter{W: os.Stderr}
 		}
+		// DEVPOD_HOME isolation: every drift-managed devpod invocation
+		// lands under ~/.drift/devpod/ so the user's ~/.devpod/ is
+		// literally invisible to drift and vice versa. Resolve empty on
+		// a hostile environment — drift falls back to the shared HOME
+		// with a single-line warning rather than refusing to start.
+		driftDevpod, homeErr := config.DriftDevpodHome()
+		if homeErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not resolve DEVPOD_HOME: %v\n", homeErr)
+			driftDevpod = ""
+		}
 		lifeDeps := &server.Deps{GarageDir: garage}
 		kartDeps := server.KartDeps{
-			Devpod:    &devpod.Client{Mirror: mirror},
+			Devpod:    &devpod.Client{Mirror: mirror, DevpodHome: driftDevpod},
 			GarageDir: garage,
 			OpenChest: lifeDeps.OpenChestForLifecycle,
 		}
@@ -168,7 +178,7 @@ func Registry() *rpc.Registry {
 			Deps: &server.Deps{GarageDir: garage},
 			Kart: kart.NewDeps{
 				GarageDir: garage,
-				Devpod:    &devpod.Client{Mirror: mirror},
+				Devpod:    &devpod.Client{Mirror: mirror, DevpodHome: driftDevpod},
 			},
 			// Same sink as the devpod tee: phase markers, resolver dump,
 			// and chest dechest events stream alongside devpod's output

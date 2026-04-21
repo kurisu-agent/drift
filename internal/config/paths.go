@@ -42,3 +42,16 @@ func ServerConfigPath() (string, error) {
 	}
 	return filepath.Join(dir, "config.yaml"), nil
 }
+
+// DriftDevpodHome is the DEVPOD_HOME drift sets when invoking the bundled
+// devpod binary. Keeps drift-managed workspaces under ~/.drift/devpod/
+// instead of the user's ~/.devpod/ — the user's `devpod list` / `devpod
+// delete` operate on their own HOME and literally cannot see drift's
+// state. Uses os.UserHomeDir so t.Setenv("HOME", ...) works in tests.
+func DriftDevpodHome() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("config: resolve home directory: %w", err)
+	}
+	return filepath.Join(home, ".drift", "devpod"), nil
+}

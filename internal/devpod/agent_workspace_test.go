@@ -100,6 +100,42 @@ func TestListAgentWorkspaces_NilRoot(t *testing.T) {
 	}
 }
 
+func TestClientDevpodHomeInjectsEnv(t *testing.T) {
+	// DEVPOD_HOME has to land in the child env so drift's bundled devpod
+	// writes into ~/.drift/devpod/ instead of the user's ~/.devpod/.
+	// Exercise three paths: no override (nil env preserved), explicit
+	// Env layered with DEVPOD_HOME, and nil Env that promotes to
+	// parent-env + DEVPOD_HOME.
+	t.Run("no override keeps env nil", func(t *testing.T) {
+		c := &devpod.Client{}
+		got := devpod.EnvOrNilForTest(c)
+		if got != nil {
+			t.Errorf("want nil env, got %v", got)
+		}
+	})
+	t.Run("explicit env + DevpodHome", func(t *testing.T) {
+		c := &devpod.Client{
+			Env:        []string{"FOO=bar"},
+			DevpodHome: "/tmp/drift-dp",
+		}
+		got := devpod.EnvOrNilForTest(c)
+		if len(got) != 2 || got[0] != "FOO=bar" || got[1] != "DEVPOD_HOME=/tmp/drift-dp" {
+			t.Errorf("unexpected env: %v", got)
+		}
+	})
+	t.Run("nil env + DevpodHome promotes to parent + override", func(t *testing.T) {
+		c := &devpod.Client{DevpodHome: "/tmp/drift-dp"}
+		got := devpod.EnvOrNilForTest(c)
+		if len(got) < 1 {
+			t.Fatalf("want non-empty env, got %v", got)
+		}
+		last := got[len(got)-1]
+		if last != "DEVPOD_HOME=/tmp/drift-dp" {
+			t.Errorf("DEVPOD_HOME override should land last; got %q", last)
+		}
+	})
+}
+
 func TestListAgentWorkspaces_MultipleContexts(t *testing.T) {
 	root := t.TempDir()
 	// default context, wrapped form
