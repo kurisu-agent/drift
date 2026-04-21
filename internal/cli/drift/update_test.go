@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -134,7 +135,7 @@ func TestDownloadAndReplace(t *testing.T) {
 	if err := os.WriteFile(dst, []byte("old"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := downloadAndReplace(context.Background(), srv.URL, dst); err != nil {
+	if err := downloadAndReplace(context.Background(), srv.URL, dst, io.Discard); err != nil {
 		t.Fatalf("downloadAndReplace: %v", err)
 	}
 	got, err := os.ReadFile(dst)
@@ -161,7 +162,7 @@ func TestDownloadAndReplace_NoDriftEntry(t *testing.T) {
 	defer srv.Close()
 	dst := filepath.Join(t.TempDir(), "drift")
 	_ = os.WriteFile(dst, []byte("old"), 0o755)
-	err := downloadAndReplace(context.Background(), srv.URL, dst)
+	err := downloadAndReplace(context.Background(), srv.URL, dst, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "did not contain") {
 		t.Fatalf("expected missing-binary error, got: %v", err)
 	}

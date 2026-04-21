@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/config"
@@ -44,6 +45,7 @@ type ghAsset struct {
 
 func runUpdate(ctx context.Context, ioStreams IO, cmd updateCmd) int {
 	cur := version.Get().Version
+	fmt.Fprintln(ioStreams.Stderr, "→ checking latest release")
 	latest, err := fetchLatestRelease(ctx, cmd.APIBase, cmd.Repo)
 	if err != nil {
 		return errfmt.Emit(ioStreams.Stderr, fmt.Errorf("check failed: %w", err))
@@ -68,6 +70,7 @@ func runUpdate(ctx context.Context, ioStreams IO, cmd updateCmd) int {
 	if err != nil {
 		return errfmt.Emit(ioStreams.Stderr, err)
 	}
+	fmt.Fprintf(ioStreams.Stderr, "→ selected asset %s (%s)\n", asset.Name, humanBytes(asset.Size))
 	exe, err := os.Executable()
 	if err != nil {
 		return errfmt.Emit(ioStreams.Stderr, err)
@@ -76,7 +79,8 @@ func runUpdate(ctx context.Context, ioStreams IO, cmd updateCmd) int {
 	if err != nil {
 		return errfmt.Emit(ioStreams.Stderr, err)
 	}
-	if err := downloadAndReplace(ctx, asset.BrowserDownloadURL, exe); err != nil {
+	fmt.Fprintf(ioStreams.Stderr, "→ downloading %s\n", asset.BrowserDownloadURL)
+	if err := downloadAndReplace(ctx, asset.BrowserDownloadURL, exe, ioStreams.Stderr); err != nil {
 		return errfmt.Emit(ioStreams.Stderr, err)
 	}
 	fmt.Fprintf(ioStreams.Stdout, "updated to %s\n", latestClean)
@@ -129,8 +133,10 @@ func pickAsset(assets []ghAsset, goos, goarch string) (*ghAsset, error) {
 
 // downloadAndReplace uses rename(2) over the running executable — safe
 // on Linux (incl. Android): the kernel keeps the old inode live for the
-// current process.
-func downloadAndReplace(ctx context.Context, url, dst string) error {
+// current process. progress writes a periodic `\r downloading X / Y`
+// line so a stalled download is visibly localized rather than looking
+// like a silent hang.
+func downloadAndReplace(ctx context.Context, url, dst string, progress io.Writer) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
@@ -143,7 +149,11 @@ func downloadAndReplace(ctx context.Context, url, dst string) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download %s: %s", url, resp.Status)
 	}
-	gz, err := gzip.NewReader(resp.Body)
+	body := io.Reader(resp.Body)
+	if progress != nil {
+		body = newProgressReader(resp.Body, resp.ContentLength, progress)
+	}
+	gz, err := gzip.NewReader(body)
 	if err != nil {
 		return fmt.Errorf("gzip: %w", err)
 	}
@@ -160,6 +170,7 @@ func downloadAndReplace(ctx context.Context, url, dst string) error {
 		if hdr.Typeflag != tar.TypeReg || filepath.Base(hdr.Name) != "drift" {
 			continue
 		}
+		fmt.Fprintf(progress, "→ extracting %s (%s)\n", hdr.Name, humanBytes(hdr.Size))
 		data, err := io.ReadAll(io.LimitReader(tr, maxUpdateTarEntry+1))
 		if err != nil {
 			return fmt.Errorf("tar: read drift entry: %w", err)
@@ -167,6 +178,71 @@ func downloadAndReplace(ctx context.Context, url, dst string) error {
 		if int64(len(data)) > maxUpdateTarEntry {
 			return fmt.Errorf("tar: drift entry exceeds %d byte limit", maxUpdateTarEntry)
 		}
+		fmt.Fprintf(progress, "→ writing %s\n", dst)
 		return config.WriteFileAtomic(dst, data, 0o755)
 	}
+}
+
+// progressReader wraps r and writes a one-line `\r downloading X / Y` to
+// out at most every redrawInterval. Total <= 0 means Content-Length was
+// missing; the line then drops the `/ Y` half. A final newline is
+// emitted on EOF so the next stderr line lands cleanly.
+type progressReader struct {
+	r       io.Reader
+	total   int64
+	read    int64
+	out     io.Writer
+	last    time.Time
+	started time.Time
+}
+
+const redrawInterval = 250 * time.Millisecond
+
+func newProgressReader(r io.Reader, total int64, out io.Writer) *progressReader {
+	return &progressReader{r: r, total: total, out: out, started: time.Now()}
+}
+
+func (pr *progressReader) Read(p []byte) (int, error) {
+	n, err := pr.r.Read(p)
+	pr.read += int64(n)
+	now := time.Now()
+	atEOF := errors.Is(err, io.EOF)
+	if atEOF || now.Sub(pr.last) >= redrawInterval {
+		pr.last = now
+		pr.draw(atEOF)
+	}
+	return n, err
+}
+
+func (pr *progressReader) draw(final bool) {
+	elapsed := time.Since(pr.started)
+	rate := ""
+	if elapsed > 0 {
+		rate = fmt.Sprintf(" @ %s/s", humanBytes(int64(float64(pr.read)/elapsed.Seconds())))
+	}
+	if pr.total > 0 {
+		pct := float64(pr.read) / float64(pr.total) * 100
+		fmt.Fprintf(pr.out, "\r  %s / %s (%5.1f%%)%s", humanBytes(pr.read), humanBytes(pr.total), pct, rate)
+	} else {
+		fmt.Fprintf(pr.out, "\r  %s%s", humanBytes(pr.read), rate)
+	}
+	if final {
+		fmt.Fprintln(pr.out)
+	}
+}
+
+// humanBytes renders sizes in IEC units (KiB/MiB/GiB) since CDN downloads
+// of single binaries land squarely in MiB territory. Decimal SI would
+// just make the math feel slightly wrong.
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for n2 := n / unit; n2 >= unit; n2 /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
