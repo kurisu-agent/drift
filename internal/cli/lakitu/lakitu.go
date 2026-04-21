@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 
 	"github.com/alecthomas/kong"
@@ -137,9 +138,17 @@ func Registry() *rpc.Registry {
 	server.RegisterServer(reg, &server.Deps{})
 	garage, err := config.GarageDir()
 	if err == nil {
+		// Verbose mode: tee every devpod subprocess's stdout+stderr to
+		// our own stderr so the SSH transport relays it to the drift
+		// client live (drift sets LAKITU_DEBUG=1 on the SSH command
+		// when its own --debug is on). Argv echoes ride the same path.
+		var mirror io.Writer
+		if os.Getenv("LAKITU_DEBUG") != "" {
+			mirror = os.Stderr
+		}
 		lifeDeps := &server.Deps{GarageDir: garage}
 		kartDeps := server.KartDeps{
-			Devpod:    &devpod.Client{},
+			Devpod:    &devpod.Client{Mirror: mirror},
 			GarageDir: garage,
 			OpenChest: lifeDeps.OpenChestForLifecycle,
 		}
@@ -149,7 +158,7 @@ func Registry() *rpc.Registry {
 			Deps: &server.Deps{GarageDir: garage},
 			Kart: kart.NewDeps{
 				GarageDir: garage,
-				Devpod:    &devpod.Client{},
+				Devpod:    &devpod.Client{Mirror: mirror},
 			},
 		})
 		server.RegisterKartAutostart(reg, server.KartAutostartDeps{

@@ -9,8 +9,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	osexec "os/exec"
+	"strings"
 
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 )
@@ -54,6 +56,11 @@ type Client struct {
 	Runner driftexec.Runner
 	// Env: nil inherits the parent env (the usual lakitu case on a circuit).
 	Env []string
+	// Mirror, if non-nil, receives a one-line argv echo before each spawn
+	// (with embedded URL creds redacted) AND a live copy of the child's
+	// stdout+stderr. Wire to os.Stderr in lakitu's verbose mode so SSH
+	// relays devpod progress to the drift client in real time.
+	Mirror io.Writer
 }
 
 func (c *Client) binary() string {
@@ -71,11 +78,69 @@ func (c *Client) runner() driftexec.Runner {
 }
 
 func (c *Client) run(ctx context.Context, args ...string) (driftexec.Result, error) {
+	c.echoArgv(args)
 	return c.runner().Run(ctx, driftexec.Cmd{
-		Name: c.binary(),
-		Args: args,
-		Env:  c.envOrNil(),
+		Name:         c.binary(),
+		Args:         args,
+		Env:          c.envOrNil(),
+		MirrorStdout: c.streamMirror(),
+		MirrorStderr: c.streamMirror(),
 	})
+}
+
+// streamMirror returns a per-call, per-stream redacting wrapper around
+// c.Mirror. Devpod's own log lines often print full URLs with embedded
+// PATs (from --dotfiles) — wrapping ensures the same redaction the argv
+// echo gets. Separate instances per stream avoid races on the line
+// buffer when os/exec's stdout/stderr copy goroutines fire concurrently.
+func (c *Client) streamMirror() io.Writer {
+	if c == nil || c.Mirror == nil {
+		return nil
+	}
+	return &redactingMirror{w: c.Mirror}
+}
+
+// redactingMirror line-buffers writes and runs each completed line
+// through driftexec.RedactSecrets before forwarding. ANSI escapes pass
+// through (colors preserved). A trailing partial line (no \n) buffers
+// until the next write completes it; for devpod, every log entry ends
+// in a newline so this is fine in practice.
+type redactingMirror struct {
+	w   io.Writer
+	buf []byte
+}
+
+func (m *redactingMirror) Write(p []byte) (int, error) {
+	m.buf = append(m.buf, p...)
+	for {
+		idx := bytes.IndexByte(m.buf, '\n')
+		if idx < 0 {
+			break
+		}
+		line := m.buf[:idx+1]
+		if _, err := io.WriteString(m.w, driftexec.RedactSecrets(string(line))); err != nil {
+			return 0, err
+		}
+		m.buf = m.buf[idx+1:]
+	}
+	return len(p), nil
+}
+
+// echoArgv writes a one-line `→ devpod <args>` summary to Mirror before
+// each spawn. Each arg goes through driftexec.RedactSecrets so embedded
+// URL creds (e.g. https://<pat>@github.com/...) don't end up in the
+// operator's terminal. Writes directly to c.Mirror (not the redacting
+// wrapper) since the line is already redacted and ends in a newline.
+func (c *Client) echoArgv(args []string) {
+	if c == nil || c.Mirror == nil {
+		return
+	}
+	parts := make([]string, 0, len(args)+1)
+	parts = append(parts, c.binary())
+	for _, a := range args {
+		parts = append(parts, driftexec.RedactSecrets(a))
+	}
+	fmt.Fprintf(c.Mirror, "→ %s\n", strings.Join(parts, " "))
 }
 
 func (c *Client) envOrNil() []string {
@@ -431,10 +496,14 @@ func (c *Client) InstallDotfilesWithOpts(ctx context.Context, opts InstallDotfil
 		}
 		env = append(env, opts.ProcessEnv...)
 	}
+	args := []string{"agent", "workspace", "install-dotfiles", "--repository", opts.URL}
+	c.echoArgv(args)
 	_, err := c.runner().Run(ctx, driftexec.Cmd{
-		Name: c.binary(),
-		Args: []string{"agent", "workspace", "install-dotfiles", "--repository", opts.URL},
-		Env:  env,
+		Name:         c.binary(),
+		Args:         args,
+		Env:          env,
+		MirrorStdout: c.streamMirror(),
+		MirrorStderr: c.streamMirror(),
 	})
 	return err
 }

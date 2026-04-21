@@ -53,9 +53,12 @@ func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 		// streaming RPC; tracked separately.
 		writeNewPreflight(io.Stderr, root.Output == "json", circuit, cmd)
 		// Spinner + transport hint on stderr so `drift new ... | jq` still
-		// captures a clean JSON payload on stdout.
+		// captures a clean JSON payload on stdout. Suppressed under
+		// --debug so the spinner redraw doesn't fight the live devpod
+		// output streaming back over the SSH transport's stderr.
 		msg := fmt.Sprintf("creating kart %q", cmd.Name)
-		ph := progress.Start(io.Stderr, root.Output == "json", msg, "ssh")
+		quiet := root.Output == "json" || root.Debug
+		ph := progress.Start(io.Stderr, quiet, msg, "ssh")
 		start := time.Now()
 		callErr := rpcc.Call(ctx, circuit, wire.MethodKartNew, params, &result)
 		elapsed := time.Since(start).Round(time.Second)

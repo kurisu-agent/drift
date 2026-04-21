@@ -27,6 +27,15 @@ type Cmd struct {
 	Env       []string
 	Stdin     io.Reader
 	WaitDelay time.Duration
+	// MirrorStdout / MirrorStderr, if non-nil, receive a live copy of the
+	// respective stream while the internal buffers still accumulate for
+	// the *Error tail. Used to stream subprocess output to an operator
+	// under verbose mode. Two fields (rather than one) so SSH-RPC callers
+	// can mirror stderr without stomping on the structured JSON response
+	// on stdout. No ANSI stripping or redaction on this path — colors
+	// pass through. The error-tail path runs its own redaction.
+	MirrorStdout io.Writer
+	MirrorStderr io.Writer
 }
 
 type Result struct {
@@ -127,8 +136,16 @@ func Run(ctx context.Context, cmd Cmd) (Result, error) {
 	c.Stdin = cmd.Stdin
 
 	var stdout, stderr bytes.Buffer
-	c.Stdout = &stdout
-	c.Stderr = &stderr
+	if cmd.MirrorStdout != nil {
+		c.Stdout = io.MultiWriter(&stdout, cmd.MirrorStdout)
+	} else {
+		c.Stdout = &stdout
+	}
+	if cmd.MirrorStderr != nil {
+		c.Stderr = io.MultiWriter(&stderr, cmd.MirrorStderr)
+	} else {
+		c.Stderr = &stderr
+	}
 
 	c.Cancel = func() error {
 		if c.Process == nil {
@@ -230,10 +247,18 @@ var (
 	ansiRE       = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]`)
 	secretAuthRE = regexp.MustCompile(`(?i)(authorization:\s*)\S+`)
 	secretTokRE  = regexp.MustCompile(`(?i)((?:token|api[-_]?key|password|secret)=)[^\s&"']+`)
-	secretURLRE  = regexp.MustCompile(`(https?://)[^:\s/@]+:[^@\s/]+@`)
+	// Catches both `https://user:pass@host` and `https://<token>@host`
+	// (the latter is what `git clone https://<pat>@github.com/…` uses).
+	secretURLRE = regexp.MustCompile(`(https?://)[^/@\s]+@`)
 )
 
 func stripANSI(s string) string { return ansiRE.ReplaceAllString(s, "") }
+
+// RedactSecrets is the public form of the same redaction stack the *Error
+// tail uses (Authorization headers, KEY=VALUE secret pairs, embedded
+// HTTPS credentials). Exposed so callers echoing argv to a verbose
+// mirror can scrub each argument before printing.
+func RedactSecrets(s string) string { return redactSecrets(s) }
 
 func redactSecrets(s string) string {
 	s = secretAuthRE.ReplaceAllString(s, "${1}[REDACTED]")

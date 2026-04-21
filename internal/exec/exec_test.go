@@ -1,6 +1,7 @@
 package exec_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io/fs"
@@ -268,6 +269,65 @@ func TestStderrTail_StripsANSIAndRedactsSecrets(t *testing.T) {
 	}
 	if !strings.Contains(out, "fatal: auth failed") {
 		t.Errorf("tail missing final line: %q", out)
+	}
+}
+
+// TestRunMirrorsStreamsIndependently verifies that MirrorStdout and
+// MirrorStderr each receive a live copy of their respective stream while
+// the buffers still capture for the *Error tail / Result. Two separate
+// fields (rather than a single Mirror) are necessary so the SSH-RPC
+// transport can mirror stderr without polluting stdout's structured JSON.
+func TestRunMirrorsStreamsIndependently(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	var outBuf, errBuf bytes.Buffer
+	res, err := driftexec.Run(ctx, driftexec.Cmd{
+		Name:         "/bin/sh",
+		Args:         []string{"-c", "printf hello; printf err 1>&2"},
+		MirrorStdout: &outBuf,
+		MirrorStderr: &errBuf,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := outBuf.String(); got != "hello" {
+		t.Errorf("MirrorStdout = %q, want %q", got, "hello")
+	}
+	if got := errBuf.String(); got != "err" {
+		t.Errorf("MirrorStderr = %q, want %q", got, "err")
+	}
+	// Result still carries the buffered streams — mirroring is additive.
+	if got := string(res.Stdout); got != "hello" {
+		t.Errorf("Result.Stdout = %q, want %q", got, "hello")
+	}
+	if got := string(res.Stderr); got != "err" {
+		t.Errorf("Result.Stderr = %q, want %q", got, "err")
+	}
+}
+
+// TestRedactSecrets_TokenOnlyURL covers the `https://<pat>@host` shape that
+// the broader secretURLRE catches now (plus the prior user:pass form). The
+// argv echo on devpod.Client uses RedactSecrets to scrub each arg before
+// printing under verbose mode.
+func TestRedactSecrets_TokenOnlyURL(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"token only", "https://ghp_xxx@github.com/o/r.git", "https://[REDACTED]@github.com/o/r.git"},
+		{"user pass", "https://alice:secret@example.com/r.git", "https://[REDACTED]@example.com/r.git"},
+		{"plain url unchanged", "https://github.com/o/r.git", "https://github.com/o/r.git"},
+		{"non-url unchanged", "--provider", "--provider"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := driftexec.RedactSecrets(tc.in); got != tc.want {
+				t.Errorf("RedactSecrets(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
 	}
 }
 

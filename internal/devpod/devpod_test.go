@@ -1,6 +1,7 @@
 package devpod_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -92,6 +93,74 @@ func TestUpArgsPropagateAllFlags(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("cmd mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestClientMirrorEchoesArgvAndWiresStreamMirrors verifies the verbose-mode
+// surface: a one-line argv echo lands on Mirror before each spawn (with
+// embedded URL creds redacted), and the runner Cmd carries non-nil
+// MirrorStdout/MirrorStderr wrappers so the child's live output streams
+// through with the same redaction applied to devpod's own log lines.
+func TestClientMirrorEchoesArgvAndWiresStreamMirrors(t *testing.T) {
+	t.Parallel()
+	f := &fakeRunner{replay: []fakeReply{{stdout: "ok"}}}
+	var mirror bytes.Buffer
+	c := &devpod.Client{Binary: "devpod", Runner: f, Mirror: &mirror}
+
+	if _, err := c.Up(t.Context(), devpod.UpOpts{
+		Name:     "proj",
+		Source:   "https://ghp_secret@github.com/o/r.git",
+		Provider: "docker",
+	}); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+
+	echo := mirror.String()
+	if !strings.Contains(echo, "→ devpod up") {
+		t.Errorf("argv echo missing prefix: %q", echo)
+	}
+	if strings.Contains(echo, "ghp_secret") {
+		t.Errorf("PAT leaked into argv echo: %q", echo)
+	}
+	if !strings.Contains(echo, "[REDACTED]@github.com") {
+		t.Errorf("URL creds not redacted: %q", echo)
+	}
+
+	cmd := f.calls[0]
+	if cmd.MirrorStdout == nil || cmd.MirrorStderr == nil {
+		t.Errorf("Cmd mirrors not wired: stdout=%v stderr=%v", cmd.MirrorStdout, cmd.MirrorStderr)
+	}
+	// Writing a PAT-bearing log line through the wired stdout mirror must
+	// land in the underlying Mirror with the URL creds redacted — covers
+	// the "devpod itself prints a URL with embedded PAT" case that the
+	// argv-only redaction wouldn't catch.
+	mirror.Reset()
+	if _, err := cmd.MirrorStdout.Write([]byte("Cloning https://ghp_xxx@github.com/o/r.git\n")); err != nil {
+		t.Fatalf("write to wrapped mirror: %v", err)
+	}
+	got := mirror.String()
+	if strings.Contains(got, "ghp_xxx") {
+		t.Errorf("PAT leaked through stream mirror: %q", got)
+	}
+	if !strings.Contains(got, "[REDACTED]@github.com") {
+		t.Errorf("stream mirror didn't redact: %q", got)
+	}
+}
+
+// TestClientNilMirrorIsQuiet covers the default path: no Mirror configured
+// → no argv echo, no Cmd mirror fields populated. Guards against a future
+// refactor accidentally turning verbose mode on by default.
+func TestClientNilMirrorIsQuiet(t *testing.T) {
+	t.Parallel()
+	f := &fakeRunner{replay: []fakeReply{{stdout: "ok"}}}
+	c := newClient(f) // Mirror unset
+
+	if _, err := c.Up(t.Context(), devpod.UpOpts{Name: "proj", Provider: "docker"}); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+	cmd := f.calls[0]
+	if cmd.MirrorStdout != nil || cmd.MirrorStderr != nil {
+		t.Errorf("Cmd mirrors set without Client.Mirror: stdout=%v stderr=%v", cmd.MirrorStdout, cmd.MirrorStderr)
 	}
 }
 

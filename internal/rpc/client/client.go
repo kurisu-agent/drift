@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
@@ -137,12 +138,27 @@ func SSHTransportArgs(sshArgs []string) Transport {
 }
 
 func runSSHRPC(ctx context.Context, sshArgs []string, request []byte) ([]byte, error) {
-	args := append(append([]string(nil), sshArgs...), "lakitu", "rpc")
-	res, err := driftexec.Run(ctx, driftexec.Cmd{
+	remote := []string{"lakitu", "rpc"}
+	// Forward verbose mode to the circuit. `env KEY=VALUE cmd` is the
+	// shell-agnostic way to thread an env var across SSH without depending
+	// on sshd's `AcceptEnv` config, which most circuits don't ship with
+	// LAKITU_* whitelisted.
+	if os.Getenv("DRIFT_DEBUG") != "" {
+		remote = append([]string{"env", "LAKITU_DEBUG=1"}, remote...)
+	}
+	args := append(append([]string(nil), sshArgs...), remote...)
+	cmd := driftexec.Cmd{
 		Name:  "ssh",
 		Args:  args,
 		Stdin: bytes.NewReader(request),
-	})
+	}
+	// In verbose mode, mirror SSH stderr to ours so the user sees lakitu's
+	// streamed devpod output live. Stdout stays buffered — it carries the
+	// JSON-RPC response and we're about to parse it.
+	if os.Getenv("DRIFT_DEBUG") != "" {
+		cmd.MirrorStderr = os.Stderr
+	}
+	res, err := driftexec.Run(ctx, cmd)
 	if err != nil {
 		te := &TransportError{ExitCode: -1, Cause: err}
 		var ee *driftexec.Error
