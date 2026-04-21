@@ -15,6 +15,7 @@ import (
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/devpod"
+	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/kart"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
@@ -142,9 +143,14 @@ func Registry() *rpc.Registry {
 		// our own stderr so the SSH transport relays it to the drift
 		// client live (drift sets LAKITU_DEBUG=1 on the SSH command
 		// when its own --debug is on). Argv echoes ride the same path.
+		// Wrap in driftexec.RedactingWriter so phase markers and
+		// resolver dumps that mention dechested URLs (with embedded
+		// PATs) get scrubbed before they reach the operator's terminal.
+		// devpod.Client's internal streamMirror wraps again — RedactSecrets
+		// is idempotent so the double-pass is harmless.
 		var mirror io.Writer
 		if os.Getenv("LAKITU_DEBUG") != "" {
-			mirror = os.Stderr
+			mirror = &driftexec.RedactingWriter{W: os.Stderr}
 		}
 		lifeDeps := &server.Deps{GarageDir: garage}
 		kartDeps := server.KartDeps{
@@ -160,6 +166,10 @@ func Registry() *rpc.Registry {
 				GarageDir: garage,
 				Devpod:    &devpod.Client{Mirror: mirror},
 			},
+			// Same sink as the devpod tee: phase markers, resolver dump,
+			// and chest dechest events stream alongside devpod's output
+			// over the SSH transport's stderr.
+			Verbose: mirror,
 		})
 		server.RegisterKartAutostart(reg, server.KartAutostartDeps{
 			GarageDir: garage,

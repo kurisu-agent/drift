@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"strings"
 
 	"github.com/kurisu-agent/drift/internal/chest"
@@ -21,6 +23,12 @@ type KartNewDeps struct {
 	// Kart: the handler overrides Resolver and GarageDir at call time.
 	// Tests pre-populate Devpod/Starter/Fetcher/Clock here.
 	Kart kart.NewDeps
+	// Verbose, if non-nil, receives `[chest] …` events for each chest
+	// dechest performed during a kart.new (entries used for env blocks,
+	// dotfiles_repo refs, character PATs). Names only — never values.
+	// Also propagated into the Resolver and kart.NewDeps so their own
+	// `[resolver] …` and `[kart] <phase>` lines surface on the same sink.
+	Verbose io.Writer
 }
 
 // KartNewParams field names mirror `drift new` flags so drift and lakitu
@@ -85,11 +93,13 @@ func (kd KartNewDeps) kartNewHandler(ctx context.Context, params json.RawMessage
 		},
 		ResolveEnv:      kd.resolveTuneEnv,
 		ResolveChestRef: kd.resolveChestRef,
+		Verbose:         kd.Verbose,
 	}
 
 	// Preserve caller-pre-populated fields (devpod, starter, fetcher, clock)
 	// while overriding the garage-dependent ones.
 	kd.Kart.Resolver = resolver
+	kd.Kart.Verbose = kd.Verbose
 	if kd.Kart.GarageDir == "" {
 		garage, derr := kd.Deps.garageDir()
 		if derr != nil {
@@ -133,6 +143,7 @@ func (kd KartNewDeps) resolvePATSecret(ref string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	kd.verboseChest("dechested chest:%s (character pat, %d bytes)", key, len(val))
 	return string(val), nil
 }
 
@@ -150,7 +161,18 @@ func (kd KartNewDeps) resolveChestRef(ref string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	kd.verboseChest("dechested chest:%s (%d bytes)", key, len(val))
 	return string(val), nil
+}
+
+// verboseChest emits a `[chest] …` event when verbose mode is on. Only
+// the chest entry name appears — never the value — so the line is safe
+// to surface to the operator under --debug.
+func (kd KartNewDeps) verboseChest(format string, args ...any) {
+	if kd.Verbose == nil {
+		return
+	}
+	fmt.Fprintf(kd.Verbose, "[chest] "+format+"\n", args...)
 }
 
 // openChestBackend exists separately from Deps.openChest to avoid colliding
@@ -214,6 +236,7 @@ func (kd KartNewDeps) resolveTuneEnv(refs kart.TuneEnv) (kart.ResolvedTuneEnv, e
 				}
 				return kart.ResolvedTuneEnv{}, err
 			}
+			kd.verboseChest("dechested chest:%s (env.%s.%s, %d bytes)", name, b.name, k, len(val))
 			resolved[k] = string(val)
 		}
 		*b.dst = resolved

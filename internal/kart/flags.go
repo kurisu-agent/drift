@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/kurisu-agent/drift/internal/model"
@@ -103,6 +104,11 @@ type Resolver struct {
 	// refs in non-env fields will fail with internal_error — wire it
 	// whenever ResolveEnv is wired.
 	ResolveChestRef func(ref string) (string, error)
+	// Verbose, if non-nil, receives a `[resolver] …` summary of the
+	// effective resolved inputs (tune, character, source, devcontainer,
+	// dotfiles, env block names) after each Resolve call. Wire to
+	// os.Stderr in verbose mode.
+	Verbose io.Writer
 }
 
 // Resolve applies: server defaults → tune → explicit flags, with --features
@@ -220,7 +226,7 @@ func (r *Resolver) Resolve(f Flags) (*Resolved, error) {
 		}
 	}
 
-	return &Resolved{
+	resolved := &Resolved{
 		Name:          f.Name,
 		SourceMode:    sourceMode,
 		SourceURL:     sourceURL,
@@ -234,7 +240,55 @@ func (r *Resolver) Resolve(f Flags) (*Resolved, error) {
 		Autostart:     f.Autostart,
 		Env:           resolvedEnv,
 		EnvRefs:       envRefs,
-	}, nil
+	}
+	r.logResolved(resolved)
+	return resolved, nil
+}
+
+// logResolved emits a one-line `[resolver] …` summary of the effective
+// inputs after merge — what the user actually got, not just what they
+// passed. Skipped when Verbose is nil. Values like Devcontainer and
+// Dotfiles flow through driftexec.RedactSecrets indirectly later, but
+// the resolver sees raw chest-dechested URLs here, so any embedded PAT
+// would land in this line — caller must pass a redacting writer if the
+// destination is operator-visible (lakitu wraps appropriately).
+func (r *Resolver) logResolved(resolved *Resolved) {
+	if r == nil || r.Verbose == nil || resolved == nil {
+		return
+	}
+	parts := []string{
+		fmt.Sprintf("name=%s", resolved.Name),
+		fmt.Sprintf("source=%s", resolved.SourceMode),
+	}
+	if resolved.SourceURL != "" {
+		parts = append(parts, fmt.Sprintf("url=%s", resolved.SourceURL))
+	}
+	if resolved.TuneName != "" {
+		parts = append(parts, fmt.Sprintf("tune=%s", resolved.TuneName))
+	}
+	if resolved.CharacterName != "" {
+		parts = append(parts, fmt.Sprintf("character=%s", resolved.CharacterName))
+	}
+	if resolved.Devcontainer != "" {
+		parts = append(parts, fmt.Sprintf("devcontainer=%s", resolved.Devcontainer))
+	}
+	if resolved.Dotfiles != "" {
+		parts = append(parts, fmt.Sprintf("dotfiles=%s", resolved.Dotfiles))
+	}
+	if resolved.Autostart {
+		parts = append(parts, "autostart=true")
+	}
+	// Env: just the block names + key counts so secrets don't surface.
+	if n := len(resolved.EnvRefs.Build); n > 0 {
+		parts = append(parts, fmt.Sprintf("env.build=%d", n))
+	}
+	if n := len(resolved.EnvRefs.Workspace); n > 0 {
+		parts = append(parts, fmt.Sprintf("env.workspace=%d", n))
+	}
+	if n := len(resolved.EnvRefs.Session); n > 0 {
+		parts = append(parts, fmt.Sprintf("env.session=%d", n))
+	}
+	fmt.Fprintf(r.Verbose, "[resolver] %s\n", strings.Join(parts, " "))
 }
 
 func tuneFeatures(t *Tune) string {

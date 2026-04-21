@@ -260,6 +260,38 @@ func stripANSI(s string) string { return ansiRE.ReplaceAllString(s, "") }
 // mirror can scrub each argument before printing.
 func RedactSecrets(s string) string { return redactSecrets(s) }
 
+// RedactingWriter line-buffers writes and runs each completed line
+// through RedactSecrets before forwarding to w. ANSI escapes pass
+// through (colors preserved). A trailing partial line (no `\n`)
+// buffers until the next write completes it; for streaming subprocess
+// output and one-line markers like `[kart] devpod up`, lines always
+// terminate so the buffer drains naturally.
+//
+// Goroutine-unsafe: callers that share an instance across concurrent
+// writers must wrap externally. The typical pattern is one wrapper per
+// stream (e.g. one for stdout, one for stderr) so os/exec's copy
+// goroutines don't race on the line buffer.
+type RedactingWriter struct {
+	W   io.Writer
+	buf []byte
+}
+
+func (rw *RedactingWriter) Write(p []byte) (int, error) {
+	rw.buf = append(rw.buf, p...)
+	for {
+		idx := bytes.IndexByte(rw.buf, '\n')
+		if idx < 0 {
+			break
+		}
+		line := rw.buf[:idx+1]
+		if _, err := io.WriteString(rw.W, redactSecrets(string(line))); err != nil {
+			return 0, err
+		}
+		rw.buf = rw.buf[idx+1:]
+	}
+	return len(p), nil
+}
+
 func redactSecrets(s string) string {
 	s = secretAuthRE.ReplaceAllString(s, "${1}[REDACTED]")
 	s = secretTokRE.ReplaceAllString(s, "${1}[REDACTED]")

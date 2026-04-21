@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -29,6 +30,11 @@ type NewDeps struct {
 	Fetcher DevcontainerFetcher
 	// Now: nil means time.Now().UTC(). Tests pin this for stable fixtures.
 	Now func() time.Time
+	// Verbose, if non-nil, receives `[kart] <phase>` markers around each
+	// expensive step (resolve / starter strip / devcontainer normalize /
+	// layer-1 dotfiles / devpod up / install-dotfiles). nil keeps the
+	// existing silent path.
+	Verbose io.Writer
 }
 
 // New drives kart.new end-to-end. On any error after the kart dir is
@@ -78,6 +84,7 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 		return nil, rpcerr.Internal("kart.new: stat %s: %v", kartDir, err).Wrap(err)
 	}
 
+	d.phase("resolving inputs")
 	resolved, err := d.Resolver.Resolve(f)
 	if err != nil {
 		return nil, err
@@ -98,6 +105,7 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 	var source string
 	switch resolved.SourceMode {
 	case "starter":
+		d.phase("stripping starter %q", resolved.SourceURL)
 		starterDir := filepath.Join(scratch, "starter")
 		starter := d.Starter
 		if starter == nil {
@@ -114,6 +122,9 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 		source = ""
 	}
 
+	if resolved.Devcontainer != "" {
+		d.phase("normalizing devcontainer %q", resolved.Devcontainer)
+	}
 	dcDir := filepath.Join(scratch, "devcontainer")
 	dcPath, _, err := NormalizeDevcontainer(ctx, resolved.Devcontainer, dcDir, d.Fetcher)
 	if err != nil {
@@ -122,6 +133,7 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 
 	// Always run layer-1 so the generated tmpdir can be handed to devpod
 	// uniformly; an absent character produces a no-op script.
+	d.phase("generating layer-1 dotfiles")
 	dotfilesDir := filepath.Join(scratch, "dotfiles")
 	df, err := WriteLayer1Dotfiles(dotfilesDir, resolved.Character)
 	if err != nil {
@@ -173,6 +185,7 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 		DotfilesScriptEnv: envKVPairs(resolved.Env.Build),
 		ConfigureSSH:      false,
 	}
+	d.phase("devpod up")
 	if _, err := d.Devpod.Up(ctx, up); err != nil {
 		re := rpcerr.New(rpcerr.CodeDevpod,
 			rpcerr.TypeDevpodUpFailed, "kart.new: devpod up: %v", err).Wrap(err).
@@ -195,6 +208,7 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 	// errors quietly. Command returns success but layer-1 files do not
 	// land in the container. Planned follow-up: post-up `devpod ssh
 	// --command` with the script piped over stdin.
+	d.phase("installing layer-1 dotfiles")
 	fileURL := "file://" + df.Path
 	if err := d.Devpod.InstallDotfilesWithOpts(ctx, devpod.InstallDotfilesOpts{
 		URL:        fileURL,
@@ -294,6 +308,16 @@ func (d NewDeps) now() time.Time {
 		return d.Now()
 	}
 	return time.Now().UTC()
+}
+
+// phase emits a one-line `[kart] <msg>` marker to Verbose. nil = quiet.
+// Callers always run before the expensive step so the user sees what's
+// about to start, not what just finished.
+func (d NewDeps) phase(format string, args ...any) {
+	if d.Verbose == nil {
+		return
+	}
+	fmt.Fprintf(d.Verbose, "[kart] "+format+"\n", args...)
 }
 
 // envKVPairs renders a resolved env map as sorted KEY=VALUE strings.

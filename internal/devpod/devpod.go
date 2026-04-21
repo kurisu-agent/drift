@@ -97,33 +97,7 @@ func (c *Client) streamMirror() io.Writer {
 	if c == nil || c.Mirror == nil {
 		return nil
 	}
-	return &redactingMirror{w: c.Mirror}
-}
-
-// redactingMirror line-buffers writes and runs each completed line
-// through driftexec.RedactSecrets before forwarding. ANSI escapes pass
-// through (colors preserved). A trailing partial line (no \n) buffers
-// until the next write completes it; for devpod, every log entry ends
-// in a newline so this is fine in practice.
-type redactingMirror struct {
-	w   io.Writer
-	buf []byte
-}
-
-func (m *redactingMirror) Write(p []byte) (int, error) {
-	m.buf = append(m.buf, p...)
-	for {
-		idx := bytes.IndexByte(m.buf, '\n')
-		if idx < 0 {
-			break
-		}
-		line := m.buf[:idx+1]
-		if _, err := io.WriteString(m.w, driftexec.RedactSecrets(string(line))); err != nil {
-			return 0, err
-		}
-		m.buf = m.buf[idx+1:]
-	}
-	return len(p), nil
+	return &driftexec.RedactingWriter{W: c.Mirror}
 }
 
 // echoArgv writes a one-line `→ devpod <args>` summary to Mirror before

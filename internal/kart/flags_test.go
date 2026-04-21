@@ -1,6 +1,7 @@
 package kart
 
 import (
+	"bytes"
 	"errors"
 	"strings"
 	"testing"
@@ -252,5 +253,63 @@ func TestResolveDotfilesChestRefRequiresResolver(t *testing.T) {
 	}
 	if !strings.Contains(re.Message, "dotfiles_repo") {
 		t.Errorf("error message missing dotfiles_repo context: %v", re.Message)
+	}
+}
+
+// TestResolverVerboseDumpsEffectiveValues covers the verbose-mode summary
+// the resolver emits at the end of Resolve. The line includes the
+// effective tune/character/source/etc. — what the user actually got
+// after merging defaults + tune + flags — so they don't have to guess
+// which values are in play. Verbose=nil keeps the old quiet behavior.
+func TestResolverVerboseDumpsEffectiveValues(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	r := &Resolver{
+		Defaults: ServerDefaults{DefaultTune: "default", DefaultCharacter: "ada"},
+		LoadTune: func(string) (*Tune, error) {
+			return &Tune{
+				DotfilesRepo: "https://example.com/dots.git",
+				Env: TuneEnv{
+					Build: map[string]string{"GITHUB_TOKEN": "chest:gh"},
+				},
+			}, nil
+		},
+		LoadCharacter: func(string) (*Character, error) {
+			return &Character{GitName: "A", GitEmail: "a@x"}, nil
+		},
+		ResolveEnv: func(TuneEnv) (ResolvedTuneEnv, error) {
+			return ResolvedTuneEnv{Build: map[string]string{"GITHUB_TOKEN": "x"}}, nil
+		},
+		Verbose: &buf,
+	}
+	if _, err := r.Resolve(Flags{Name: "k", Clone: "https://example.com/repo.git"}); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	for _, want := range []string{
+		"[resolver]", "name=k", "source=clone",
+		"url=https://example.com/repo.git", "tune=default", "character=ada",
+		"dotfiles=https://example.com/dots.git", "env.build=1",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in resolver dump:\n%s", want, got)
+		}
+	}
+}
+
+// TestResolverNilVerboseStaysQuiet guards against a future refactor that
+// might accidentally always-emit. The old contract was zero-output when
+// Verbose isn't wired; preserve it.
+func TestResolverNilVerboseStaysQuiet(t *testing.T) {
+	t.Parallel()
+	r := &Resolver{
+		Defaults: ServerDefaults{DefaultTune: "default"},
+		LoadTune: func(string) (*Tune, error) { return &Tune{}, nil },
+		// Verbose intentionally nil
+	}
+	// Nothing to assert beyond "no panic and no nil-deref" — Verbose
+	// is read inside logResolved, the guard there is what we're checking.
+	if _, err := r.Resolve(Flags{Name: "k"}); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -331,6 +331,37 @@ func TestRedactSecrets_TokenOnlyURL(t *testing.T) {
 	}
 }
 
+// TestRedactingWriter_LineBufferedAcrossWrites covers the common case where
+// a caller writes a credentialed URL in chunks: the redactor must buffer
+// partial lines and redact at the newline boundary, not pass through raw
+// bytes that happen to arrive before the line is complete.
+func TestRedactingWriter_LineBufferedAcrossWrites(t *testing.T) {
+	t.Parallel()
+	var dst bytes.Buffer
+	rw := &driftexec.RedactingWriter{W: &dst}
+
+	// Two-part write with the URL split mid-token.
+	if _, err := rw.Write([]byte("Cloning https://ghp_xx")); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	if got := dst.String(); got != "" {
+		t.Errorf("flushed before newline: %q", got)
+	}
+	if _, err := rw.Write([]byte("x@github.com/o/r.git done\n")); err != nil {
+		t.Fatalf("second write: %v", err)
+	}
+	got := dst.String()
+	if strings.Contains(got, "ghp_xxx") {
+		t.Errorf("PAT leaked: %q", got)
+	}
+	if !strings.Contains(got, "[REDACTED]@github.com") {
+		t.Errorf("URL creds not redacted: %q", got)
+	}
+	if !strings.HasSuffix(got, "done\n") {
+		t.Errorf("suffix after redaction not preserved: %q", got)
+	}
+}
+
 func TestStderrTail_CapsToLastLines(t *testing.T) {
 	t.Parallel()
 	var lines []string
