@@ -1,3 +1,41 @@
+# Feature workflow
+
+Direct pushes to `main` are reserved for trivial changes (typos,
+plan-doc tweaks, `.gitignore`, README edits — things that can't
+plausibly affect integration). Anything else goes through a feature
+branch and a pull request.
+
+**Use a git worktree per feature.** Keep the `main` checkout clean for
+reviewing / bisecting / cherry-picking, and let each in-flight feature
+live in its own directory:
+
+```
+git worktree add .claude/worktrees/<feature> -b feat/<feature> main
+```
+
+Worktrees live under `.claude/worktrees/` (already gitignored). One
+feature per worktree, one branch per feature. When the feature lands,
+`git worktree remove` to reclaim the directory.
+
+Why worktrees instead of `git checkout` in a single tree:
+- `main` stays immediately reviewable at HEAD — no stashing dance when
+  a hotfix interrupts the feature.
+- Parallel Claude Code sessions can work on independent features
+  without fighting for the working tree.
+- `git add -A` from the main tree no longer accidentally stages the
+  worktree dir as a submodule pointer, since it's gitignored.
+
+CI shape pairs with this:
+- PRs run the fast `test` job only (unit + lint + vulncheck,
+  under a minute).
+- Pushes to `main` run `test` **and** `integration` (real devpod +
+  docker, ~2 min). A broken merge surfaces on the push build; fix
+  forward or revert.
+- Tag pushes run both via `release.yml` and gate goreleaser on the
+  same steps — nothing ships that main hasn't already exercised.
+- Want the full suite on a feature branch before merging? Fire
+  `ci.yml` via `workflow_dispatch` against your branch.
+
 # Release discipline
 
 Never create or push a git tag unless the human explicitly asks for one in

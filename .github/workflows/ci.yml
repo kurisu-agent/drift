@@ -64,6 +64,13 @@ jobs:
 
   integration:
     name: integration
+    # Integration is slow (real devpod + docker, ~2 min). Run it only
+    # on main pushes — i.e. post-merge — and workflow_dispatch. PRs
+    # stay fast on the unit/lint/vulncheck job above; authors who
+    # want the full suite before merging can fire workflow_dispatch
+    # against their branch. release.yml keeps its own tag-trigger
+    # gate, so nothing ships that hasn't cleared the same step.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -77,8 +84,6 @@ jobs:
 
       # `nix develop` provides the exact toolchain pinned in flake.nix
       # (go, make, git, pinned devpod) so the real-devpod integration
-      # tests exercise the same binary lakitu was built against. Same
-      # step release.yml runs — catching a regression here means we
-      # never ship a broken tag.
+      # tests exercise the same binary lakitu was built against.
       - name: Integration tests
         run: nix develop --command make integration
