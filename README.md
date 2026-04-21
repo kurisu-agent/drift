@@ -1,12 +1,10 @@
 # drift
 
-**devpod for drifters.**
+**devpod for drifters.** a remote control for devpods on your servers.
 
 [![Release](https://img.shields.io/github/v/release/kurisu-agent/drift)](https://github.com/kurisu-agent/drift/releases) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![CI](https://github.com/kurisu-agent/drift/actions/workflows/ci.yml/badge.svg)](https://github.com/kurisu-agent/drift/actions)
 
 ## Why not just devpod?
-
-> drift is a remote control for devpods on your servers.
 
 [devpod] keeps workspace state on whichever client created it.
 
@@ -23,7 +21,7 @@ devpod up https://github.com/example-org/myproj.git \
   --dotfiles-script-env GITHUB_TOKEN="$GITHUB_TOKEN"
 ```
 
-drift sidesteps both problems, letting you powerslide across devices, servers, and continents with zero friction and ride the drift boost of developer experience out of every corner.
+drift powerslides past all these problems, letting you drift between devices, servers, and continents with zero friction and ride the drift boost of developer experience out of every corner.
 
 ## Highlights
 
