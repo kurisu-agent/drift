@@ -22,9 +22,11 @@ import (
 type runsCmd struct{}
 
 // runCmd: `drift run <name> [args…]`. Args are forwarded to the server's
-// template expansion.
+// template expansion. Name is optional so `drift run` alone drops to the
+// `drift runs` listing — a nicer affordance than Kong's "expected <name>"
+// for users who forget the shorthand.
 type runCmd struct {
-	Name         string   `arg:"" help:"Shorthand name (see drift runs)."`
+	Name         string   `arg:"" optional:"" help:"Shorthand name (see drift runs); omit to list."`
 	Args         []string `arg:"" optional:"" passthrough:"" help:"Positional args forwarded to the remote command."`
 	SSH          bool     `name:"ssh" help:"Force plain SSH (skip mosh) for interactive entries."`
 	ForwardAgent bool     `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
@@ -62,6 +64,12 @@ func runRunsList(ctx context.Context, io IO, root *CLI, _ runsCmd, deps deps) in
 }
 
 func runRunExec(ctx context.Context, io IO, root *CLI, cmd runCmd, deps deps) int {
+	// `drift run` with no name reuses the `drift runs` listing — same RPC,
+	// same rendering — so users get a usable error-free path instead of
+	// Kong's "expected <name>".
+	if cmd.Name == "" {
+		return runRunsList(ctx, io, root, runsCmd{}, deps)
+	}
 	_, circuit, err := resolveCircuit(root, deps)
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)

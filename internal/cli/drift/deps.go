@@ -27,7 +27,7 @@ func defaultDeps() deps {
 		clientConfigPath: config.ClientConfigPath,
 		probe:            defaultProbe(c),
 		probeInfo:        defaultProbeInfo(),
-		call:             c.Call,
+		call:             defaultCall(c),
 	}
 }
 
