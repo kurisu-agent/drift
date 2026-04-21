@@ -19,6 +19,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -26,6 +27,46 @@ import (
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
+
+// CircuitName is the canonical circuit alias used by integration tests.
+// StartReadyCircuit registers the circuit under this name so downstream
+// drift.<name> ssh aliases and probe assertions have a shared constant.
+const CircuitName = "test"
+
+// Package-scope build artifacts. TestMain compiles drift + lakitu once into
+// a shared tmp dir and sets these paths; helpers read them via their Once
+// guards. The docker image build is also memoized because every
+// `StartCircuit` would otherwise pay a daemon round-trip for an identical
+// tag.
+var (
+	pkgTmpDir string
+
+	driftBinOnce sync.Once
+	driftBinPath string
+	driftBinErr  error
+
+	lakituBinOnce sync.Once
+	lakituBinPath string
+	lakituBinErr  error
+
+	imageOnce sync.Once
+	imageErr  error
+)
+
+// TestMain builds drift + lakitu once for the whole package and tears the
+// shared tmp dir down after m.Run. Individual tests rely on driftBinary /
+// lakituBinary which gate on the Once guards below.
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "drift-integration-")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "TestMain: mkdir temp: %v\n", err)
+		os.Exit(1)
+	}
+	pkgTmpDir = dir
+	code := m.Run()
+	_ = os.RemoveAll(pkgTmpDir)
+	os.Exit(code)
+}
 
 type Circuit struct {
 	t *testing.T
@@ -101,6 +142,37 @@ func StartCircuit(ctx context.Context, t *testing.T) *Circuit {
 	return c
 }
 
+// StartReadyCircuit bundles the three steps almost every integration test
+// runs after StartCircuit: `lakitu init` on the circuit, then
+// `drift circuit add` under the canonical [circuitName]. Tests that need to
+// exercise the registration flow itself (probe_test, drift_test) still call
+// StartCircuit directly.
+//
+// If withRecorder is true, the devpod recorder shim is installed and the
+// returned *DevpodRecorder is non-nil.
+func StartReadyCircuit(ctx context.Context, t *testing.T, withRecorder bool) (*Circuit, *DevpodRecorder) {
+	t.Helper()
+	c := StartCircuit(ctx, t)
+	if err := SSHCommand(ctx, c, "lakitu", "init"); err != nil {
+		t.Fatalf("lakitu init: %v", err)
+	}
+	c.RegisterCircuit(ctx, CircuitName)
+	if withRecorder {
+		return c, c.InstallDevpodRecorder(ctx)
+	}
+	return c, nil
+}
+
+// TestCtx returns a context with the given deadline and registers its
+// cancel with t.Cleanup so tests don't have to `defer cancel()`. Prefer
+// this over hand-rolled context.WithTimeout sites.
+func TestCtx(t *testing.T, d time.Duration) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	t.Cleanup(cancel)
+	return ctx
+}
+
 func (c *Circuit) Drift(ctx context.Context, args ...string) (stdout, stderr string, exitCode int) {
 	c.t.Helper()
 	bin := driftBinary(c.t)
@@ -155,36 +227,41 @@ func (c *Circuit) generateKey() {
 	}
 }
 
+// buildImage stages the circuit image used by every StartCircuit. The
+// lakitu binary and the docker build are each guarded by a sync.Once — the
+// image tag is identical across tests and building it more than once per
+// `go test` run just burns daemon RTT.
 func (c *Circuit) buildImage(ctx context.Context) {
 	c.t.Helper()
-	lakituBin := filepath.Join(c.WorkDir, "lakitu")
-	build := osexec.CommandContext(ctx, "go", "build", "-o", lakituBin, "./cmd/lakitu")
-	build.Dir = repoRoot(c.t)
-	build.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+runtime.GOARCH)
-	if runtime.GOOS != "linux" {
-		// Cross-building for a mac host contributor running from outside
-		// the devcontainer.
-		build.Env = append(build.Env, "GOARCH=amd64")
+	lakituBin, err := lakituBinary(ctx, c.t)
+	if err != nil {
+		c.t.Fatalf("build lakitu: %v", err)
 	}
-	if out, err := build.CombinedOutput(); err != nil {
-		c.t.Fatalf("go build lakitu: %v\n%s", err, out)
-	}
-	ctxDir := filepath.Join(c.WorkDir, "docker-ctx")
-	if err := os.MkdirAll(ctxDir, 0o755); err != nil {
-		c.t.Fatalf("mkdir docker ctx: %v", err)
-	}
-	if err := copyFile(lakituBin, filepath.Join(ctxDir, "lakitu")); err != nil {
-		c.t.Fatalf("stage lakitu: %v", err)
-	}
-	if err := copyFile(filepath.Join(repoRoot(c.t), "integration", "Dockerfile.circuit"), filepath.Join(ctxDir, "Dockerfile")); err != nil {
-		c.t.Fatalf("stage dockerfile: %v", err)
-	}
-	if out, err := osexec.CommandContext(ctx, "docker", "build",
-		"-t", "drift-integration-circuit",
-		"--build-arg", "LAKITU_PATH=./lakitu",
-		ctxDir,
-	).CombinedOutput(); err != nil {
-		c.t.Fatalf("docker build: %v\n%s", err, out)
+	ctxDir := filepath.Join(pkgTmpDir, "docker-ctx")
+	imageOnce.Do(func() {
+		if err := os.MkdirAll(ctxDir, 0o755); err != nil {
+			imageErr = fmt.Errorf("mkdir docker ctx: %w", err)
+			return
+		}
+		if err := copyFile(lakituBin, filepath.Join(ctxDir, "lakitu")); err != nil {
+			imageErr = fmt.Errorf("stage lakitu: %w", err)
+			return
+		}
+		if err := copyFile(filepath.Join(repoRoot(c.t), "integration", "Dockerfile.circuit"), filepath.Join(ctxDir, "Dockerfile")); err != nil {
+			imageErr = fmt.Errorf("stage dockerfile: %w", err)
+			return
+		}
+		if out, err := osexec.CommandContext(ctx, "docker", "build",
+			"-t", "drift-integration-circuit",
+			"--build-arg", "LAKITU_PATH=./lakitu",
+			ctxDir,
+		).CombinedOutput(); err != nil {
+			imageErr = fmt.Errorf("docker build: %w\n%s", err, out)
+			return
+		}
+	})
+	if imageErr != nil {
+		c.t.Fatalf("build circuit image: %v", imageErr)
 	}
 }
 
@@ -579,7 +656,11 @@ func (c *Circuit) InstallDevpodRecorder(ctx context.Context) *DevpodRecorder {
 	binPath := filepath.Join(c.WorkDir, "devpod-shim")
 	build := osexec.CommandContext(ctx, "go", "build", "-o", binPath, "./integration/shim/devpod")
 	build.Dir = repoRoot(c.t)
-	build.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+runtime.GOARCH)
+	build.Env = overlayEnv(map[string]string{
+		"CGO_ENABLED": "0",
+		"GOOS":        "linux",
+		"GOARCH":      runtime.GOARCH,
+	})
 	if out, err := build.CombinedOutput(); err != nil {
 		c.t.Fatalf("build devpod shim: %v\n%s", err, out)
 	}
@@ -637,6 +718,19 @@ func (r *DevpodRecorder) FindInstallDotfiles(ctx context.Context) *DevpodInvocat
 		}
 	}
 	return nil
+}
+
+// FindAllUps collects every `devpod up` invocation across the recorder
+// log. Used to compare successive kart.new / kart.restart --workspace-env
+// sets.
+func (r *DevpodRecorder) FindAllUps(ctx context.Context) []DevpodInvocation {
+	var out []DevpodInvocation
+	for _, inv := range r.Invocations(ctx) {
+		if len(inv.Argv) > 0 && inv.Argv[0] == "up" {
+			out = append(out, inv)
+		}
+	}
+	return out
 }
 
 func (c *Circuit) ExecInContainer(ctx context.Context, name string, args ...string) []byte {
@@ -783,6 +877,129 @@ Host drift.%s
 	}
 }
 
+// ArgvHas reports whether flag is present in argv followed by value.
+// Example: ArgvHas(argv, "--additional-features", `{"a":1}`).
+func ArgvHas(argv []string, flag, value string) bool {
+	for i := 0; i+1 < len(argv); i++ {
+		if argv[i] == flag && argv[i+1] == value {
+			return true
+		}
+	}
+	return false
+}
+
+// ArgvValue returns the value immediately following flag, or "" if absent.
+func ArgvValue(argv []string, flag string) string {
+	for i := 0; i+1 < len(argv); i++ {
+		if argv[i] == flag {
+			return argv[i+1]
+		}
+	}
+	return ""
+}
+
+// ArgvHasValuePrefix reports whether the flag-value pair has a value that
+// starts with prefix. Used where the value's suffix is a chest-resolved
+// secret — callers assert presence/absence of the KEY= half, not the
+// literal value.
+func ArgvHasValuePrefix(argv []string, flag, prefix string) bool {
+	for i := 0; i+1 < len(argv); i++ {
+		if argv[i] == flag && strings.HasPrefix(argv[i+1], prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// EnvHas reports whether env contains the exact KEY=VALUE pair.
+func EnvHas(env []string, want string) bool {
+	for _, kv := range env {
+		if kv == want {
+			return true
+		}
+	}
+	return false
+}
+
+// DevcontainerIDs returns the unique dev.containers.id values present on
+// the outer docker daemon — one per devpod-managed workspace regardless of
+// the generated container name.
+func DevcontainerIDs(ctx context.Context, t *testing.T) map[string]struct{} {
+	t.Helper()
+	out, err := osexec.CommandContext(ctx, "docker", "ps", "-a",
+		"--filter", "label=dev.containers.id",
+		"--format", "{{.Label \"dev.containers.id\"}}").Output()
+	if err != nil {
+		t.Fatalf("docker ps dev.containers.id: %v", err)
+	}
+	ids := map[string]struct{}{}
+	for _, id := range strings.Fields(strings.TrimSpace(string(out))) {
+		ids[id] = struct{}{}
+	}
+	return ids
+}
+
+// SetDiff returns the members of a not present in b.
+func SetDiff(a, b map[string]struct{}) []string {
+	var out []string
+	for k := range a {
+		if _, ok := b[k]; !ok {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// SetDiffSet returns the members of a not present in b as a set.
+func SetDiffSet(a, b map[string]struct{}) map[string]struct{} {
+	out := map[string]struct{}{}
+	for k := range a {
+		if _, ok := b[k]; !ok {
+			out[k] = struct{}{}
+		}
+	}
+	return out
+}
+
+// WorkspaceContainerName resolves a dev.containers.id label back to the
+// container name docker exec can target. Returns "" if no container matches.
+func WorkspaceContainerName(ctx context.Context, t *testing.T, devContainerID string) string {
+	t.Helper()
+	out, err := osexec.CommandContext(ctx, "docker", "ps",
+		"--filter", "label=dev.containers.id="+devContainerID,
+		"--format", "{{.Names}}").Output()
+	if err != nil {
+		t.Fatalf("docker ps for label %q: %v", devContainerID, err)
+	}
+	name := strings.TrimSpace(string(out))
+	if name == "" || strings.ContainsRune(name, '\n') {
+		// Either no match or multiple — the first-line fallback handles the
+		// latter since devpod typically builds one container per workspace.
+		fields := strings.Fields(name)
+		if len(fields) > 0 {
+			return fields[0]
+		}
+		return ""
+	}
+	return name
+}
+
+// DockerExec runs a command inside a container and returns stdout. Used to
+// poke at workspace filesystems without routing through devpod ssh (which
+// would need a full shell session in a -t pty context).
+func DockerExec(ctx context.Context, container string, args ...string) ([]byte, error) {
+	argv := append([]string{"exec", container}, args...)
+	cmd := osexec.CommandContext(ctx, "docker", argv...)
+	out, err := cmd.Output()
+	if err != nil {
+		if ee, ok := err.(*osexec.ExitError); ok {
+			return nil, fmt.Errorf("docker exec %s %v: %w (stderr=%q)", container, args, err, ee.Stderr)
+		}
+		return nil, err
+	}
+	return out, nil
+}
+
 func dockerSocketGID() (int, error) {
 	fi, err := os.Stat("/var/run/docker.sock")
 	if err != nil {
@@ -888,16 +1105,50 @@ func repoRoot(t *testing.T) string {
 	return strings.TrimSpace(string(out))
 }
 
+// driftBinary returns the path to the compiled drift binary, building it
+// once per package run into pkgTmpDir. Subsequent callers hit the cached
+// path.
 func driftBinary(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "drift")
-	build := osexec.Command("go", "build", "-o", bin, "./cmd/drift")
-	build.Dir = repoRoot(t)
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build drift: %v\n%s", err, out)
+	driftBinOnce.Do(func() {
+		bin := filepath.Join(pkgTmpDir, "drift")
+		build := osexec.Command("go", "build", "-o", bin, "./cmd/drift")
+		build.Dir = repoRoot(t)
+		if out, err := build.CombinedOutput(); err != nil {
+			driftBinErr = fmt.Errorf("build drift: %w\n%s", err, out)
+			return
+		}
+		driftBinPath = bin
+	})
+	if driftBinErr != nil {
+		t.Fatalf("%v", driftBinErr)
 	}
-	return bin
+	return driftBinPath
+}
+
+// lakituBinary returns the path to a cross-compiled lakitu binary built
+// once per package run under pkgTmpDir. GOARCH honors runtime.GOARCH so an
+// arm64 Docker Desktop VM on an Apple Silicon host gets a native binary
+// (the prior "amd64 on non-linux" override produced an x86_64 binary that
+// the arm64 VM couldn't execute).
+func lakituBinary(ctx context.Context, t *testing.T) (string, error) {
+	t.Helper()
+	lakituBinOnce.Do(func() {
+		bin := filepath.Join(pkgTmpDir, "lakitu")
+		build := osexec.CommandContext(ctx, "go", "build", "-o", bin, "./cmd/lakitu")
+		build.Dir = repoRoot(t)
+		build.Env = overlayEnv(map[string]string{
+			"CGO_ENABLED": "0",
+			"GOOS":        "linux",
+			"GOARCH":      runtime.GOARCH,
+		})
+		if out, err := build.CombinedOutput(); err != nil {
+			lakituBinErr = fmt.Errorf("go build lakitu: %w\n%s", err, out)
+			return
+		}
+		lakituBinPath = bin
+	})
+	return lakituBinPath, lakituBinErr
 }
 
 func run(ctx context.Context, name string, args ...string) error {

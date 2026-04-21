@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
+
+	"github.com/kurisu-agent/drift/internal/name"
 )
 
 // Server holds the fields settable via `lakitu config set` / config.set RPC.
@@ -20,7 +23,10 @@ type Server struct {
 
 // CircuitNameRE is the shared slug shape for circuit names, mirrored on
 // the client side for local validation of `circuit add`/`circuit set`.
-var CircuitNameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+// Kept as a compiled alias so external callers that match against the
+// raw regexp continue to work; new callers should prefer
+// name.Validate("circuit", s), which also rejects the reserved slugs.
+var CircuitNameRE = regexp.MustCompile(name.Pattern)
 
 type ChestConfig struct {
 	Backend string `yaml:"backend"`
@@ -47,8 +53,10 @@ func DefaultServer() *Server {
 }
 
 func (s *Server) Validate() error {
-	if s.Name != "" && !CircuitNameRE.MatchString(s.Name) {
-		return fmt.Errorf("config: name %q invalid (must match %s)", s.Name, CircuitNameRE.String())
+	if s.Name != "" {
+		if err := name.Validate("circuit", s.Name); err != nil {
+			return fmt.Errorf("config: %w", err)
+		}
 	}
 	if s.DefaultTune == "" {
 		return fmt.Errorf("config: default_tune is required")
@@ -76,38 +84,14 @@ func (s *Server) ResolveName() string {
 	if err != nil || h == "" {
 		return "circuit"
 	}
-	if i := indexByte(h, '.'); i >= 0 {
+	if i := strings.IndexByte(h, '.'); i >= 0 {
 		h = h[:i]
 	}
-	h = toLowerASCII(h)
-	if !CircuitNameRE.MatchString(h) {
+	h = strings.ToLower(h)
+	if err := name.Validate("circuit", h); err != nil {
 		return "circuit"
 	}
 	return h
-}
-
-// indexByte / toLowerASCII keep this file std-lib-only; the strings
-// package would be fine but these are ~3 lines each and mirror the tiny
-// helper style elsewhere in config/.
-func indexByte(s string, b byte) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == b {
-			return i
-		}
-	}
-	return -1
-}
-
-func toLowerASCII(s string) string {
-	out := make([]byte, len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= 'A' && c <= 'Z' {
-			c += 'a' - 'A'
-		}
-		out[i] = c
-	}
-	return string(out)
 }
 
 // LoadServer: unlike the client config, a missing server config is an

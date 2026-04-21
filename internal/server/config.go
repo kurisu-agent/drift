@@ -97,6 +97,11 @@ func applyConfigKey(s *config.Server, key, value string) error {
 	return nil
 }
 
+// LoadServerConfig loads the server config.yaml via the Deps-resolved
+// garage. Exported so embedding/wrapping handlers (e.g. KartMigrateDeps)
+// don't have to duplicate the load path.
+func (d *Deps) LoadServerConfig() (*config.Server, error) { return d.loadServerConfig() }
+
 func (d *Deps) loadServerConfig() (*config.Server, error) {
 	srv, err := config.LoadServer(d.serverConfigPath())
 	if err != nil {
@@ -106,6 +111,10 @@ func (d *Deps) loadServerConfig() (*config.Server, error) {
 	}
 	return srv, nil
 }
+
+// ServerConfigPath is the exported form of serverConfigPath — see the
+// private version for the $HOME fallback contract.
+func (d *Deps) ServerConfigPath() string { return d.serverConfigPath() }
 
 // serverConfigPath swallows the fallback error: a missing $HOME on a
 // circuit is catastrophic enough that LoadServer will surface it via the

@@ -56,7 +56,7 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 		return nil, err
 	}
 
-	kartDir := filepath.Join(d.GarageDir, "karts", f.Name)
+	kartDir := config.KartDir(d.GarageDir, f.Name)
 	if _, err := os.Stat(kartDir); err == nil {
 		// Distinguish a real collision (devpod knows the workspace too) from
 		// a stale corpse (garage-only, from a crashed `drift new`).
@@ -104,7 +104,7 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 
 	var source string
 	switch resolved.SourceMode {
-	case "starter":
+	case model.SourceModeStarter:
 		d.phase("stripping starter %q", resolved.SourceURL)
 		starterDir := filepath.Join(scratch, "starter")
 		starter := d.Starter
@@ -116,9 +116,9 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 				"kart.new: starter: %v", err).Wrap(err)
 		}
 		source = starterDir
-	case "clone":
+	case model.SourceModeClone:
 		source = resolved.SourceURL
-	case "none":
+	case model.SourceModeNone:
 		source = ""
 	}
 
@@ -142,11 +142,11 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 
 	// Write kart config BEFORE devpod up so an interrupt mid-up produces
 	// stale-kart state (garage entry without a running workspace).
-	if err := writeKartConfig(kartDir, resolved, d.now()); err != nil {
+	if err := writeKartConfig(d.GarageDir, resolved, d.now()); err != nil {
 		return nil, rpcerr.Internal("kart.new: write config: %v", err).Wrap(err)
 	}
 	if resolved.Autostart {
-		if err := writeAutostartMarker(kartDir); err != nil {
+		if err := writeAutostartMarker(d.GarageDir, resolved.Name); err != nil {
 			return nil, rpcerr.Internal("kart.new: autostart marker: %v", err).Wrap(err)
 		}
 	}
@@ -164,7 +164,7 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 		defer cancel()
 		_ = d.Devpod.Delete(bg, resolved.Name)
 		if err := os.RemoveAll(kartDir); err != nil {
-			_ = writeErrorMarker(kartDir, cause)
+			_ = writeErrorMarker(d.GarageDir, resolved.Name, cause)
 		}
 		return cause
 	}
@@ -216,7 +216,7 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 	}); err != nil {
 		return &Result{
 			Name:      resolved.Name,
-			Source:    KartSource{Mode: resolved.SourceMode, URL: resolved.SourceURL},
+			Source:    KartSource{Mode: string(resolved.SourceMode), URL: resolved.SourceURL},
 			Tune:      resolved.TuneName,
 			Character: resolved.CharacterName,
 			Autostart: resolved.Autostart,
@@ -228,7 +228,7 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 
 	return &Result{
 		Name:      resolved.Name,
-		Source:    KartSource{Mode: resolved.SourceMode, URL: resolved.SourceURL},
+		Source:    KartSource{Mode: string(resolved.SourceMode), URL: resolved.SourceURL},
 		Tune:      resolved.TuneName,
 		Character: resolved.CharacterName,
 		Autostart: resolved.Autostart,
@@ -256,32 +256,28 @@ type Result struct {
 // carry identical JSON.
 type KartSource = model.KartSource
 
-func writeKartConfig(kartDir string, r *Resolved, now time.Time) error {
-	if err := os.MkdirAll(kartDir, 0o700); err != nil {
+func writeKartConfig(garageDir string, r *Resolved, now time.Time) error {
+	if err := os.MkdirAll(config.KartDir(garageDir, r.Name), 0o700); err != nil {
 		return err
 	}
-	type onDisk struct {
-		Repo         string              `yaml:"repo,omitempty"`
-		Tune         string              `yaml:"tune,omitempty"`
-		Character    string              `yaml:"character,omitempty"`
-		SourceMode   string              `yaml:"source_mode,omitempty"`
-		CreatedAt    string              `yaml:"created_at,omitempty"`
-		Env          *TuneEnv            `yaml:"env,omitempty"`
-		MigratedFrom *model.MigratedFrom `yaml:"migrated_from,omitempty"`
-	}
-	cfg := onDisk{
+	cfg := model.KartConfig{
 		Repo:       r.SourceURL,
 		Tune:       r.TuneName,
 		Character:  r.CharacterName,
-		SourceMode: r.SourceMode,
+		SourceMode: string(r.SourceMode),
 		CreatedAt:  now.Format(time.RFC3339),
+		// Autostart rides on the config now (cluster 25). The sentinel file
+		// is still written by writeAutostartMarker for back-compat with
+		// readers that predate the field — drop once everyone migrates.
+		Autostart: r.Autostart,
 	}
 	// Persist the chest:<name> refs — never the resolved values. Lets
 	// start/restart re-resolve from chest without the user re-declaring,
 	// and `kart info` can render what's wired without exposing secrets.
+	// TuneEnv is a value with `omitempty`; yaml.v3 omits the whole `env:`
+	// key when every block is nil, so an empty EnvRefs round-trips cleanly.
 	if !r.EnvRefs.IsEmpty() {
-		refs := r.EnvRefs
-		cfg.Env = &refs
+		cfg.Env = r.EnvRefs
 	}
 	if !r.MigratedFrom.IsZero() {
 		mf := r.MigratedFrom
@@ -291,21 +287,26 @@ func writeKartConfig(kartDir string, r *Resolved, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	return config.WriteFileAtomic(filepath.Join(kartDir, "config.yaml"), buf, 0o644)
+	return config.WriteFileAtomic(config.KartConfigPath(garageDir, r.Name), buf, 0o644)
 }
 
-func writeAutostartMarker(kartDir string) error {
-	return config.WriteFileAtomic(filepath.Join(kartDir, "autostart"), nil, 0o644)
+// writeAutostartMarker writes the legacy sentinel file so readers that
+// predate the `autostart` field on KartConfig still flag the kart for
+// boot-time start. The field on config.yaml is authoritative; this
+// sentinel is belt-and-braces for one release and can be dropped once
+// every on-disk config carries the field.
+func writeAutostartMarker(garageDir, kartName string) error {
+	return config.WriteFileAtomic(config.KartAutostartPath(garageDir, kartName), nil, 0o644)
 }
 
 // writeErrorMarker stamps the `status` file with "error" so the next
 // drift-new sees the kart as stale and exits stale_kart (code:4).
-func writeErrorMarker(kartDir string, cause error) error {
+func writeErrorMarker(garageDir, kartName string, cause error) error {
 	msg := "error"
 	if cause != nil {
 		msg = "error: " + cause.Error()
 	}
-	return config.WriteFileAtomic(filepath.Join(kartDir, "status"), []byte(msg), 0o644)
+	return config.WriteFileAtomic(config.KartStatusPath(garageDir, kartName), []byte(msg), 0o644)
 }
 
 func (d NewDeps) now() time.Time {

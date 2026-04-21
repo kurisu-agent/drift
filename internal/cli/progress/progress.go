@@ -79,26 +79,43 @@ func (ph *Phase) suffix(elapsed time.Duration) string {
 }
 
 // runTimer refreshes the spinner suffix each second so a long-running op
-// shows an elapsed counter past 10s. Exits cleanly when Stop/Succeed/Fail
-// close timerStop.
+// shows an elapsed counter past 10s. The first 10s are a no-op — suffix()
+// renders the same string while elapsed < showTimerAfter — so we sleep
+// until the threshold before starting the per-second ticker. Exits
+// cleanly when Stop/Succeed/Fail close timerStop.
 func (ph *Phase) runTimer() {
 	defer ph.timerDone.Done()
+	timer := time.NewTimer(showTimerAfter)
+	defer timer.Stop()
+	select {
+	case <-ph.timerStop:
+		return
+	case <-timer.C:
+	}
 	tk := time.NewTicker(time.Second)
 	defer tk.Stop()
+	ph.refreshSuffix()
 	for {
 		select {
 		case <-ph.timerStop:
 			return
 		case <-tk.C:
-			if ph.spinner == nil {
-				return
-			}
-			elapsed := time.Since(ph.start)
-			ph.spinner.Lock()
-			ph.spinner.Suffix = " " + ph.suffix(elapsed)
-			ph.spinner.Unlock()
+			ph.refreshSuffix()
 		}
 	}
+}
+
+// refreshSuffix rewrites the spinner's suffix with the current elapsed
+// time. Returns early if the spinner has already been torn down — a race
+// the previous code handled inline.
+func (ph *Phase) refreshSuffix() {
+	if ph.spinner == nil {
+		return
+	}
+	elapsed := time.Since(ph.start)
+	ph.spinner.Lock()
+	ph.spinner.Suffix = " " + ph.suffix(elapsed)
+	ph.spinner.Unlock()
 }
 
 // Succeed clears the spinner and prints a green "✓ <finalMsg>" line. When

@@ -61,3 +61,48 @@ type MigratedFrom struct {
 
 // IsZero reports whether no migration origin was recorded.
 func (m MigratedFrom) IsZero() bool { return m.Context == "" && m.Name == "" }
+
+// SourceMode is the closed enum for a kart's creation source. Persisted as
+// the raw string (YAML tag keeps omitempty compatibility with existing
+// on-disk configs); the Go type only affects compile-time callers.
+type SourceMode string
+
+const (
+	// SourceModeClone: kart provisioned from an existing git repo.
+	SourceModeClone SourceMode = "clone"
+	// SourceModeStarter: kart seeded from a starter template.
+	SourceModeStarter SourceMode = "starter"
+	// SourceModeNone: kart created with no source (blank workspace).
+	SourceModeNone SourceMode = "none"
+)
+
+// KartConfig is the unified on-disk shape for garage/karts/<name>/config.yaml.
+// Used by both the kart.new writer and the server reader so the two sides
+// cannot drift silently. Additive only — every field is omitempty so older
+// on-disk files still round-trip.
+type KartConfig struct {
+	Repo         string        `yaml:"repo,omitempty" json:"repo,omitempty"`
+	Tune         string        `yaml:"tune,omitempty" json:"tune,omitempty"`
+	Character    string        `yaml:"character,omitempty" json:"character,omitempty"`
+	SourceMode   string        `yaml:"source_mode,omitempty" json:"source_mode,omitempty"`
+	User         string        `yaml:"user,omitempty" json:"user,omitempty"`
+	Shell        string        `yaml:"shell,omitempty" json:"shell,omitempty"`
+	Image        string        `yaml:"image,omitempty" json:"image,omitempty"`
+	Workdir      string        `yaml:"workdir,omitempty" json:"workdir,omitempty"`
+	CreatedAt    string        `yaml:"created_at,omitempty" json:"created_at,omitempty"`
+	Autostart    bool          `yaml:"autostart,omitempty" json:"autostart,omitempty"`
+	Env          TuneEnv       `yaml:"env,omitempty" json:"env,omitempty"`
+	MigratedFrom *MigratedFrom `yaml:"migrated_from,omitempty" json:"migrated_from,omitempty"`
+}
+
+// Character is the on-disk shape for garage/characters/<name>.yaml. PATSecret
+// always carries a chest:<name> reference — literal tokens are rejected at
+// add time. The resolved (dechested) form lives elsewhere as a separate
+// type so the boundary between "on disk" and "resolved" stays explicit.
+type Character struct {
+	GitName    string `yaml:"git_name" json:"git_name"`
+	GitEmail   string `yaml:"git_email" json:"git_email"`
+	GithubUser string `yaml:"github_user,omitempty" json:"github_user,omitempty"`
+	SSHKeyPath string `yaml:"ssh_key_path,omitempty" json:"ssh_key_path,omitempty"`
+	PATSecret  string `yaml:"pat_secret,omitempty" json:"pat_secret,omitempty"`
+}

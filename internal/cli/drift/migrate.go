@@ -1,10 +1,12 @@
 package drift
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 
 	"github.com/charmbracelet/huh"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
@@ -47,7 +49,7 @@ func runMigrate(ctx context.Context, io IO, root *CLI, _ migrateCmd, deps deps) 
 		return errfmt.Emit(io.Stderr,
 			errors.New("drift migrate requires an interactive terminal"))
 	}
-	circuit, err := resolveCircuit(root, deps)
+	_, circuit, err := resolveCircuit(root, deps)
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
@@ -178,7 +180,7 @@ func pickOneOf(label string, options []string, def string) (string, bool, error)
 		huhOpts = append(huhOpts, huh.NewOption(o, o))
 	}
 	pick := def
-	if !containsString(options, pick) {
+	if !slices.Contains(options, pick) {
 		pick = options[0]
 	}
 	sel := huh.NewSelect[string]().
@@ -203,7 +205,7 @@ func confirmMigration(c migrateCandidate, tune, character string) (bool, error) 
 	var confirmed bool
 	title := fmt.Sprintf("Create drift kart from %s/%s?", c.Context, c.Name)
 	desc := fmt.Sprintf("source: %s\ntune: %s\ncharacter: %s",
-		c.Repo, or(tune, "(none)"), or(character, "(none)"))
+		c.Repo, cmp.Or(tune, "(none)"), cmp.Or(character, "(none)"))
 	prompt := huh.NewConfirm().
 		Title(title).
 		Description(desc).
@@ -308,20 +310,4 @@ func printManualCleanup(w io.Writer, c migrateCandidate) {
 	} else {
 		fmt.Fprintf(w, "  devpod --context %s delete %s\n", c.Context, c.Name)
 	}
-}
-
-func containsString(xs []string, v string) bool {
-	for _, x := range xs {
-		if x == v {
-			return true
-		}
-	}
-	return false
-}
-
-func or(a, fallback string) string {
-	if a == "" {
-		return fallback
-	}
-	return a
 }

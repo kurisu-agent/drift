@@ -6,6 +6,7 @@ package server
 import (
 	"github.com/kurisu-agent/drift/internal/chest"
 	"github.com/kurisu-agent/drift/internal/config"
+	"github.com/kurisu-agent/drift/internal/devpod"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/wire"
@@ -20,6 +21,11 @@ type Deps struct {
 	// run-registry handlers read a fixture runs.yaml instead of the real
 	// user home. Empty falls back to config.DriftHomeDir().
 	DriftHome string
+	// Devpod is the wired devpod.Client — used by VerifyHandler so the
+	// pinned binary lakitu set up is probed rather than whatever $PATH
+	// happens to turn up. nil falls back to a default-configured client
+	// so tests/unit uses that don't care about devpod still work.
+	Devpod *devpod.Client
 	// OpenChest: nil runs per-call [chest.Open] against the current server
 	// config so a backend swap via `config.set` takes effect next RPC.
 	OpenChest func(garageDir string, cfg config.ChestConfig) (chest.Backend, error)
@@ -31,7 +37,7 @@ func RegisterServer(reg *rpc.Registry, d *Deps) {
 	}
 	reg.Register(wire.MethodServerVersion, VersionHandler)
 	reg.Register(wire.MethodServerInfo, d.InfoHandler)
-	reg.Register(wire.MethodServerVerify, VerifyHandler)
+	reg.Register(wire.MethodServerVerify, d.VerifyHandler)
 
 	reg.Register(wire.MethodConfigShow, d.ConfigShowHandler)
 	reg.Register(wire.MethodConfigSet, d.ConfigSetHandler)

@@ -1,7 +1,6 @@
 package drift
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,11 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/cli/progress"
 	"github.com/kurisu-agent/drift/internal/cli/style"
 	"github.com/kurisu-agent/drift/internal/kart"
-	"github.com/kurisu-agent/drift/internal/rpc/client"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
@@ -43,12 +42,11 @@ func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 	}
 	expandOwnerRepoShorthand(&cmd)
 
-	circuit, err := resolveCircuit(root, deps)
+	_, circuit, err := resolveCircuit(root, deps)
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
 
-	rpcc := client.New()
 	var result kart.Result
 	for {
 		params := buildNewParams(cmd)
@@ -66,7 +64,7 @@ func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 		quiet := root.Output == "json" || root.Debug
 		ph := progress.Start(io.Stderr, quiet, msg, "ssh")
 		start := time.Now()
-		callErr := rpcc.Call(ctx, circuit, wire.MethodKartNew, params, &result)
+		callErr := deps.call(ctx, circuit, wire.MethodKartNew, params, &result)
 		elapsed := time.Since(start).Round(time.Second)
 		if callErr == nil {
 			ph.Succeed(fmt.Sprintf("created kart %q in %s", result.Name, elapsed))
@@ -93,12 +91,7 @@ func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 	}
 
 	if root.Output == "json" {
-		buf, mErr := json.Marshal(result)
-		if mErr != nil {
-			return errfmt.Emit(io.Stderr, mErr)
-		}
-		fmt.Fprintln(io.Stdout, string(buf))
-		return 0
+		return emitJSON(io, result)
 	}
 	fmt.Fprintf(io.Stdout, "created kart %q\n", result.Name)
 	if result.Source.Mode != "none" && result.Source.URL != "" {
@@ -117,7 +110,7 @@ func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 		fmt.Fprintf(io.Stderr, "warning: %s\n", result.Warning)
 	}
 	if shouldAutoConnect(cmd, root, io) {
-		return doConnect(ctx, io, root, circuit, result.Name, false, false)
+		return doConnect(ctx, io, root, deps, circuit, result.Name, false, false)
 	}
 	return 0
 }
@@ -211,19 +204,23 @@ func writeNewPreflight(w interface{ Write(p []byte) (int, error) }, jsonMode boo
 	}
 }
 
-// promptNewKartName asks for a replacement name after a name_collision.
-// Blank input cancels (returns ""). EOF is treated as cancel so ctrl-D
-// matches the behavior of every other prompt in the codebase.
+// promptNewKartName asks for a replacement name after a name_collision
+// via huh, matching the other interactive prompts. Blank input cancels
+// (returns ""); ctrl-C / esc also cancels via huh.ErrUserAborted.
 func promptNewKartName(io IO, taken string) (string, error) {
 	p := style.For(io.Stderr, false)
 	fmt.Fprintf(io.Stderr, "%s kart %q already exists on this circuit.\n", p.Warn("!"), taken)
-	fmt.Fprint(io.Stderr, "  new name (empty to cancel): ")
-	br := bufio.NewReader(io.Stdin)
-	line, err := br.ReadString('\n')
-	if err != nil && line == "" {
-		return "", nil
+	var val string
+	input := huh.NewInput().
+		Title("new name (empty to cancel)").
+		Value(&val)
+	if err := huh.NewForm(huh.NewGroup(input)).Run(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return "", nil
+		}
+		return "", err
 	}
-	return strings.TrimSpace(line), nil
+	return strings.TrimSpace(val), nil
 }
 
 // expandOwnerRepoShorthand lets `drift new owner/repo` stand in for

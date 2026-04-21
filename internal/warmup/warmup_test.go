@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,6 +36,11 @@ type fakeState struct {
 	calls []rpcCall
 	// callRoutes lets tests supply canned responses per method.
 	callRoutes map[string]callRoute
+
+	// mu serializes the record-keeping slice appends. runSummary fans out
+	// per-circuit calls across goroutines, so Probe/Call callbacks race on
+	// probeCalls/calls without this guard (-race in CI catches it).
+	mu sync.Mutex
 }
 
 type rpcCall struct {
@@ -62,7 +68,9 @@ func (s *fakeState) deps() Deps {
 			return nil
 		},
 		Probe: func(_ context.Context, circuit string) (*ProbeResult, error) {
+			s.mu.Lock()
 			s.probeCalls = append(s.probeCalls, circuit)
+			s.mu.Unlock()
 			if err, ok := s.probeErrs[circuit]; ok {
 				return nil, err
 			}
@@ -98,7 +106,9 @@ func (s *fakeState) deps() Deps {
 			return &wire.ServerInfo{Name: host, Version: "v0.1.0", API: 1}, nil
 		},
 		Call: func(_ context.Context, circuit, method string, params, out any) error {
+			s.mu.Lock()
 			s.calls = append(s.calls, rpcCall{circuit, method, params})
+			s.mu.Unlock()
 			if r, ok := s.callRoutes[method]; ok {
 				// Let tests populate character.list output via route.out.
 				if out != nil && r.out != nil {

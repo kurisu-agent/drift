@@ -45,16 +45,7 @@ func runInit(ctx context.Context, io IO, root *CLI, cmd initCmd, deps deps) int 
 			if err != nil {
 				return err
 			}
-			if err := mgr.EnsureInclude(userSSHConfigPath()); err != nil {
-				return err
-			}
-			if err := mgr.EnsureSocketsDir(); err != nil {
-				return err
-			}
-			if err := mgr.WriteCircuitBlock(circuit, hostPart, userPart); err != nil {
-				return err
-			}
-			return mgr.EnsureWildcardBlock()
+			return mgr.InstallCircuit(userSSHConfigPath(), circuit, hostPart, userPart)
 		},
 		Probe: func(ctx context.Context, circuit string) (*warmup.ProbeResult, error) {
 			if deps.probe == nil {
@@ -83,12 +74,12 @@ func runInit(ctx context.Context, io IO, root *CLI, cmd initCmd, deps deps) int 
 	return errfmt.Emit(io.Stderr, err)
 }
 
-// stdinIsTTY: avoid pulling golang.org/x/term for one call — *os.File
-// mode check covers files/pipes/TTYs. Non-*os.File readers (bytes.Buffer
-// in unit tests) are treated as non-TTY; those tests drive the library
-// directly with IsTTY set explicitly.
-func stdinIsTTY(r any) bool {
-	f, ok := r.(*os.File)
+// isTTY: avoid pulling golang.org/x/term for one call — *os.File mode
+// check covers files/pipes/TTYs. Non-*os.File readers/writers
+// (bytes.Buffer in unit tests) are treated as non-TTY; those tests drive
+// the library directly with IsTTY set explicitly.
+func isTTY(fd any) bool {
+	f, ok := fd.(*os.File)
 	if !ok {
 		return false
 	}
@@ -98,3 +89,7 @@ func stdinIsTTY(r any) bool {
 	}
 	return st.Mode()&os.ModeCharDevice != 0
 }
+
+// stdinIsTTY / stdoutIsTTY are thin aliases kept for call-site clarity.
+func stdinIsTTY(r any) bool  { return isTTY(r) }
+func stdoutIsTTY(w any) bool { return isTTY(w) }

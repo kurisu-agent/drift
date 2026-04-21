@@ -20,7 +20,7 @@ func runKartEnable(ctx context.Context, io IO, root *CLI, cmd enableCmd, deps de
 // runKartAutostart: enable/disable are idempotent — redundant calls still
 // return 0 with the final state.
 func runKartAutostart(ctx context.Context, io IO, root *CLI, name, method, verb string, deps deps) int {
-	circuit, err := resolveCircuit(root, deps)
+	_, circuit, err := resolveCircuit(root, deps)
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}

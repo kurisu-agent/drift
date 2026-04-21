@@ -11,7 +11,6 @@ import (
 	"github.com/kurisu-agent/drift/internal/cli/progress"
 	"github.com/kurisu-agent/drift/internal/cli/style"
 	"github.com/kurisu-agent/drift/internal/connect"
-	"github.com/kurisu-agent/drift/internal/rpc/client"
 )
 
 type connectCmd struct {
@@ -21,23 +20,22 @@ type connectCmd struct {
 }
 
 func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps) int {
-	circuit, err := resolveCircuit(root, deps)
+	_, circuit, err := resolveCircuit(root, deps)
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
-	return doConnect(ctx, io, root, circuit, cmd.Name, cmd.SSH, cmd.ForwardAgent)
+	return doConnect(ctx, io, root, deps, circuit, cmd.Name, cmd.SSH, cmd.ForwardAgent)
 }
 
 // doConnect is the shared body behind `drift connect` and the post-create
 // auto-connect path of `drift new`. Both paths have already resolved the
 // circuit, so the helper takes it as a parameter instead of re-resolving.
-func doConnect(ctx context.Context, io IO, root *CLI, circuit, name string, forceSSH, forwardAgent bool) int {
-	rpcClient := client.New()
+func doConnect(ctx context.Context, io IO, root *CLI, deps deps, circuit, name string, forceSSH, forwardAgent bool) int {
 	transport := connect.Transport(osexec.LookPath, forceSSH)
 	ph := progress.Start(io.Stderr, root.Output == "json",
 		"connecting to kart \""+name+"\"", transport)
 	d := connect.Deps{
-		Call: rpcClient.Call,
+		Call: deps.call,
 		// Stop the spinner right before Exec takes the TTY so it doesn't
 		// race the interactive child for cursor control.
 		OnReady: ph.Stop,

@@ -3,9 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"path/filepath"
 
-	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/devpod"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
@@ -13,10 +11,15 @@ import (
 )
 
 // KartMigrateDeps wires the migrate handlers. Reuses KartDeps for the
-// garage walk + devpod client; AgentRoot lets tests point scans at a
-// tmpdir instead of the real ~/.devpod/agent/contexts/.
+// garage walk + devpod client, and embeds *Deps so the server config
+// loader is available without a second wiring site; AgentRoot lets tests
+// point scans at a tmpdir instead of the real ~/.devpod/agent/contexts/.
 type KartMigrateDeps struct {
 	KartDeps
+	// Server: optional — when non-nil, default_tune / default_character
+	// are surfaced for the migrate CLI's dropdown pre-selection. nil skips
+	// the echo and clients fall back to no pre-selection.
+	Server *Deps
 	// AgentRoot: empty falls back to devpod.AgentContextsRoot().
 	AgentRoot string
 }
@@ -103,10 +106,16 @@ func (d KartMigrateDeps) kartMigrateListHandler(_ context.Context, params json.R
 
 	// Server defaults for the dropdown pre-selection. Missing config is
 	// tolerated — an uninitialized server returns empty defaults and the
-	// CLI falls back to no pre-selection.
+	// CLI falls back to no pre-selection. Falls back to a temporary
+	// *Deps built from d.GarageDir when Server wasn't wired so existing
+	// tests that only populate KartDeps keep passing.
 	var defaultTune, defaultCharacter string
-	if d.GarageDir != "" {
-		if srv, err := config.LoadServer(filepath.Join(d.GarageDir, "config.yaml")); err == nil {
+	srvDeps := d.Server
+	if srvDeps == nil && d.GarageDir != "" {
+		srvDeps = &Deps{GarageDir: d.GarageDir}
+	}
+	if srvDeps != nil {
+		if srv, err := srvDeps.LoadServerConfig(); err == nil {
 			defaultTune = srv.DefaultTune
 			defaultCharacter = srv.DefaultCharacter
 		}

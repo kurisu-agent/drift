@@ -7,12 +7,28 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/kurisu-agent/drift/internal/cli/style"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 )
+
+// keyIndent is the two-space prefix on data lines (`  key: value`);
+// blockIndent is the four-space prefix for the lines inside a fenced
+// block (devpod stderr/stdout tail).
+const (
+	keyIndent   = "  "
+	blockIndent = "    "
+)
+
+// ansiRE matches SGR / CSI escape sequences. Only errfmt needs to scrub
+// devpod's own colored output before re-emitting it through our styler;
+// promote back to `internal/cli/style` if a second caller appears.
+var ansiRE = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]`)
+
+func stripANSI(s string) string { return ansiRE.ReplaceAllString(s, "") }
 
 // Emit returns the exit code the caller should propagate. Behavior:
 //   - *rpcerr.Error (directly or via errors.As): rendered with type + data
@@ -33,7 +49,7 @@ func Emit(w io.Writer, err error) int {
 	if errors.As(err, &re) && re != nil {
 		fmt.Fprintf(w, "%s %s\n", p.Error("error:"), re.Message)
 		if re.Type != "" {
-			fmt.Fprintf(w, "  %s %s\n", p.Dim("type:"), re.Type)
+			fmt.Fprintf(w, "%s%s %s\n", keyIndent, p.Dim("type:"), re.Type)
 		}
 		var devpodStderr, devpodStdout string
 		keys := make([]string, 0, len(re.Data))
@@ -54,7 +70,7 @@ func Emit(w io.Writer, err error) int {
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			fmt.Fprintf(w, "  %s %v\n", p.Dim(k+":"), re.Data[k])
+			fmt.Fprintf(w, "%s%s %v\n", keyIndent, p.Dim(k+":"), re.Data[k])
 		}
 		if devpodStderr != "" {
 			writeDevpodTail(w, p, "devpod stderr:", devpodStderr)
@@ -73,12 +89,12 @@ func Emit(w io.Writer, err error) int {
 // sits flush against the next piece of output. label is the header (e.g.
 // "devpod stderr:" / "devpod stdout:") so multiple streams can stack.
 func writeDevpodTail(w io.Writer, p *style.Palette, label, tail string) {
-	cleaned := strings.TrimRight(style.StripANSI(tail), "\n")
+	cleaned := strings.TrimRight(stripANSI(tail), "\n")
 	if cleaned == "" {
 		return
 	}
-	fmt.Fprintln(w, p.Dim("  "+label))
+	fmt.Fprintln(w, p.Dim(keyIndent+label))
 	for _, line := range strings.Split(cleaned, "\n") {
-		fmt.Fprintln(w, p.Dim("    "+line))
+		fmt.Fprintln(w, p.Dim(blockIndent+line))
 	}
 }

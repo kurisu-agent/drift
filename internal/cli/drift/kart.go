@@ -10,23 +10,25 @@ import (
 )
 
 // resolveCircuit: -c wins, falling back to default_circuit. Empty is an
-// error — every kart verb requires a target.
-func resolveCircuit(root *CLI, deps deps) (string, error) {
-	if root != nil && root.Circuit != "" {
-		return root.Circuit, nil
-	}
+// error — every kart verb requires a target. Returns the loaded client
+// config alongside the resolved name so callers that need both can avoid
+// a second LoadClient round-trip.
+func resolveCircuit(root *CLI, deps deps) (*config.Client, string, error) {
 	cfgPath, err := deps.clientConfigPath()
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 	cfg, err := config.LoadClient(cfgPath)
 	if err != nil {
-		return "", err
+		return nil, "", err
+	}
+	if root != nil && root.Circuit != "" {
+		return cfg, root.Circuit, nil
 	}
 	if cfg.DefaultCircuit == "" {
-		return "", errors.New("no circuit specified and no default_circuit in client config (drift circuit add --default)")
+		return nil, "", errors.New("no circuit specified and no default_circuit in client config (drift circuit add --default)")
 	}
-	return cfg.DefaultCircuit, nil
+	return cfg, cfg.DefaultCircuit, nil
 }
 
 // emitKartResult: terse text so stdout stays scriptable; JSON passes

@@ -7,12 +7,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/kurisu-agent/drift/internal/chest"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/model"
+	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"gopkg.in/yaml.v3"
@@ -43,50 +44,23 @@ type TuneNameOnly struct {
 	Name string `json:"name"`
 }
 
-// Local regex: unlike characters/karts, `default` is a legitimate tune
-// name (`--tune default` resolves to it). Only `none` is reserved — it's
-// the sentinel for "no tune at all".
-var tuneNameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
-
-func validateTuneName(n string) error {
-	if n == "none" {
-		return rpcerr.UserError(rpcerr.TypeInvalidName,
-			"tune name %q is reserved", n).With("name", n)
-	}
-	if !tuneNameRE.MatchString(n) {
-		return rpcerr.UserError(rpcerr.TypeInvalidName,
-			"tune name %q is invalid (must match %s)", n, tuneNameRE.String()).
-			With("name", n).With("pattern", tuneNameRE.String())
-	}
-	return nil
-}
-
 func (d *Deps) TuneListHandler(_ context.Context, params json.RawMessage) (any, error) {
 	var p struct{}
 	if err := rpc.BindParams(params, &p); err != nil {
 		return nil, err
 	}
-	dir := d.tuneDir()
-	entries, err := os.ReadDir(dir)
+	names, err := listYAMLNames(d.tuneDir())
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return []TuneResult{}, nil
-		}
 		return nil, rpcerr.Internal("tune.list: %v", err).Wrap(err)
 	}
-	out := make([]TuneResult, 0, len(entries))
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
-			continue
-		}
-		n := strings.TrimSuffix(e.Name(), ".yaml")
+	out := make([]TuneResult, 0, len(names))
+	for _, n := range names {
 		t, err := d.loadTune(n)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, TuneResult{Name: n, Tune: *t})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 
@@ -111,7 +85,7 @@ func (d *Deps) TuneSetHandler(_ context.Context, params json.RawMessage) (any, e
 	if err := rpc.BindParams(params, &p); err != nil {
 		return nil, err
 	}
-	if err := validateTuneName(p.Name); err != nil {
+	if err := name.ValidateAllowing("tune", p.Name, "default"); err != nil {
 		return nil, err
 	}
 	if err := validateTuneEnv(p.Env); err != nil {
@@ -219,10 +193,10 @@ func validateTuneEnv(e model.TuneEnv) error {
 		sort.Strings(keys)
 		for _, k := range keys {
 			v := b.m[k]
-			if !strings.HasPrefix(v, chestRefPrefix) {
+			if !strings.HasPrefix(v, chest.RefPrefix) {
 				return rpcerr.UserError(rpcerr.TypeInvalidFlag,
 					"tune.set: env.%s.%s must be a chest reference of the form %q; literal values are not accepted",
-					b.name, k, chestRefPrefix+"<name>").
+					b.name, k, chest.RefPrefix+"<name>").
 					With("block", b.name).With("key", k)
 			}
 		}

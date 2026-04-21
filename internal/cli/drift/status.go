@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/cli/style"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/version"
 	"github.com/kurisu-agent/drift/internal/wire"
+	"golang.org/x/sync/errgroup"
 )
 
 type statusCmd struct {
@@ -55,30 +55,37 @@ func runStatus(ctx context.Context, io IO, root *CLI, cmd statusCmd, deps deps) 
 	}
 	sort.Strings(names)
 
-	res := statusResult{
-		Drift:          version.Get().Version,
-		DefaultCircuit: cfg.DefaultCircuit,
-		Circuits:       make([]statusCircuit, 0, len(names)),
-	}
-	for _, n := range names {
-		sc := statusCircuit{
+	// Pre-size the slice so probes write into their owning index; order
+	// stays deterministic regardless of which probe finishes first.
+	circuits := make([]statusCircuit, len(names))
+	for i, n := range names {
+		circuits[i] = statusCircuit{
 			Name:    n,
 			Host:    cfg.Circuits[n].Host,
 			Default: n == cfg.DefaultCircuit,
 		}
-		if !cmd.NoProbe {
-			fillProbe(ctx, deps, n, &sc)
+	}
+	if !cmd.NoProbe {
+		var eg errgroup.Group
+		eg.SetLimit(4)
+		for i := range circuits {
+			eg.Go(func() error {
+				fillProbe(ctx, deps, circuits[i].Name, &circuits[i])
+				return nil
+			})
 		}
-		res.Circuits = append(res.Circuits, sc)
+		// fillProbe never returns non-nil — probe errors land in
+		// sc.ProbeError — so we drop the (always-nil) Wait() result.
+		_ = eg.Wait()
+	}
+	res := statusResult{
+		Drift:          version.Get().Version,
+		DefaultCircuit: cfg.DefaultCircuit,
+		Circuits:       circuits,
 	}
 
 	if root != nil && root.Output == "json" {
-		buf, err := json.Marshal(res)
-		if err != nil {
-			return errfmt.Emit(io.Stderr, err)
-		}
-		fmt.Fprintln(io.Stdout, string(buf))
-		return 0
+		return emitJSON(io, res)
 	}
 
 	p := style.For(io.Stdout, false)
@@ -136,25 +143,21 @@ func runStatus(ctx context.Context, io IO, root *CLI, cmd statusCmd, deps deps) 
 		rows = append(rows, []string{marker, sc.Name, sc.Host, lakitu, api, latency, karts})
 		probeFailed = append(probeFailed, sc.ProbeError != "")
 	}
-	writeTable(io.Stdout, p, headers, rows, func(row, col int, _ *style.Palette) lipgloss.Style {
+	writeTable(io.Stdout, p, headers, rows, colorCellStyler(func(row, col int) tableCell {
 		switch col {
 		case 0: // chevron marker
 			if row == defaultRow {
-				return lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true)
+				return tableCell{Color: tableCellSuccess, Bold: true}
 			}
 		case 1: // CIRCUIT name
-			base := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-			if row == defaultRow {
-				return base.Bold(true)
-			}
-			return base
+			return tableCell{Color: tableCellAccent, Bold: row == defaultRow}
 		case 3, 4, 5, 6: // LAKITU / API / LATENCY / KARTS
 			if row >= 0 && row < len(probeFailed) && probeFailed[row] {
-				return lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+				return tableCell{Color: tableCellError}
 			}
 		}
-		return lipgloss.NewStyle()
-	})
+		return tableCell{}
+	}))
 
 	// Emit any probe errors as dim hints below the table so they don't
 	// crowd the row layout but still give the user a "why."

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kurisu-agent/drift/internal/model"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 )
 
@@ -23,13 +24,13 @@ func TestResolveSourcePriority(t *testing.T) {
 		name    string
 		flags   Flags
 		tune    *Tune
-		wantMd  string
+		wantMd  model.SourceMode
 		wantURL string
 	}{
-		{"clone wins", Flags{Clone: "c"}, &Tune{Starter: "t"}, "clone", "c"},
-		{"starter wins over tune", Flags{Starter: "s"}, &Tune{Starter: "t"}, "starter", "s"},
-		{"tune starter", Flags{}, &Tune{Starter: "t"}, "starter", "t"},
-		{"none", Flags{}, nil, "none", ""},
+		{"clone wins", Flags{Clone: "c"}, &Tune{Starter: "t"}, model.SourceModeClone, "c"},
+		{"starter wins over tune", Flags{Starter: "s"}, &Tune{Starter: "t"}, model.SourceModeStarter, "s"},
+		{"tune starter", Flags{}, &Tune{Starter: "t"}, model.SourceModeStarter, "t"},
+		{"none", Flags{}, nil, model.SourceModeNone, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -66,7 +67,7 @@ func TestResolveTuneNone(t *testing.T) {
 	if got.TuneName != "" {
 		t.Fatalf("tune should be empty for --tune=none, got %q", got.TuneName)
 	}
-	if got.SourceMode != "none" {
+	if got.SourceMode != model.SourceModeNone {
 		t.Fatalf("source mode should be none, got %q", got.SourceMode)
 	}
 }
@@ -92,7 +93,7 @@ func TestResolveDefaultTuneMissingDegradesToNone(t *testing.T) {
 	if got.Tune != nil {
 		t.Fatalf("Tune should be nil, got %+v", got.Tune)
 	}
-	if got.SourceMode != "none" {
+	if got.SourceMode != model.SourceModeNone {
 		t.Fatalf("SourceMode should be none, got %q", got.SourceMode)
 	}
 }

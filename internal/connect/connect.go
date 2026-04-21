@@ -12,6 +12,7 @@ import (
 	osexec "os/exec"
 	"time"
 
+	"github.com/kurisu-agent/drift/internal/devpod"
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/wire"
@@ -64,7 +65,7 @@ func Run(ctx context.Context, d Deps, opts Options, stdio Stdio) error {
 		return err
 	}
 
-	useMosh := !opts.ForceSSH && moshAvailable(d)
+	useMosh := Transport(d.LookPath, opts.ForceSSH) == "mosh"
 	bin, argv := buildConnectArgv(useMosh, opts, sessionEnv)
 	if d.OnReady != nil {
 		d.OnReady()
@@ -106,14 +107,6 @@ func withDefaults(d Deps) Deps {
 		d.Sleep = time.Sleep
 	}
 	return d
-}
-
-func moshAvailable(d Deps) bool {
-	if d.LookPath == nil {
-		return false
-	}
-	_, err := d.LookPath("mosh")
-	return err == nil
 }
 
 // Transport reports which binary `drift connect` would shell out to given
@@ -164,16 +157,16 @@ func ensureRunning(ctx context.Context, d Deps, opts Options) error {
 		return err
 	}
 	switch info.Status {
-	case "running":
+	case devpod.StatusRunning:
 		return nil
-	case "stopped":
+	case devpod.StatusStopped:
 		var out map[string]any
 		if err := d.Call(ctx, opts.Circuit, wire.MethodKartStart,
 			map[string]string{"name": opts.Kart}, &out); err != nil {
 			return err
 		}
 		return pollUntilRunning(ctx, d, opts)
-	case "busy":
+	case devpod.StatusBusy:
 		return pollUntilRunning(ctx, d, opts)
 	default:
 		return rpcerr.Conflict(
@@ -184,8 +177,12 @@ func ensureRunning(ctx context.Context, d Deps, opts Options) error {
 	}
 }
 
+// InfoResult is the narrow slice of kart.info that Run needs; Status uses
+// the devpod enum so the switch in ensureRunning/pollUntilRunning is
+// exhaustive at compile time. The underlying JSON string shape is
+// unchanged — devpod.Status is a typed string.
 type InfoResult struct {
-	Status string `json:"status"`
+	Status devpod.Status `json:"status"`
 }
 
 func fetchInfo(ctx context.Context, d Deps, opts Options) (InfoResult, error) {
@@ -216,10 +213,12 @@ func pollUntilRunning(ctx context.Context, d Deps, opts Options) error {
 		if err != nil {
 			return err
 		}
-		if info.Status == "running" {
+		switch info.Status {
+		case devpod.StatusRunning:
 			return nil
-		}
-		if info.Status != "busy" && info.Status != "stopped" {
+		case devpod.StatusBusy, devpod.StatusStopped:
+			// fall through to the deadline/sleep tail below
+		default:
 			return rpcerr.Conflict(
 				"kart_not_connectable",
 				"kart %q reached state %q while waiting for running",
