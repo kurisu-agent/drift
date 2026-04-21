@@ -70,13 +70,13 @@ jobs:
 
   integration:
     name: integration
-    # Integration is slow (real devpod + docker, ~2 min). Run it only
-    # on main pushes — i.e. post-merge — and workflow_dispatch. PRs
-    # stay fast on the unit/lint/vulncheck job above; authors who
-    # want the full suite before merging can fire workflow_dispatch
-    # against their branch. release.yml keeps its own tag-trigger
-    # gate, so nothing ships that hasn't cleared the same step.
-    if: github.event_name != 'pull_request'
+    # Integration is ~2 min (real devpod + docker). Runs on every PR
+    # and every main push. Previously PR-gated off, which let #4 break
+    # the suite post-merge (TestMain in a non-test file compiled clean
+    # but never ran, and fast CI had no docker path to surface the
+    # regression). Pair this with "require branches up to date before
+    # merging" in branch protection so a green PR actually reflects the
+    # post-merge state. release.yml keeps its own tag-trigger gate.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
