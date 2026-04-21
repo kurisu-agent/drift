@@ -18,8 +18,9 @@ config, the agent credentials, the workspace metadata all live in
 running devpod from Termux on Android and you're in a whole separate
 world of hurt; it mostly doesn't run there at all.
 
-drift sidesteps both problems, and provides extra developer experience,
-drift boost included.
+drift sidesteps both problems, letting you powerslide across devices,
+servers, and continents with zero friction and ride the drift boost of
+developer experience out of every corner.
 
 ## Highlights
 
