@@ -30,7 +30,7 @@ drift sidesteps both problems, letting you powerslide across devices, servers, a
 - **Multiple circuits, one client.** Register more than one host and switch between them with `drift -c <name>`. Fly from Osaka to London and the box in your attic is suddenly 200ms away; spin up a kart on a nearer circuit and keep going. `drift status` shows every circuit you've registered side by side.
 - **AI at the CLI.** `drift run ai` drops you into Claude on the circuit with drift's command surface preloaded. Long commands are painful to type on a phone, easy to dictate.
 - **Persistent shells by default.** `drift connect` uses mosh so sessions survive wifi drops and closing the lid. Falls back to ssh when mosh isn't available.
-- **One-flag workspaces.** Preset environments (`tunes`) bundle features, starter repos, and dotfiles, so `drift new myproj --tune <name>` produces a working container without per-project setup.
+- **One-flag workspaces.** Preset environments (`tunes`) bundle features, starter repos, and dotfiles, so `drift new myproj --tune <name>` produces a container with the comforts you expect.
 - **Secrets that stay on the server.** The `chest` on the circuit holds your SSH keys and PATs; karts read them at start. A borrowed phone never needs to carry them.
 
 ## What you need
@@ -39,35 +39,23 @@ A Linux host you can SSH to, with Docker. That's it. The client side runs on mac
 
 ## Install
 
-On the host (circuit):
+On the host (circuit) — [scripts/install-lakitu.sh](scripts/install-lakitu.sh) installs the `lakitu` binary, wires up the systemd user unit + linger, adds you to the `docker` group, optionally installs mosh, and runs `lakitu init`. The pinned devpod binary downloads itself (SHA-verified) on first run.
 
 ```bash
-curl -fsSL https://github.com/kurisu-agent/drift/releases/latest/download/lakitu_linux_amd64.tar.gz \
-  | sudo tar -xz -C /usr/local/bin lakitu
-curl -L -o devpod https://github.com/skevetter/devpod/releases/latest/download/devpod-linux-amd64
-sudo install -m 0755 devpod /usr/local/bin/devpod
-sudo usermod -aG docker "$USER"
-sudo apt-get install -y mosh                    # optional, resilient shells
-sudo loginctl enable-linger "$USER"             # systemd user units
-mkdir -p ~/.config/systemd/user
-curl -fsSL https://raw.githubusercontent.com/kurisu-agent/drift/main/packaging/systemd/lakitu-kart@.service \
-  > ~/.config/systemd/user/lakitu-kart@.service
-lakitu init
+curl -fsSL https://raw.githubusercontent.com/kurisu-agent/drift/main/scripts/install-lakitu.sh | sh
 ```
 
-On the client:
+On the client — [scripts/install-drift.sh](scripts/install-drift.sh) drops the `drift` binary into `~/.local/bin` (or `/usr/local/bin` if run as root, or `$PREFIX/bin` on Termux). `DRIFT_INSTALL_DIR=` overrides the target; `DRIFT_VERSION=v1.2.3` pins a tag. `drift update` pulls newer releases.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kurisu-agent/drift/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/kurisu-agent/drift/main/scripts/install-drift.sh | sh
 ```
 
-Installs into `~/.local/bin` (or `/usr/local/bin` if run as root). `DRIFT_INSTALL_DIR=` overrides the target; `DRIFT_VERSION=v1.2.3` pins a tag. `drift update` pulls newer releases.
-
-Nix users can skip both:
+A Nix flake is available for the elite users:
 
 ```bash
 nix profile install github:kurisu-agent/drift            # client
-nix profile install github:kurisu-agent/drift#circuit    # server bundle
+nix profile install github:kurisu-agent/drift#circuit    # server bundle (includes mosh)
 ```
 
 ## Quickstart

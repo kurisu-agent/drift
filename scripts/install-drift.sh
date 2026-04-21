@@ -1,6 +1,6 @@
 #!/bin/sh
 # drift client installer. Piped from raw.githubusercontent.com:
-#   curl -fsSL https://raw.githubusercontent.com/kurisu-agent/drift/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/kurisu-agent/drift/main/scripts/install-drift.sh | sh
 #
 # Env overrides:
 #   DRIFT_INSTALL_DIR   target dir (default: $HOME/.local/bin, or /usr/local/bin if root, or $PREFIX/bin on Termux)
