@@ -6,13 +6,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/kurisu-agent/drift/actions/workflows/ci.yml/badge.svg)](https://github.com/kurisu-agent/drift/actions)
 
-drift keeps your dev environment on a Linux host you control, so switching
-devices or losing signal doesn't cost you work. Two binaries ship from
-this repo. `drift` is the thin SSH client you install on every device you
-code from. `lakitu` runs on the host and manages devcontainers via
-[devpod], holding workspaces, secrets, and git identities server-side. A
-fresh client picks up where you left off with one `drift init`.
-
 ## Why not just devpod?
 
 > drift is a remote control for devpod running on a server.
@@ -23,9 +16,11 @@ and the laptop's devpod has no idea that workspace exists: the provider
 config, the agent credentials, the workspace metadata all live in
 `~/.devpod/` on the first machine. That's the client-state problem. Try
 running devpod from Termux on Android and you're in a whole separate
-world of hurt; it mostly doesn't run there at all. drift sidesteps both.
-All state lives on the server, the client is just SSH, and any device
-with `drift` sees the same karts and the same characters.
+world of hurt; it mostly doesn't run there at all.
+
+drift sidesteps both. All state lives on the server, the client is just
+SSH, and any device with `drift` sees the same karts and the same
+characters.
 
 ## Highlights
 
