@@ -23,6 +23,51 @@ about drift/lakitu from training data.
 - **character** — a git-identity profile (name, email, SSH key, optional PAT).
 - **tune** — a preset: devcontainer features + starter repo + dotfiles.
 - **chest** — secrets store (`~/.drift/garage/chest/`, mode 0700).
+- **run** — a named shorthand in `~/.drift/runs.yaml` invoked as
+  `drift run <name> [args…]` from the workstation. This is how the user
+  got here: `drift run ai`. `drift runs` lists them.
+
+## Registering a new run
+
+Edit `~/.drift/runs.yaml` on this circuit. Every entry is one block:
+
+```yaml
+runs:
+  <name>:
+    description: "one-line summary shown in `drift runs`"
+    mode: interactive | output
+    post: ""                        # optional; connect-last-scaffold is the
+                                    # only hook currently known to the client
+    command: |
+      <shell snippet, expanded server-side>
+```
+
+Names match `^[a-z][a-z0-9_-]{0,62}$`. Picking the mode:
+
+- **interactive** — the client allocates a TTY and uses mosh when it can.
+  Right for anything that wants a prompt or full-screen UI (shells, editors,
+  claude, `htop`).
+- **output** — plain ssh with no pty. Right for request/response things
+  whose stdout the user reads or pipes (`uptime`, `df`, `ping`, one-shot
+  scripts).
+
+Template data available inside `command:` (Go `text/template`):
+
+- `{{ .Arg 0 }}` — Nth positional arg; missing indices render as `""`.
+- `{{ .Args }}` — every arg, each single-quoted, joined by spaces.
+- `{{ .Arg 0 | shq }}` — POSIX-shell single-quote a single value. Prefer
+  this over bare `{{ .Arg 0 }}` whenever the value could contain whitespace
+  or quotes, i.e. almost always.
+
+Larger prompts / scripts belong under `~/.drift/recipes/` (the scaffolder
+entry appends `recipes/scaffolder.md` as claude's system prompt — mirror
+that pattern for new recipes). The registry file is user-editable and
+`lakitu init` only seeds it on first run; later re-inits never overwrite.
+
+After editing, no server restart is needed — the `run.list` / `run.resolve`
+RPCs re-read the file on every call. Verify with `lakitu help` (which
+lists the RPC methods) or by asking the user to run `drift runs` on their
+workstation.
 
 ## Scope
 
@@ -31,5 +76,8 @@ You will not use `drift` commands on this machine. Everything you can
 actuate from here is `lakitu …` (local CLI, for inspection and edits that
 don't go through the wire) or direct filesystem reads under
 `~/.drift/garage/`. When the user asks about something that only the
-client can do (`drift init`, `drift new`, `drift connect`, …), say so
-and suggest the command they would run on their workstation.
+client can do (`drift init`, `drift new`, `drift connect`, `drift run`,
+`drift runs`, …), say so and suggest the command they would run on their
+workstation.
+
+<!-- drift:user — your notes below this line are preserved across `lakitu init`. Anything above this marker is regenerated from drift's embedded template. -->

@@ -379,24 +379,88 @@ func TestEnsureClaudeMD_WritesOnceThenPreserves(t *testing.T) {
 		t.Errorf("CLAUDE.md missing expected header, got:\n%s", body)
 	}
 
-	// User edits get preserved on re-init.
-	edited := []byte("# my custom notes\n")
+	// Idempotent second call: no content change → no rewrite.
+	created, err = config.EnsureClaudeMD(home)
+	if err != nil {
+		t.Fatalf("EnsureClaudeMD (second, unchanged): %v", err)
+	}
+	if created {
+		t.Error("second call on unchanged file should report created=false")
+	}
+}
+
+// Legacy: a file without the drift:user marker (pre-existing from before
+// this pattern existed, or one an operator hand-wrote) stays completely
+// untouched so we never clobber content we can't safely re-merge.
+func TestEnsureClaudeMD_LegacyFileWithoutMarkerIsPreserved(t *testing.T) {
+	home := t.TempDir()
+	edited := []byte("# my custom notes\nnothing drift-shaped here\n")
 	if err := os.WriteFile(filepath.Join(home, "CLAUDE.md"), edited, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	created, err = config.EnsureClaudeMD(home)
+	created, err := config.EnsureClaudeMD(home)
 	if err != nil {
-		t.Fatalf("EnsureClaudeMD (second): %v", err)
+		t.Fatalf("EnsureClaudeMD: %v", err)
 	}
 	if created {
-		t.Error("second call should report created=false")
+		t.Error("legacy file should not be reported as created/refreshed")
 	}
 	got, err := os.ReadFile(filepath.Join(home, "CLAUDE.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(got) != string(edited) {
-		t.Errorf("CLAUDE.md clobbered: got %q, want %q", got, edited)
+		t.Errorf("legacy CLAUDE.md was rewritten: got %q, want %q", got, edited)
+	}
+}
+
+// Managed: a file with the marker gets its system header refreshed on
+// re-init while anything past the marker is preserved byte-for-byte.
+func TestEnsureClaudeMD_MarkerSplitsSystemFromUser(t *testing.T) {
+	home := t.TempDir()
+
+	// Seed with a fresh copy, then prepend stale system content above the
+	// marker to simulate an out-of-date install.
+	if _, err := config.EnsureClaudeMD(home); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	path := filepath.Join(home, "CLAUDE.md")
+	fresh, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	markerIdx := strings.Index(string(fresh), "<!-- drift:user")
+	if markerIdx < 0 {
+		t.Fatal("embedded CLAUDE.md is missing the drift:user marker")
+	}
+	markerLineEnd := markerIdx + strings.Index(string(fresh[markerIdx:]), "\n") + 1
+
+	stale := "# this header is out of date and should be replaced\n\n"
+	userNotes := "\n## operator notes\n- remember to rotate the chest key monthly\n"
+	mixed := stale + string(fresh[:markerLineEnd]) + userNotes
+	if err := os.WriteFile(path, []byte(mixed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	refreshed, err := config.EnsureClaudeMD(home)
+	if err != nil {
+		t.Fatalf("EnsureClaudeMD (refresh): %v", err)
+	}
+	if !refreshed {
+		t.Error("stale-header file should be reported as refreshed")
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(got), "out of date") {
+		t.Errorf("stale header survived refresh:\n%s", got)
+	}
+	if !strings.Contains(string(got), userNotes) {
+		t.Errorf("operator notes dropped by refresh:\n%s", got)
+	}
+	if !strings.HasPrefix(string(got), "# circuit — agent context") {
+		t.Errorf("refreshed file doesn't start with the embedded header:\n%s", got[:min(200, len(got))])
 	}
 }
 
