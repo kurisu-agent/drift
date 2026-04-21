@@ -49,11 +49,16 @@ linters:
         linters:
           - gosec
           - errcheck
-      # The devpod shim is an integration-test artifact that runs inside a
-      # throwaway container; permissive perms and tainted paths are inherent.
-      - path: integration/shim/
+      # The integration harness is test scaffolding — build-tagged out of
+      # the production binary, runs against docker-in-docker fixtures, and
+      # writes deliberately-permissive fixture perms / taints arg paths /
+      # asserts on exec.ExitError the way os/exec does. Treat it like
+      # _test.go files plus the shim's gosec relaxation.
+      - path: integration/
         linters:
           - gosec
+          - errcheck
+          - errorlint
 
 issues:
   max-issues-per-linter: 0
