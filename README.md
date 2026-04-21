@@ -15,6 +15,8 @@ fresh client picks up where you left off with one `drift init`.
 
 ## Why not just devpod?
 
+> drift is a remote control for devpod running on a server.
+
 [devpod] keeps workspace state on whichever client created it. Spin up a
 workspace from your desktop, then try to manage it from your laptop,
 and the laptop's devpod has no idea that workspace exists: the provider
