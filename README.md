@@ -10,42 +10,21 @@
 
 > drift is a remote control for devpods on your servers.
 
-[devpod] keeps workspace state on whichever client created it. Spin up a
-workspace from your desktop, then try to manage it from your laptop,
-and the laptop's devpod has no idea that workspace exists: the provider
-config, the agent credentials, the workspace metadata all live in
-`~/.devpod/` on the first machine. That's the client-state problem. Try
-running devpod from Termux on Android and you're in a whole separate
-world of hurt; it mostly doesn't run there at all.
+[devpod] keeps workspace state on whichever client created it. Spin up a workspace from your desktop, then try to manage it from your laptop, and the laptop's devpod has no idea that workspace exists: the provider config, the agent credentials, the workspace metadata all live in `~/.devpod/` on the first machine. That's the client-state problem. Try running devpod from Termux on Android and you're in a whole separate world of hurt; it mostly doesn't run there at all.
 
-drift sidesteps both problems, letting you powerslide across devices,
-servers, and continents with zero friction and ride the drift boost of
-developer experience out of every corner.
+drift sidesteps both problems, letting you powerslide across devices, servers, and continents with zero friction and ride the drift boost of developer experience out of every corner.
 
 ## Highlights
 
-- **Multiple circuits, one client.** Register more than one host and
-  switch between them with `drift -c <name>`. Fly from Osaka to London
-  and the box in your attic is suddenly 200ms away; spin up a kart on a
-  nearer circuit and keep going. `drift status` shows every circuit
-  you've registered side by side.
-- **AI at the CLI.** `drift run ai` drops you into Claude on the circuit
-  with drift's command surface preloaded. Long commands are painful to
-  type on a phone, easy to dictate.
-- **Persistent shells by default.** `drift connect` uses mosh so sessions
-  survive wifi drops and closing the lid. Falls back to ssh when mosh
-  isn't available.
-- **One-flag workspaces.** Preset environments (`tunes`) bundle features,
-  starter repos, and dotfiles, so `drift new myproj --tune <name>`
-  produces a working container without per-project setup.
-- **Secrets that stay on the server.** The `chest` on the circuit holds
-  your SSH keys and PATs; karts read them at start. A borrowed phone
-  never needs to carry them.
+- **Multiple circuits, one client.** Register more than one host and switch between them with `drift -c <name>`. Fly from Osaka to London and the box in your attic is suddenly 200ms away; spin up a kart on a nearer circuit and keep going. `drift status` shows every circuit you've registered side by side.
+- **AI at the CLI.** `drift run ai` drops you into Claude on the circuit with drift's command surface preloaded. Long commands are painful to type on a phone, easy to dictate.
+- **Persistent shells by default.** `drift connect` uses mosh so sessions survive wifi drops and closing the lid. Falls back to ssh when mosh isn't available.
+- **One-flag workspaces.** Preset environments (`tunes`) bundle features, starter repos, and dotfiles, so `drift new myproj --tune <name>` produces a working container without per-project setup.
+- **Secrets that stay on the server.** The `chest` on the circuit holds your SSH keys and PATs; karts read them at start. A borrowed phone never needs to carry them.
 
 ## What you need
 
-A Linux host you can SSH to, with Docker. That's it. The client side runs
-on macOS, Linux, or Termux on Android.
+A Linux host you can SSH to, with Docker. That's it. The client side runs on macOS, Linux, or Termux on Android.
 
 ## Install
 
@@ -71,9 +50,7 @@ On the client:
 curl -fsSL https://raw.githubusercontent.com/kurisu-agent/drift/main/scripts/install.sh | sh
 ```
 
-Installs into `~/.local/bin` (or `/usr/local/bin` if run as root).
-`DRIFT_INSTALL_DIR=` overrides the target; `DRIFT_VERSION=v1.2.3` pins a
-tag. `drift update` pulls newer releases.
+Installs into `~/.local/bin` (or `/usr/local/bin` if run as root). `DRIFT_INSTALL_DIR=` overrides the target; `DRIFT_VERSION=v1.2.3` pins a tag. `drift update` pulls newer releases.
 
 Nix users can skip both:
 
@@ -90,11 +67,7 @@ drift new myproj --clone git@github.com:you/myproj.git
 drift connect myproj                                         # mosh/ssh into the container
 ```
 
-`init` is a re-runnable wizard. Each phase has a `--skip-*` flag
-(`--skip-circuits`, `--skip-characters`, `--no-probe`). Non-TTY stdin
-exits `code:2 user_error` — script it with `drift circuit add
-<ssh-target>` first, then `drift init --skip-circuits` on a TTY for the
-rest.
+`init` is a re-runnable wizard. Each phase has a `--skip-*` flag (`--skip-circuits`, `--skip-characters`, `--no-probe`). Non-TTY stdin exits `code:2 user_error` — script it with `drift circuit add <ssh-target>` first, then `drift init --skip-circuits` on a TTY for the rest.
 
 ## Commands
 
@@ -121,9 +94,7 @@ drift run scaffolder                # Claude with a scaffold recipe; creates a k
 drift run <name> [args…]            # anything else lakitu exposes
 ```
 
-Global flags: `-c/--circuit <name>`, `-o/--output text|json`,
-`--no-debug`, `--no-color`. Full per-flag reference:
-[docs/drift-cli.md](docs/drift-cli.md).
+Global flags: `-c/--circuit <name>`, `-o/--output text|json`, `--no-debug`, `--no-color`. Full per-flag reference: [docs/drift-cli.md](docs/drift-cli.md).
 
 ## Terms
 
@@ -139,14 +110,11 @@ All of these live server-side, under `~/.drift/garage/` on the circuit.
 
 ## IDE integration
 
-`drift.<circuit>.<kart>` is a wildcard SSH alias routed through
-`drift ssh-proxy`. Drop it into VS Code Remote-SSH, JetBrains Gateway,
-`scp`, `rsync` — anything that speaks SSH. No plugin required.
+`drift.<circuit>.<kart>` is a wildcard SSH alias routed through `drift ssh-proxy`. Drop it into VS Code Remote-SSH, JetBrains Gateway, `scp`, `rsync` — anything that speaks SSH. No plugin required.
 
 ## Version compatibility
 
-drift and lakitu share a semver version. Every RPC probes
-`server.version` first:
+drift and lakitu share a semver version. Every RPC probes `server.version` first:
 
 | mismatch | behavior       |
 |----------|----------------|
@@ -154,19 +122,15 @@ drift and lakitu share a semver version. Every RPC probes
 | minor    | warn to stderr |
 | patch    | silent         |
 
-Bypass with `drift --skip-version-check …`. Wire protocol and method
-catalog: [docs/lakitu-rpc.md](docs/lakitu-rpc.md).
+Bypass with `drift --skip-version-check …`. Wire protocol and method catalog: [docs/lakitu-rpc.md](docs/lakitu-rpc.md).
 
 ## Status
 
-Early / evolving. Interfaces may change between minor versions until
-`v1.0.0`.
+Early / evolving. Interfaces may change between minor versions until `v1.0.0`.
 
 ## Contributing
 
-drift is developed in the open but **not accepting pull requests**.
-Issues for bug reports and discussion are welcome. Feel free to fork and
-adapt — the MIT license puts no restrictions on that.
+drift is developed in the open but **not accepting pull requests**. Issues for bug reports and discussion are welcome. Feel free to fork and adapt — the MIT license puts no restrictions on that.
 
 ## License
 
