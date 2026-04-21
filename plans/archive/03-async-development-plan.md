@@ -1,12 +1,8 @@
 # drift — parallel execution plan
 
-Companion to [TODO.md](./TODO.md). TODO.md is the linear punch list; this file
-groups phases 2–17 into **waves that can run concurrently** so multiple agents
-(or one agent juggling worktrees) can speed-run to MVP.
+Companion to [TODO.md](./TODO.md). TODO.md is the linear punch list; this file groups phases 2–17 into **waves that can run concurrently** so multiple agents (or one agent juggling worktrees) can speed-run to MVP.
 
-Phase 0 is done. Phase 1 (RPC dispatch) is in flight. Everything below assumes
-Phase 1 has landed — it unblocks the dispatcher, the drift-side `Call` helper,
-and the shared method-name constants that almost every later phase imports.
+Phase 0 is done. Phase 1 (RPC dispatch) is in flight. Everything below assumes Phase 1 has landed — it unblocks the dispatcher, the drift-side `Call` helper, and the shared method-name constants that almost every later phase imports.
 
 ---
 
@@ -91,8 +87,7 @@ flowchart TD
 
 ## Critical path
 
-The longest dependency chain — anything not on this path has slack and should
-be scheduled around it:
+The longest dependency chain — anything not on this path has slack and should be scheduled around it:
 
 ```
 P1 → P2 → P6 → P8 → (P10 ∥ P13) → P15 → P17
@@ -101,11 +96,9 @@ P1 → P2 → P6 → P8 → (P10 ∥ P13) → P15 → P17
 ```
 
 Branches off the critical path that finish faster than P8 can land "for free":
-- **P3 → P4 → P10/P13** — SSH config + circuit CLI. Mostly file/string
-  manipulation, no external processes.
+- **P3 → P4 → P10/P13** — SSH config + circuit CLI. Mostly file/string manipulation, no external processes.
 - **P11, P12, P14** — small, narrow scope; pick up whenever an agent is idle.
-- **P16** — pure infra (goreleaser, CI, flake). Can start day one and finish
-  before any handler code lands.
+- **P16** — pure infra (goreleaser, CI, flake). Can start day one and finish before any handler code lands.
 
 ---
 
@@ -130,8 +123,7 @@ Branches off the critical path that finish faster than P8 can land "for free":
 | **P6** Method handlers (devpod-free) | P1 + P2 | `server.version`, `server.init`, `config.*`, `character.*`, `tune.*`, `chest.*` |
 | **P7** devpod wrapper | P5 | `internal/devpod` typed shim — `Up/Stop/Delete/Status/SSH/List/Logs/InstallDotfiles` |
 
-P6 and P7 are independent of each other — P6 owns file-backed handlers, P7 owns
-the devpod CLI shim. Run them concurrently.
+P6 and P7 are independent of each other — P6 owns file-backed handlers, P7 owns the devpod CLI shim. Run them concurrently.
 
 ### Wave C — kart core
 
@@ -140,14 +132,11 @@ the devpod CLI shim. Run them concurrently.
 | **P8** Kart creation | P6 + P7 | flag composition, starter history strip, layer-1 dotfiles, `kart.new`, interrupt cleanup |
 | **P9** Kart lifecycle | P7 (P6 dispatcher already wired) | `kart.start/stop/restart/delete/logs` |
 
-P8 and P9 mostly touch the same `internal/kart/` area — schedule sequentially
-**unless** split cleanly: P8 owns `new.go` + flag resolver, P9 owns
-`lifecycle.go`. If split, run in parallel.
+P8 and P9 mostly touch the same `internal/kart/` area — schedule sequentially **unless** split cleanly: P8 owns `new.go` + flag resolver, P9 owns `lifecycle.go`. If split, run in parallel.
 
 ### Wave D — fully parallel once C lands (5 tracks)
 
-All five depend on different subsets of earlier waves and don't touch each
-other's files:
+All five depend on different subsets of earlier waves and don't touch each other's files:
 
 - **P10** drift connect — `cmd/drift` + `internal/connect` (mosh detect, ssh fallback)
 - **P11** ssh-proxy — `cmd/drift` (`drift ssh-proxy` subcommand)
@@ -155,9 +144,7 @@ other's files:
 - **P13** warmup wizard — `cmd/drift` + `internal/warmup`
 - **P14** error formatting — `internal/cli/*` stderr formatter + golden tests
 
-Coordination risk: P10, P11, P13 all add subcommands to `cli/drift/drift.go`.
-Expect Kong-struct merge conflicts — assign one agent the integration of the
-final command tree.
+Coordination risk: P10, P11, P13 all add subcommands to `cli/drift/drift.go`. Expect Kong-struct merge conflicts — assign one agent the integration of the final command tree.
 
 ### Wave E — gated on most of MVP
 
@@ -174,8 +161,7 @@ If you have **3 parallel agents** post-Phase-1:
 2. **Agent state** — P2 → P6 → P8 (config + handlers + kart create)
 3. **Agent edges** — P3 → P4 → P11 + P10 (ssh-config + circuit + connect)
 
-Then collapse to one agent for the cross-cutting waves: P12, P13, P14, P15, P17.
-P16 can be a background agent from day one.
+Then collapse to one agent for the cross-cutting waves: P12, P13, P14, P15, P17. P16 can be a background agent from day one.
 
 If you have **2 agents**:
 
@@ -186,23 +172,16 @@ If you have **2 agents**:
 
 ## Hard sequencing rules (don't violate)
 
-- **Nothing handler-side starts before P1** — the dispatcher contract defines
-  the function signature every handler implements.
-- **P7 must land before P8/P9** — `internal/devpod` is the only legitimate
-  caller of the devpod CLI. Don't shell out to devpod from handlers directly.
-- **P6's `chest.*` must land before P13** — warmup's "stage a PAT" step calls
-  `chest.set` over RPC.
-- **P3's wildcard block must land before P11** — `drift ssh-proxy` is invoked
-  by the ProxyCommand stanza P3 writes.
+- **Nothing handler-side starts before P1** — the dispatcher contract defines the function signature every handler implements.
+- **P7 must land before P8/P9** — `internal/devpod` is the only legitimate caller of the devpod CLI. Don't shell out to devpod from handlers directly.
+- **P6's `chest.*` must land before P13** — warmup's "stage a PAT" step calls `chest.set` over RPC.
+- **P3's wildcard block must land before P11** — `drift ssh-proxy` is invoked by the ProxyCommand stanza P3 writes.
 - **P14 needs at least P6 merged** — golden tests need real error sources.
 
 ---
 
 ## Things that look parallel but aren't
 
-- **P8 and P9 sharing `internal/kart/`** — if both agents touch `kart.go` they
-  will conflict. Pre-split files or sequence them.
-- **P10, P11, P13 all editing `cli/drift/drift.go`** — Kong struct conflicts.
-  Land them on separate branches and merge serially.
-- **P15 before MVP UX is stable** — the harness scripts assume final command
-  names; landing it early means rewriting the scripts.
+- **P8 and P9 sharing `internal/kart/`** — if both agents touch `kart.go` they will conflict. Pre-split files or sequence them.
+- **P10, P11, P13 all editing `cli/drift/drift.go`** — Kong struct conflicts. Land them on separate branches and merge serially.
+- **P15 before MVP UX is stable** — the harness scripts assume final command names; landing it early means rewriting the scripts.

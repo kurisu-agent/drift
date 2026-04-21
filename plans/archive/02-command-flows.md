@@ -211,8 +211,7 @@ devpod list --output json
 1. Write/update `~/.config/drift/config.yaml`.
 2. Probe the circuit: RPC `server.version` — warn (but don't fail) if lakitu isn't installed yet, so users can add a circuit pre-bootstrap.
 
-**Server:** none (list), version-only (add probe).
-**Devpod calls:** none.
+**Server:** none (list), version-only (add probe). **Devpod calls:** none.
 
 ---
 
@@ -241,9 +240,7 @@ devpod list --output json
 2. RPC `chest.set` with params `{name, value}` — value is a field of the JSON-RPC request body, which itself is piped over the SSH channel's stdin.
 3. **Value never appears on argv anywhere** — no shell history, no `ps` listing. The JSON-RPC request travels over the SSH pipe and is consumed by `lakitu rpc`.
 
-**Client (`drift chest get <name>`):** RPC `chest.get` params `{name}` → `result.value`.
-**Client (`drift chest list`):** RPC `chest.list` → `result` is array of names.
-**Client (`drift chest rm <name>`):** RPC `chest.remove` params `{name}`.
+**Client (`drift chest get <name>`):** RPC `chest.get` params `{name}` → `result.value`. **Client (`drift chest list`):** RPC `chest.list` → `result` is array of names. **Client (`drift chest rm <name>`):** RPC `chest.remove` params `{name}`.
 
 **Server handlers:**
 - Dispatch to the configured backend (`config.yaml` → `chest.backend`).

@@ -478,8 +478,7 @@ Interactive only — returns a `user_error` (exit code 2) if stdin isn't a TTY. 
 --autostart                enable auto-start on server reboot
 ```
 
-`--clone` and `--starter` are mutually exclusive. With neither, defaults from the active tune apply.
-Kart name is always the positional `<name>` argument.
+`--clone` and `--starter` are mutually exclusive. With neither, defaults from the active tune apply. Kart name is always the positional `<name>` argument.
 
 **Name collision:** `drift new <name>` **fails** if a kart with that name already exists on the circuit. No overwrite, no confirmation prompt — user must `drift delete <name>` first, or use `drift start <name>` / `drift connect <name>` if they want to resume the existing one.
 

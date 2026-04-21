@@ -1,7 +1,6 @@
 # drift — completed MVP work (archived)
 
-Phases that are fully `[x]` done, archived from [TODO.md](../TODO.md).
-Kept for historical reference — the living checklist only tracks open work.
+Phases that are fully `[x]` done, archived from [TODO.md](../TODO.md). Kept for historical reference — the living checklist only tracks open work.
 
 Section links are relative to [`01-original-plan.md`](./archive/01-original-plan.md).
 
