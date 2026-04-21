@@ -22,16 +22,20 @@ if [ -z "$staged" ]; then
   exit 0
 fi
 
-pkgs=$(printf '%s\n' $staged | xargs -n1 dirname | sort -u | sed 's|^|./|')
+# Collapse both lists to single-line space-separated so they survive
+# being embedded in the `bash -c "…"` string below. Raw $staged has
+# newlines from git's output; embedding it verbatim turns filenames
+# after the first into standalone commands inside the subshell (bash:
+# line 2: <file>: Permission denied).
+staged_args=$(echo "$staged" | tr '\n' ' ')
+pkgs_args=$(echo "$staged" | xargs -n1 dirname | sort -u | sed 's|^|./|' | tr '\n' ' ')
 
-# One nix develop spawn for both tools. Quoting $staged + $pkgs is
-# safe here: git's reserved-char filenames are far narrower than
-# bash's whitespace-split hazard, and drift's conventions (snake_case
-# Go paths under internal/) never produce spaced names.
+# One nix develop spawn for both tools. drift's Go paths never contain
+# whitespace (snake_case under internal/), so flat expansion is safe.
 if ! nix develop --command bash -c "
   set -eu
-  gofmt -w -- $staged
-  golangci-lint run --fix --fast-only $pkgs
+  gofmt -w -- $staged_args
+  golangci-lint run --fix --fast-only $pkgs_args
 "; then
   echo >&2
   echo "pre-commit: lint issues remain after auto-fix — address them and re-commit." >&2
