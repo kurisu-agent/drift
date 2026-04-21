@@ -3,7 +3,6 @@
 package integration_test
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -21,10 +20,9 @@ import (
 // restart. Covers Stage #2 / #3 from plans/06 (workspace lifetime container
 // env).
 func TestTuneEnvWorkspaceInjection(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 5*time.Minute)
 
-	c, rec := setupTuneCircuit(ctx, t)
+	c, rec := integration.StartReadyCircuit(ctx, t, true)
 
 	const (
 		chestName  = "workspace-openai"
@@ -57,7 +55,7 @@ func TestTuneEnvWorkspaceInjection(t *testing.T) {
 		t.Fatalf("no devpod up invocation recorded")
 	}
 	wantKV := envKey + "=" + chestValue
-	if !argvHas(up.Argv, "--workspace-env", wantKV) {
+	if !integration.ArgvHas(up.Argv, "--workspace-env", wantKV) {
 		t.Errorf("up argv missing --workspace-env %q, got %v", wantKV, up.Argv)
 	}
 
@@ -105,13 +103,13 @@ func TestTuneEnvWorkspaceInjection(t *testing.T) {
 	if _, err := c.LakituRPC(ctx, wire.MethodKartRestart, map[string]string{"name": kart}); err != nil {
 		t.Fatalf("kart.restart: %v", err)
 	}
-	ups := findAllUps(rec.Invocations(ctx))
+	ups := rec.FindAllUps(ctx)
 	if len(ups) < 2 {
 		t.Fatalf("want >=2 devpod up invocations, got %d", len(ups))
 	}
 	restartUp := ups[len(ups)-1]
 	wantRotated := envKey + "=" + rotatedValue
-	if !argvHas(restartUp.Argv, "--workspace-env", wantRotated) {
+	if !integration.ArgvHas(restartUp.Argv, "--workspace-env", wantRotated) {
 		t.Errorf("restart up argv missing rotated --workspace-env %q, got %v", wantRotated, restartUp.Argv)
 	}
 }
@@ -122,10 +120,9 @@ func TestTuneEnvWorkspaceInjection(t *testing.T) {
 // — without leaking into the workspace's containerEnv. Covers Stage #1
 // (one-shot build-time secret).
 func TestTuneEnvBuildInjection(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 5*time.Minute)
 
-	c, rec := setupTuneCircuit(ctx, t)
+	c, rec := integration.StartReadyCircuit(ctx, t, true)
 
 	const (
 		chestName  = "build-token"
@@ -158,7 +155,7 @@ func TestTuneEnvBuildInjection(t *testing.T) {
 		t.Fatalf("no install-dotfiles invocation recorded")
 	}
 	want := envKey + "=" + chestValue
-	if !envHas(inv.Env, want) {
+	if !integration.EnvHas(inv.Env, want) {
 		t.Errorf("install-dotfiles env missing %q; got %d vars (not printed to avoid secret leak)", want, len(inv.Env))
 	}
 	up := rec.FindUp(ctx)
@@ -167,11 +164,11 @@ func TestTuneEnvBuildInjection(t *testing.T) {
 	}
 	// devpod up should carry --dotfiles-script-env so the in-container
 	// dotfiles install script sees the build secret.
-	if !argvHas(up.Argv, "--dotfiles-script-env", want) {
+	if !integration.ArgvHas(up.Argv, "--dotfiles-script-env", want) {
 		t.Errorf("up argv missing --dotfiles-script-env %q, got %v", want, up.Argv)
 	}
 	// Same secret must NOT ride on the workspace env — build is one-shot.
-	if argvHasValuePrefix(up.Argv, "--workspace-env", envKey+"=") {
+	if integration.ArgvHasValuePrefix(up.Argv, "--workspace-env", envKey+"=") {
 		t.Errorf("build secret leaked into devpod up --workspace-env: argv=%v", up.Argv)
 	}
 }
@@ -182,10 +179,9 @@ func TestTuneEnvBuildInjection(t *testing.T) {
 // exercises the RPC directly so it doesn't need a working mosh/ssh
 // transport inside the harness.
 func TestTuneEnvSessionInjection(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 5*time.Minute)
 
-	c, _ := setupTuneCircuit(ctx, t)
+	c, _ := integration.StartReadyCircuit(ctx, t, true)
 
 	const (
 		chestName  = "session-anthropic"
@@ -240,10 +236,9 @@ func TestTuneEnvSessionInjection(t *testing.T) {
 // chest_entry_not_found (block + key in Data) when an env ref points at
 // an absent chest entry, and doesn't leave a devpod workspace behind.
 func TestTuneEnvMissingChestEntry(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 5*time.Minute)
 
-	c, rec := setupTuneCircuit(ctx, t)
+	c, rec := integration.StartReadyCircuit(ctx, t, true)
 
 	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]any{
 		"name": "envtune-missing",
@@ -275,10 +270,9 @@ func TestTuneEnvMissingChestEntry(t *testing.T) {
 // literal-rejection) so a typo on a user's side can't accidentally stash
 // a secret outside the chest.
 func TestTuneEnvRejectsLiteralValue(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 5*time.Minute)
 
-	c, _ := setupTuneCircuit(ctx, t)
+	c, _ := integration.StartReadyCircuit(ctx, t, true)
 
 	_, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]any{
 		"name": "envtune-literal",
@@ -295,41 +289,4 @@ func TestTuneEnvRejectsLiteralValue(t *testing.T) {
 	if !errors.As(err, &re) || re.Type != rpcerr.TypeInvalidFlag {
 		t.Errorf("want invalid_flag rpcerr, got %v", err)
 	}
-}
-
-// argvHasValuePrefix reports whether the flag-value pair has a value that
-// starts with prefix. Used where the value's suffix is the chest-resolved
-// secret — the test asserts presence/absence of the KEY= half, not the
-// literal value.
-func argvHasValuePrefix(argv []string, flag, prefix string) bool {
-	for i := 0; i+1 < len(argv); i++ {
-		if argv[i] == flag && strings.HasPrefix(argv[i+1], prefix) {
-			return true
-		}
-	}
-	return false
-}
-
-// envHas reports whether env contains the exact KEY=VALUE pair. Linear
-// scan is fine — shim-captured env is at most a few hundred entries.
-func envHas(env []string, want string) bool {
-	for _, kv := range env {
-		if kv == want {
-			return true
-		}
-	}
-	return false
-}
-
-// findAllUps collects every `devpod up` invocation across the recorder
-// log. Used to compare successive kart.new / kart.restart --workspace-env
-// sets.
-func findAllUps(invs []integration.DevpodInvocation) []integration.DevpodInvocation {
-	var out []integration.DevpodInvocation
-	for _, inv := range invs {
-		if len(inv.Argv) > 0 && inv.Argv[0] == "up" {
-			out = append(out, inv)
-		}
-	}
-	return out
 }

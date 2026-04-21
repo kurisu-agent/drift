@@ -3,7 +3,6 @@
 package integration_test
 
 import (
-	"context"
 	"encoding/json"
 	"path/filepath"
 	"strings"
@@ -14,77 +13,15 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// argvHas reports whether flag is present in argv followed by value.
-// Example: argvHas(argv, "--additional-features", `{"a":1}`).
-func argvHas(argv []string, flag, value string) bool {
-	for i := 0; i+1 < len(argv); i++ {
-		if argv[i] == flag && argv[i+1] == value {
-			return true
-		}
-	}
-	return false
-}
-
-// argvValue returns the value immediately following flag, or "" if absent.
-func argvValue(argv []string, flag string) string {
-	for i := 0; i+1 < len(argv); i++ {
-		if argv[i] == flag {
-			return argv[i+1]
-		}
-	}
-	return ""
-}
-
-// setupTuneCircuit stands up a circuit, runs lakitu init, registers it with
-// drift, and installs the devpod recorder shim. Returns the circuit and
-// recorder so each tune test can focus on its field of interest.
-func setupTuneCircuit(ctx context.Context, t *testing.T) (*integration.Circuit, *integration.DevpodRecorder) {
-	t.Helper()
-	c := integration.StartCircuit(ctx, t)
-	if err := integration.SSHCommand(ctx, c, "lakitu", "init"); err != nil {
-		t.Fatalf("lakitu init: %v", err)
-	}
-	c.RegisterCircuit(ctx, "test")
-	return c, c.InstallDevpodRecorder(ctx)
-}
-
-// stageLocalStarter creates a bare git repo inside the circuit at the given
-// absolute path and returns its file:// URL. The starter carries one commit
-// containing a trivial README so drift's history-strip flow has something
-// to clone before rewriting.
-func stageLocalStarter(ctx context.Context, t *testing.T, c *integration.Circuit, name string) string {
-	t.Helper()
-	work := "/tmp/" + name + "-work"
-	bare := "/tmp/" + name + ".git"
-	script := strings.Join([]string{
-		"set -e",
-		"rm -rf " + work + " " + bare,
-		"mkdir -p " + work,
-		"cd " + work,
-		"git init -q -b main",
-		"git config user.email t@example.com",
-		"git config user.name T",
-		"echo '# starter' > README.md",
-		"git add README.md",
-		"git commit -qm init",
-		"git clone -q --bare . " + bare,
-	}, " && ")
-	if err := integration.SSHCommand(ctx, c, "sh", "-c", script); err != nil {
-		t.Fatalf("stage local starter %s: %v", name, err)
-	}
-	return "file://" + bare
-}
-
 // TestTuneStarter verifies the starter tune field composes into kart.new:
 // `drift new --tune <mytune>` should clone the tune's starter URL, strip
 // history, and pass the resulting local path to `devpod up` as the
 // positional source argument via --id.
 func TestTuneStarter(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 5*time.Minute)
 
-	c, rec := setupTuneCircuit(ctx, t)
-	starterURL := stageLocalStarter(ctx, t, c, "starterA")
+	c, rec := integration.StartReadyCircuit(ctx, t, true)
+	starterURL := c.StageStarter(ctx, "starterA", map[string]string{"README.md": "# starter\n"})
 
 	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]string{
 		"name":    "mytune",
@@ -104,7 +41,7 @@ func TestTuneStarter(t *testing.T) {
 	}
 	// Starter mode: devpod up gets `--id <kart> <source-dir>` tail. The
 	// source dir is the drift scratch tmpdir — path starts with /tmp.
-	id := argvValue(up.Argv, "--id")
+	id := integration.ArgvValue(up.Argv, "--id")
 	if id != kart {
 		t.Errorf("--id = %q, want %q", id, kart)
 	}
@@ -115,7 +52,7 @@ func TestTuneStarter(t *testing.T) {
 
 	// Artifact check: the shim preserved a copy of the source dir so the
 	// test can verify history was stripped (starter git clone → rm .git →
-	// git init → single initial commit). README.md from stageLocalStarter
+	// git init → single initial commit). README.md from the staged starter
 	// must also be present.
 	files := c.ListArtifact(ctx, up, "source")
 	hasREADME, hasGit := false, false
@@ -155,10 +92,9 @@ func TestTuneStarter(t *testing.T) {
 // path / JSON / URL — a file path is the simplest case and exercises the
 // passthrough path of kart.NormalizeDevcontainer.
 func TestTuneDevcontainer(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 5*time.Minute)
 
-	c, rec := setupTuneCircuit(ctx, t)
+	c, rec := integration.StartReadyCircuit(ctx, t, true)
 
 	// Stage a tiny devcontainer.json file inside the circuit so the
 	// passthrough path has a real file to reference.
@@ -184,7 +120,7 @@ func TestTuneDevcontainer(t *testing.T) {
 	if up == nil {
 		t.Fatalf("no devpod up invocation recorded")
 	}
-	got := argvValue(up.Argv, "--extra-devcontainer-path")
+	got := integration.ArgvValue(up.Argv, "--extra-devcontainer-path")
 	if got != dcPath {
 		t.Errorf("--extra-devcontainer-path = %q, want %q", got, dcPath)
 	}
@@ -201,10 +137,9 @@ func TestTuneDevcontainer(t *testing.T) {
 // devpod up (layer-2 dotfiles — layer-1 is handled separately via
 // install-dotfiles after up).
 func TestTuneDotfilesRepo(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 5*time.Minute)
 
-	c, rec := setupTuneCircuit(ctx, t)
+	c, rec := integration.StartReadyCircuit(ctx, t, true)
 
 	const dotfilesURL = "https://example.com/my/dotfiles"
 	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]string{
@@ -223,7 +158,7 @@ func TestTuneDotfilesRepo(t *testing.T) {
 	if up == nil {
 		t.Fatalf("no devpod up invocation recorded")
 	}
-	got := argvValue(up.Argv, "--dotfiles")
+	got := integration.ArgvValue(up.Argv, "--dotfiles")
 	if got != dotfilesURL {
 		t.Errorf("--dotfiles = %q, want %q", got, dotfilesURL)
 	}
@@ -235,10 +170,9 @@ func TestTuneDotfilesRepo(t *testing.T) {
 // production doesn't accept --additional-features, which is why the fork
 // is pinned here).
 func TestTuneFeatures(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 5*time.Minute)
 
-	c, rec := setupTuneCircuit(ctx, t)
+	c, rec := integration.StartReadyCircuit(ctx, t, true)
 
 	const tuneFeatures = `{"ghcr.io/devcontainers/features/node:1":{"version":"20"}}`
 	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]string{
@@ -257,7 +191,7 @@ func TestTuneFeatures(t *testing.T) {
 	if up == nil {
 		t.Fatalf("no devpod up invocation recorded")
 	}
-	got := argvValue(up.Argv, "--additional-features")
+	got := integration.ArgvValue(up.Argv, "--additional-features")
 	if err := assertJSONEqual(got, tuneFeatures); err != nil {
 		t.Errorf("--additional-features: %v", err)
 	}
@@ -267,10 +201,9 @@ func TestTuneFeatures(t *testing.T) {
 // forward the exact JSON to devpod via --additional-features. Covers the
 // minimum path the fork's --additional-features support requires.
 func TestFeaturesFlagExplicit(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 5*time.Minute)
 
-	c, rec := setupTuneCircuit(ctx, t)
+	c, rec := integration.StartReadyCircuit(ctx, t, true)
 
 	const flagFeatures = `{"ghcr.io/devcontainers/features/go:1":{"version":"1.22"}}`
 	kart := c.KartName("feat-explicit")
@@ -288,7 +221,7 @@ func TestFeaturesFlagExplicit(t *testing.T) {
 	if up == nil {
 		t.Fatalf("no devpod up invocation recorded")
 	}
-	got := argvValue(up.Argv, "--additional-features")
+	got := integration.ArgvValue(up.Argv, "--additional-features")
 	if err := assertJSONEqual(got, flagFeatures); err != nil {
 		t.Errorf("--additional-features: %v", err)
 	}
@@ -299,10 +232,9 @@ func TestFeaturesFlagExplicit(t *testing.T) {
 // with --features B should produce a merged JSON object with both keys, and
 // a shared key from --features wins over the tune's value.
 func TestFeaturesAdditiveMerge(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 5*time.Minute)
 
-	c, rec := setupTuneCircuit(ctx, t)
+	c, rec := integration.StartReadyCircuit(ctx, t, true)
 
 	const (
 		tuneFeatures = `{"ghcr.io/devcontainers/features/node:1":{"version":"20"},"ghcr.io/devcontainers/features/git:1":{}}`
@@ -327,7 +259,7 @@ func TestFeaturesAdditiveMerge(t *testing.T) {
 	if up == nil {
 		t.Fatalf("no devpod up invocation recorded")
 	}
-	got := argvValue(up.Argv, "--additional-features")
+	got := integration.ArgvValue(up.Argv, "--additional-features")
 	wantMerged := map[string]any{
 		"ghcr.io/devcontainers/features/node:1": map[string]any{"version": "22"},   // flag wins
 		"ghcr.io/devcontainers/features/git:1":  map[string]any{},                  // from tune

@@ -3,7 +3,6 @@
 package integration_test
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -20,13 +19,9 @@ import (
 // --ssh forces the plain ssh branch (no mosh dependency in the test
 // container).
 func TestRun_Ai(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 5*time.Minute)
 
-	c := integration.StartCircuit(ctx, t)
-	if err := integration.SSHCommand(ctx, c, "lakitu", "init"); err != nil {
-		t.Fatalf("lakitu init: %v", err)
-	}
+	c, _ := integration.StartReadyCircuit(ctx, t, false)
 
 	c.InstallBin(ctx, "claude", `#!/bin/sh
 {
@@ -36,8 +31,6 @@ func TestRun_Ai(t *testing.T) {
 chmod 0666 /tmp/claude.log
 exit 0
 `)
-
-	c.RegisterCircuit(ctx, "test")
 
 	_, stderr, code := c.Drift(ctx, "run", "ai", "--ssh")
 	if code != 0 {
@@ -70,14 +63,9 @@ exit 0
 // seeded by `lakitu init` — proving there is no embedded client-side
 // knowledge of run names.
 func TestRun_ListsBuiltins(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 2*time.Minute)
 
-	c := integration.StartCircuit(ctx, t)
-	if err := integration.SSHCommand(ctx, c, "lakitu", "init"); err != nil {
-		t.Fatalf("lakitu init: %v", err)
-	}
-	c.RegisterCircuit(ctx, "test")
+	c, _ := integration.StartReadyCircuit(ctx, t, false)
 
 	stdout, stderr, code := c.Drift(ctx, "runs")
 	if code != 0 {
@@ -94,14 +82,9 @@ func TestRun_ListsBuiltins(t *testing.T) {
 // after the drift client was built, then asserts it appears in `drift runs`
 // — the "no embedded list" guarantee we want to preserve as entries grow.
 func TestRun_UnknownAfterEdit(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 2*time.Minute)
 
-	c := integration.StartCircuit(ctx, t)
-	if err := integration.SSHCommand(ctx, c, "lakitu", "init"); err != nil {
-		t.Fatalf("lakitu init: %v", err)
-	}
-	c.RegisterCircuit(ctx, "test")
+	c, _ := integration.StartReadyCircuit(ctx, t, false)
 
 	extra := "\n  hello-from-test:\n    description: \"added after client was built\"\n    mode: output\n    command: 'echo hi'\n"
 	if err := integration.SSHCommand(ctx, c, "sh", "-c",

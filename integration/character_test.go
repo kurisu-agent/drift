@@ -3,7 +3,6 @@
 package integration_test
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -19,13 +18,9 @@ import (
 // directly (the warmup wizard is the production path), so this is the most
 // faithful end-to-end coverage we have for the garage-file flow.
 func TestCharacterLifecycle(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 5*time.Minute)
 
-	c := integration.StartCircuit(ctx, t)
-	if err := integration.SSHCommand(ctx, c, "lakitu", "init"); err != nil {
-		t.Fatalf("lakitu init: %v", err)
-	}
+	c, _ := integration.StartReadyCircuit(ctx, t, false)
 
 	// Add — the happy path with a chest-prefixed pat_secret so the pat_secret
 	// validation branch is exercised (literal tokens are rejected server-side).

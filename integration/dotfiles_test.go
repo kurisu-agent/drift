@@ -3,11 +3,11 @@
 package integration_test
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/kurisu-agent/drift/integration"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
@@ -24,10 +24,9 @@ import (
 // unit tests exercise in isolation — this test validates it survives the
 // full RPC → lakitu → kart.new → devpod pipeline.
 func TestLayer1Dotfilesland(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 5*time.Minute)
 
-	c, rec := setupTuneCircuit(ctx, t)
+	c, rec := integration.StartReadyCircuit(ctx, t, true)
 
 	const (
 		patSecretName = "alice-pat"
@@ -127,7 +126,7 @@ func TestLayer1Dotfilesland(t *testing.T) {
 	// file:// URL of the same tmpdir (skevetter fork v0.22 — the flag name
 	// differs from upstream devpod's `--dotfiles`). Argv-level check so a
 	// regression that breaks the URL scheme fails loudly.
-	u := argvValue(inv.Argv, "--repository")
+	u := integration.ArgvValue(inv.Argv, "--repository")
 	if !strings.HasPrefix(u, "file:///") {
 		t.Errorf("--repository url = %q, want file:///… URL", u)
 	}

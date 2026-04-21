@@ -3,7 +3,6 @@
 package integration_test
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"sort"
@@ -21,13 +20,9 @@ import (
 // so they never appear on argv — exercised here by passing a multi-line
 // value the yaml backend must serialize via a block scalar.
 func TestChestLifecycle(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 5*time.Minute)
 
-	c := integration.StartCircuit(ctx, t)
-	if err := integration.SSHCommand(ctx, c, "lakitu", "init"); err != nil {
-		t.Fatalf("lakitu init: %v", err)
-	}
+	c, _ := integration.StartReadyCircuit(ctx, t, false)
 
 	const multiline = "line-one\nline-two\nline-three"
 

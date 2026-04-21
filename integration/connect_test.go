@@ -3,7 +3,6 @@
 package integration_test
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -25,14 +24,9 @@ import (
 // detection runs against the drift-side PATH and LookPath returns ENOENT;
 // --ssh makes the intent explicit and pins the argv shape.
 func TestDriftConnectSSH(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 5*time.Minute)
 
-	c := integration.StartCircuit(ctx, t)
-	if err := integration.SSHCommand(ctx, c, "lakitu", "init"); err != nil {
-		t.Fatalf("lakitu init: %v", err)
-	}
-	c.RegisterCircuit(ctx, "test")
+	c, _ := integration.StartReadyCircuit(ctx, t, false)
 
 	kart := c.KartName("conn")
 

@@ -3,7 +3,6 @@
 package integration_test
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -16,8 +15,7 @@ import (
 // confirm the version RPC round-trips. This exercises sshd → lakitu rpc →
 // internal/rpc dispatcher → server.version end-to-end.
 func TestDriftInitAndServerVersion(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 5*time.Minute)
 
 	c := integration.StartCircuit(ctx, t)
 
@@ -29,7 +27,7 @@ func TestDriftInitAndServerVersion(t *testing.T) {
 	}
 	// Name the circuit explicitly — the default hostname-derived name is
 	// an unpredictable Docker container id.
-	if err := integration.SSHCommand(ctx, c, "lakitu", "config", "set", "name", "test"); err != nil {
+	if err := integration.SSHCommand(ctx, c, "lakitu", "config", "set", "name", integration.CircuitName); err != nil {
 		t.Fatalf("lakitu config set name: %v", err)
 	}
 
@@ -56,7 +54,7 @@ func TestDriftInitAndServerVersion(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("drift circuit list exit=%d stderr=%q", code, stderr)
 	}
-	if !strings.Contains(stdout, "test") {
+	if !strings.Contains(stdout, integration.CircuitName) {
 		t.Errorf("circuit list did not mention test circuit:\n%s", stdout)
 	}
 }

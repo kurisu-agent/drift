@@ -3,7 +3,6 @@
 package integration_test
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -24,14 +23,9 @@ import (
 // same sshd — a convenient stand-in for the real `devpod ssh --stdio` path
 // that still exercises the full drift+OpenSSH plumbing end-to-end.
 func TestSSHProxyEchoOK(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 5*time.Minute)
 
-	c := integration.StartCircuit(ctx, t)
-	if err := integration.SSHCommand(ctx, c, "lakitu", "init"); err != nil {
-		t.Fatalf("lakitu init: %v", err)
-	}
-	c.RegisterCircuit(ctx, "test")
+	c, _ := integration.StartReadyCircuit(ctx, t, false)
 
 	// Shim pipes stdio to local sshd. Output buffering is disabled so the
 	// outer client sees SSH banner bytes promptly.
