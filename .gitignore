@@ -7,3 +7,7 @@ bin/
 # nix build / nixos-rebuild output symlinks
 result
 result-*
+
+# Local git worktrees used by Claude Code sessions; the outer repo
+# sees them as embedded submodules if committed by accident.
+.claude/worktrees/
