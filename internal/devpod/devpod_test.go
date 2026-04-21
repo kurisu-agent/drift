@@ -208,7 +208,7 @@ func TestStopDeleteLogsInstallDotfilesHappyPath(t *testing.T) {
 		{
 			name: "install_dotfiles",
 			call: func(c *devpod.Client, ctx context.Context) error {
-				return c.InstallDotfiles(ctx, "file:///tmp/layer1.sh")
+				return c.InstallDotfilesWithOpts(ctx, devpod.InstallDotfilesOpts{URL: "file:///tmp/layer1.sh"})
 			},
 			args: []string{"agent", "workspace", "install-dotfiles", "--repository", "file:///tmp/layer1.sh"},
 		},

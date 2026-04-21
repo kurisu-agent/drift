@@ -11,6 +11,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/kurisu-agent/drift/internal/chest"
 	"github.com/kurisu-agent/drift/internal/model"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 )
@@ -72,7 +73,7 @@ type Flags struct {
 
 type Resolved struct {
 	Name          string
-	SourceMode    string // "clone" | "starter" | "none"
+	SourceMode    model.SourceMode // clone | starter | none
 	SourceURL     string
 	TuneName      string // empty when resolved to "none"
 	Tune          *Tune
@@ -170,19 +171,22 @@ func (r *Resolver) Resolve(f Flags) (*Resolved, error) {
 		character = c
 	}
 
-	var sourceMode, sourceURL string
+	var (
+		sourceMode model.SourceMode
+		sourceURL  string
+	)
 	switch {
 	case f.Clone != "":
-		sourceMode = "clone"
+		sourceMode = model.SourceModeClone
 		sourceURL = f.Clone
 	case f.Starter != "":
-		sourceMode = "starter"
+		sourceMode = model.SourceModeStarter
 		sourceURL = f.Starter
 	case tune != nil && tune.Starter != "":
-		sourceMode = "starter"
+		sourceMode = model.SourceModeStarter
 		sourceURL = tune.Starter
 	default:
-		sourceMode = "none"
+		sourceMode = model.SourceModeNone
 	}
 
 	devcontainer := f.Devcontainer
@@ -196,19 +200,18 @@ func (r *Resolver) Resolve(f Flags) (*Resolved, error) {
 	}
 	// dotfiles_repo accepts a `chest:<name>` ref so the auth token can stay
 	// in the chest while the URL (with PAT embedded) flows through opaquely.
-	if strings.HasPrefix(dotfiles, "chest:") {
+	if chestName, ok := chest.ParseRef(dotfiles); ok {
 		if r.ResolveChestRef == nil {
 			return nil, rpcerr.Internal(
 				"kart.new: dotfiles_repo references chest but no chest resolver is configured")
 		}
 		val, err := r.ResolveChestRef(dotfiles)
 		if err != nil {
-			name := strings.TrimPrefix(dotfiles, "chest:")
 			var rpcErr *rpcerr.Error
 			if errors.As(err, &rpcErr) && rpcErr.Type == rpcerr.TypeChestEntryNotFound {
 				return nil, rpcerr.New(rpcerr.CodeNotFound, rpcerr.TypeChestEntryNotFound,
-					"kart.new: dotfiles_repo references missing chest entry %q", name).
-					With("field", "dotfiles_repo").With("name", name)
+					"kart.new: dotfiles_repo references missing chest entry %q", chestName).
+					With("field", "dotfiles_repo").With("name", chestName)
 			}
 			return nil, err
 		}

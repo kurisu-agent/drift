@@ -2,6 +2,7 @@ package name_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/kurisu-agent/drift/internal/name"
@@ -18,14 +19,14 @@ func TestValid(t *testing.T) {
 		{"hyphenated", "my-project", true},
 		{"with-digits", "proj-01", true},
 		{"single-letter", "a", true},
-		{"max-length", "a" + repeat("x", 62), true},
+		{"max-length", "a" + strings.Repeat("x", 62), true},
 
 		{"empty", "", false},
 		{"starts-with-digit", "1abc", false},
 		{"starts-with-hyphen", "-abc", false},
 		{"uppercase", "MyProj", false},
 		{"underscore", "my_proj", false},
-		{"too-long", "a" + repeat("x", 63), false},
+		{"too-long", "a" + strings.Repeat("x", 63), false},
 		{"reserved-default", "default", false},
 		{"reserved-none", "none", false},
 		{"whitespace", "my proj", false},
@@ -73,12 +74,4 @@ func TestValidate_OKReturnsNil(t *testing.T) {
 	if err := name.Validate("kart", "my-kart"); err != nil {
 		t.Errorf("Validate: %v", err)
 	}
-}
-
-func repeat(s string, n int) string {
-	out := make([]byte, 0, len(s)*n)
-	for i := 0; i < n; i++ {
-		out = append(out, s...)
-	}
-	return string(out)
 }

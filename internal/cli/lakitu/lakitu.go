@@ -72,6 +72,7 @@ func Run(ctx context.Context, argv []string, io IO) int {
 		fmt.Fprintf(io.Stderr, "lakitu: %v\n", err)
 		return 2
 	}
+	debug := cli.Debug || os.Getenv("LAKITU_DEBUG") != ""
 	switch kctx.Command() {
 	case "version":
 		return runVersion(io, cli.Version)
@@ -80,7 +81,7 @@ func Run(ctx context.Context, argv []string, io IO) int {
 	case "init":
 		return runInit(ctx, io)
 	case "rpc":
-		return runRPC(ctx, io, Registry())
+		return runRPC(ctx, io, debug)
 	case "list":
 		return runKartList(ctx, io)
 	case "info <name>":
@@ -135,74 +136,138 @@ func runVersion(io IO, cmd versionCmd) int {
 	return 0
 }
 
-// Registry is rebuilt on every Run call so tests can swap handlers.
+// Registry builds the full handler registry — including the devpod-backed
+// kart handlers — and is rebuilt on every call so tests can swap handlers.
+// Dispatch paths that know the method up front (runRPC, callAndPrint)
+// should prefer buildRegistry(ctx, methodNeedsDevpod(m), debug) directly,
+// so non-devpod methods skip resolvePinnedDevpod / EnsurePinned entirely.
+// Registry() stays as the "give me everything" convenience for callers
+// that don't have a method in hand.
 func Registry() *rpc.Registry {
-	reg := rpc.NewRegistry()
-	reg.Register(wire.MethodServerInit, serverInitHandler)
-	server.RegisterServer(reg, &server.Deps{})
-	garage, err := config.GarageDir()
-	if err == nil {
-		// Verbose mode: tee every devpod subprocess's stdout+stderr to
-		// our own stderr so the SSH transport relays it to the drift
-		// client live (drift sets LAKITU_DEBUG=1 on the SSH command
-		// when its own --debug is on). Argv echoes ride the same path.
-		// Wrap in driftexec.RedactingWriter so phase markers and
-		// resolver dumps that mention dechested URLs (with embedded
-		// PATs) get scrubbed before they reach the operator's terminal.
-		// devpod.Client's internal streamMirror wraps again — RedactSecrets
-		// is idempotent so the double-pass is harmless.
-		var mirror io.Writer
-		if os.Getenv("LAKITU_DEBUG") != "" {
-			mirror = &driftexec.RedactingWriter{W: os.Stderr}
-		}
-		// DEVPOD_HOME isolation: every drift-managed devpod invocation
-		// lands under ~/.drift/devpod/ so the user's ~/.devpod/ is
-		// literally invisible to drift and vice versa. Resolve empty on
-		// a hostile environment — drift falls back to the shared HOME
-		// with a single-line warning rather than refusing to start.
-		driftDevpod, homeErr := config.DriftDevpodHome()
-		if homeErr != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not resolve DEVPOD_HOME: %v\n", homeErr)
-			driftDevpod = ""
-		}
-		// Pinned devpod: ensure <driftHome>/bin/devpod is the exact
-		// release asset this lakitu was built against. Happy path on
-		// every run after the first is a cheap hash compare; first run
-		// downloads ~117MB. Fall back to $PATH when the fetch fails so
-		// a transient network glitch doesn't brick the whole RPC
-		// server — the operator sees the warning and can retry later.
-		//
-		// DRIFT_DEVPOD_BINARY short-circuits the download entirely —
-		// useful for operators pointing at a custom build and for the
-		// integration harness, which installs a devpod shim at a fixed
-		// path that would otherwise be shadowed by the pinned binary.
-		pinnedBin := resolvePinnedDevpod(context.Background())
-		lifeDeps := &server.Deps{GarageDir: garage}
-		kartDeps := server.KartDeps{
-			Devpod:    &devpod.Client{Binary: pinnedBin, Mirror: mirror, DevpodHome: driftDevpod},
-			GarageDir: garage,
-			OpenChest: lifeDeps.OpenChestForLifecycle,
-		}
-		server.RegisterKart(reg, kartDeps)
-		server.RegisterKartLifecycle(reg, kartDeps)
-		server.RegisterKartMigrate(reg, server.KartMigrateDeps{KartDeps: kartDeps})
-		server.RegisterKartNew(reg, server.KartNewDeps{
-			Deps: &server.Deps{GarageDir: garage},
-			Kart: kart.NewDeps{
-				GarageDir: garage,
-				Devpod:    &devpod.Client{Binary: pinnedBin, Mirror: mirror, DevpodHome: driftDevpod},
-			},
-			// Same sink as the devpod tee: phase markers, resolver dump,
-			// and chest dechest events stream alongside devpod's output
-			// over the SSH transport's stderr.
-			Verbose: mirror,
-		})
-		server.RegisterKartAutostart(reg, server.KartAutostartDeps{
-			GarageDir: garage,
-			Systemd:   &systemd.Client{},
-		})
+	reg, err := buildRegistry(context.Background(), true, os.Getenv("LAKITU_DEBUG") != "")
+	if err != nil {
+		// GarageDir() only fails on a hostile $HOME. Surface it loudly
+		// rather than silently skipping kart handlers — a missing garage
+		// is a config problem the operator needs to see, not a stealth
+		// "method not found".
+		fmt.Fprintf(os.Stderr, "lakitu: %v\n", err)
 	}
 	return reg
+}
+
+// buildRegistry assembles a registry for dispatch. When withDevpod is
+// false the kart-lifecycle handlers are omitted entirely — no
+// resolvePinnedDevpod / EnsurePinned call runs, so non-devpod RPCs
+// (server.*, config.*, character.*, chest.*, tune.*, run.*) stay fast
+// and offline-safe. An error is returned when GarageDir() fails AND the
+// caller asked for devpod handlers; non-devpod registration tolerates
+// a missing garage because server.version has to work on a fresh box.
+func buildRegistry(ctx context.Context, withDevpod, debug bool) (*rpc.Registry, error) {
+	reg := rpc.NewRegistry()
+	registerNonDevpod(reg)
+	if !withDevpod {
+		return reg, nil
+	}
+	garage, err := config.GarageDir()
+	if err != nil {
+		return reg, fmt.Errorf("resolve garage dir: %w", err)
+	}
+	registerDevpodBacked(ctx, reg, garage, debug)
+	return reg, nil
+}
+
+// registerNonDevpod wires handlers that only touch the garage tree (or
+// don't touch anything at all). Zero subprocess cost — safe to run on
+// every lakitu invocation even when the caller will only dispatch one
+// method. server.init gets a custom handler here because it lives in
+// cmd/lakitu (needs DriftHomeDir + scaffolder recipe) and isn't part of
+// the generic server.Deps bundle.
+func registerNonDevpod(reg *rpc.Registry) {
+	reg.Register(wire.MethodServerInit, serverInitHandler)
+	server.RegisterServer(reg, &server.Deps{})
+}
+
+// registerDevpodBacked wires the kart-lifecycle handlers. Materializes
+// the pinned devpod binary once and reuses a single devpod.Client /
+// server.Deps across every registration — the previous code constructed
+// each twice.
+func registerDevpodBacked(ctx context.Context, reg *rpc.Registry, garage string, debug bool) {
+	// Verbose mode: tee every devpod subprocess's stdout+stderr to
+	// our own stderr so the SSH transport relays it to the drift
+	// client live (drift sets LAKITU_DEBUG=1 on the SSH command
+	// when its own --debug is on). Argv echoes ride the same path.
+	// Wrap in driftexec.RedactingWriter so phase markers and
+	// resolver dumps that mention dechested URLs (with embedded
+	// PATs) get scrubbed before they reach the operator's terminal.
+	// devpod.Client's internal streamMirror wraps again — RedactSecrets
+	// is idempotent so the double-pass is harmless.
+	var mirror io.Writer
+	if debug {
+		mirror = &driftexec.RedactingWriter{W: os.Stderr}
+	}
+	// DEVPOD_HOME isolation: every drift-managed devpod invocation
+	// lands under ~/.drift/devpod/ so the user's ~/.devpod/ is
+	// literally invisible to drift and vice versa. Resolve empty on
+	// a hostile environment — drift falls back to the shared HOME
+	// with a single-line warning rather than refusing to start.
+	driftDevpod, homeErr := config.DriftDevpodHome()
+	if homeErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not resolve DEVPOD_HOME: %v\n", homeErr)
+		driftDevpod = ""
+	}
+	// Pinned devpod: ensure <driftHome>/bin/devpod is the exact
+	// release asset this lakitu was built against. Happy path on
+	// every run after the first is a cheap hash compare; first run
+	// downloads ~117MB. Fall back to $PATH when the fetch fails so
+	// a transient network glitch doesn't brick the whole RPC
+	// server — the operator sees the warning and can retry later.
+	//
+	// DRIFT_DEVPOD_BINARY short-circuits the download entirely —
+	// useful for operators pointing at a custom build and for the
+	// integration harness, which installs a devpod shim at a fixed
+	// path that would otherwise be shadowed by the pinned binary.
+	pinnedBin := resolvePinnedDevpod(ctx)
+	lifeDeps := &server.Deps{GarageDir: garage}
+	dev := &devpod.Client{Binary: pinnedBin, Mirror: mirror, DevpodHome: driftDevpod}
+	kartDeps := server.KartDeps{
+		Devpod:    dev,
+		GarageDir: garage,
+		OpenChest: lifeDeps.OpenChestForLifecycle,
+	}
+	server.RegisterKart(reg, kartDeps)
+	server.RegisterKartLifecycle(reg, kartDeps)
+	server.RegisterKartMigrate(reg, server.KartMigrateDeps{KartDeps: kartDeps})
+	server.RegisterKartNew(reg, server.KartNewDeps{
+		Deps: lifeDeps,
+		Kart: kart.NewDeps{
+			GarageDir: garage,
+			Devpod:    dev,
+		},
+		// Same sink as the devpod tee: phase markers, resolver dump,
+		// and chest dechest events stream alongside devpod's output
+		// over the SSH transport's stderr.
+		Verbose: mirror,
+	})
+	server.RegisterKartAutostart(reg, server.KartAutostartDeps{
+		GarageDir: garage,
+		Systemd:   &systemd.Client{},
+	})
+}
+
+// methodNeedsDevpod reports whether dispatching the named method will
+// reach a handler that spawns devpod subprocesses. The RPC fast path
+// uses this to skip resolvePinnedDevpod/EnsurePinned for non-kart
+// methods. Keep in sync with registerDevpodBacked.
+func methodNeedsDevpod(method string) bool {
+	switch method {
+	case wire.MethodKartNew, wire.MethodKartStart, wire.MethodKartStop,
+		wire.MethodKartRestart, wire.MethodKartDelete, wire.MethodKartList,
+		wire.MethodKartInfo, wire.MethodKartEnable, wire.MethodKartDisable,
+		wire.MethodKartLogs, wire.MethodKartSessionEnv,
+		wire.MethodKartMigrateList:
+		return true
+	}
+	return false
 }
 
 func runInit(ctx context.Context, io IO) int {
@@ -210,27 +275,15 @@ func runInit(ctx context.Context, io IO) int {
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
-	res, err := config.InitGarage(root)
-	if err != nil {
-		return errfmt.Emit(io.Stderr, err)
-	}
 	driftHome, herr := config.DriftHomeDir()
 	if herr != nil {
 		return errfmt.Emit(io.Stderr, herr)
 	}
-	claudeCreated, cerr := config.EnsureClaudeMD(driftHome)
-	if cerr != nil {
-		return errfmt.Emit(io.Stderr, cerr)
+	res, err := config.InitGarageFull(root, driftHome)
+	if err != nil {
+		return errfmt.Emit(io.Stderr, err)
 	}
-	runsCreated, rerr := config.EnsureRunsYAML(driftHome)
-	if rerr != nil {
-		return errfmt.Emit(io.Stderr, rerr)
-	}
-	recipeCreated, rcerr := config.EnsureScaffolderRecipe(driftHome)
-	if rcerr != nil {
-		return errfmt.Emit(io.Stderr, rcerr)
-	}
-	if len(res.Created) == 0 && !claudeCreated && !runsCreated && !recipeCreated {
+	if len(res.Created) == 0 {
 		fmt.Fprintf(io.Stdout, "garage already initialized at %s\n", res.GarageDir)
 	} else {
 		created := append([]string(nil), res.Created...)
@@ -238,15 +291,6 @@ func runInit(ctx context.Context, io IO) int {
 		fmt.Fprintf(io.Stdout, "initialized garage at %s\n", res.GarageDir)
 		for _, c := range created {
 			fmt.Fprintf(io.Stdout, "  + %s\n", c)
-		}
-		if claudeCreated {
-			fmt.Fprintf(io.Stdout, "  + %s\n", "../CLAUDE.md")
-		}
-		if runsCreated {
-			fmt.Fprintf(io.Stdout, "  + %s\n", "../runs.yaml")
-		}
-		if recipeCreated {
-			fmt.Fprintf(io.Stdout, "  + %s\n", "../recipes/scaffolder.md")
 		}
 	}
 	added, perr := ensureDockerProvider(ctx)
@@ -297,28 +341,13 @@ func serverInitHandler(ctx context.Context, params json.RawMessage) (any, error)
 	if err != nil {
 		return nil, rpcerr.Internal("resolve garage dir: %v", err).Wrap(err)
 	}
-	res, err := config.InitGarage(root)
-	if err != nil {
-		return nil, rpcerr.Internal("init garage: %v", err).Wrap(err)
-	}
 	driftHome, herr := config.DriftHomeDir()
 	if herr != nil {
 		return nil, rpcerr.Internal("resolve drift home: %v", herr).Wrap(herr)
 	}
-	if created, cerr := config.EnsureClaudeMD(driftHome); cerr != nil {
-		return nil, rpcerr.Internal("write CLAUDE.md: %v", cerr).Wrap(cerr)
-	} else if created {
-		res.Created = append(res.Created, "../CLAUDE.md")
-	}
-	if created, rerr := config.EnsureRunsYAML(driftHome); rerr != nil {
-		return nil, rpcerr.Internal("write runs.yaml: %v", rerr).Wrap(rerr)
-	} else if created {
-		res.Created = append(res.Created, "../runs.yaml")
-	}
-	if created, rcerr := config.EnsureScaffolderRecipe(driftHome); rcerr != nil {
-		return nil, rpcerr.Internal("write scaffolder recipe: %v", rcerr).Wrap(rcerr)
-	} else if created {
-		res.Created = append(res.Created, "../recipes/scaffolder.md")
+	res, err := config.InitGarageFull(root, driftHome)
+	if err != nil {
+		return nil, rpcerr.Internal("init garage: %v", err).Wrap(err)
 	}
 	// Best-effort provider registration. Errors are swallowed — `Created`
 	// is for filesystem paths, not diagnostic lines. The drift client sees
@@ -361,8 +390,10 @@ func resolvePinnedDevpod(ctx context.Context) string {
 }
 
 // runRPC honors the stdout invariant: only the JSON-RPC response (or
-// nothing on a hard crash) ever goes to stdout.
-func runRPC(ctx context.Context, io IO, reg *rpc.Registry) int {
+// nothing on a hard crash) ever goes to stdout. The registry is built
+// per-request around the decoded method so non-devpod RPCs don't pay
+// resolvePinnedDevpod / EnsurePinned cost.
+func runRPC(ctx context.Context, io IO, debug bool) int {
 	req, err := wire.DecodeRequest(io.Stdin)
 	if err != nil {
 		// Parse error — no valid id to echo. Emit a response with null id
@@ -371,6 +402,23 @@ func runRPC(ctx context.Context, io IO, reg *rpc.Registry) int {
 		resp := &wire.Response{
 			JSONRPC: wire.Version,
 			ID:      json.RawMessage("null"),
+			Error:   e.Wire(),
+		}
+		_ = wire.EncodeResponse(io.Stdout, resp)
+		return 0
+	}
+	needDevpod := methodNeedsDevpod(req.Method)
+	reg, regErr := buildRegistry(ctx, needDevpod, debug)
+	if regErr != nil && needDevpod {
+		// Devpod-backed method on a circuit whose garage can't be
+		// resolved — surface as an RPC error instead of a silent
+		// "method not found". Non-devpod callers still get the
+		// (partial) registry so server.version on a hostile $HOME
+		// keeps working.
+		e := rpcerr.Internal("registry: %v", regErr).Wrap(regErr)
+		resp := &wire.Response{
+			JSONRPC: wire.Version,
+			ID:      req.ID,
 			Error:   e.Wire(),
 		}
 		_ = wire.EncodeResponse(io.Stdout, resp)

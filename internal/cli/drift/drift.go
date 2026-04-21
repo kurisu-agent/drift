@@ -3,7 +3,6 @@ package drift
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -202,12 +201,7 @@ func maybeVersionExit(argv []string, io IO) (int, bool) {
 func emitVersion(io IO, outputFormat string) int {
 	info := version.Get()
 	if outputFormat == "json" {
-		buf, err := json.Marshal(info)
-		if err != nil {
-			return errfmt.Emit(io.Stderr, err)
-		}
-		fmt.Fprintln(io.Stdout, string(buf))
-		return 0
+		return emitJSON(io, info)
 	}
 	fmt.Fprintln(io.Stdout, formatVersionText(info))
 	return 0

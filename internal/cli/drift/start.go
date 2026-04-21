@@ -23,7 +23,7 @@ func runKartStart(ctx context.Context, io IO, root *CLI, cmd startCmd, deps deps
 // by method name and the stdout verb fragment. delete's not_found comes
 // back as a structured rpcerr so the shared path doesn't special-case it.
 func runKartLifecycle(ctx context.Context, io IO, root *CLI, name, method, activeVerb, pastVerb string, deps deps) int {
-	circuit, err := resolveCircuit(root, deps)
+	_, circuit, err := resolveCircuit(root, deps)
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}

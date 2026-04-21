@@ -91,21 +91,6 @@ func EncodeResponse(w io.Writer, resp *Response) error {
 	return nil
 }
 
-func EncodeRequest(w io.Writer, req *Request) error {
-	if req.JSONRPC == "" {
-		req.JSONRPC = Version
-	}
-	buf, err := json.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("wire: encode request: %w", err)
-	}
-	buf = append(buf, '\n')
-	if _, err := w.Write(buf); err != nil {
-		return fmt.Errorf("wire: write request: %w", err)
-	}
-	return nil
-}
-
 func validateRequest(req *Request) error {
 	if req.JSONRPC != Version {
 		return fmt.Errorf("wire: invalid jsonrpc version %q", req.JSONRPC)

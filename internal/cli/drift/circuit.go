@@ -1,16 +1,13 @@
 package drift
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
-	"strconv"
-	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/huh"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/cli/style"
 	"github.com/kurisu-agent/drift/internal/config"
@@ -117,16 +114,7 @@ func runCircuitAdd(ctx context.Context, io IO, root *CLI, cmd circuitAddCmd, dep
 		if err != nil {
 			return errfmt.Emit(io.Stderr, err)
 		}
-		if err := mgr.EnsureInclude(userSSHConfigPath()); err != nil {
-			return errfmt.Emit(io.Stderr, err)
-		}
-		if err := mgr.EnsureSocketsDir(); err != nil {
-			return errfmt.Emit(io.Stderr, err)
-		}
-		if err := mgr.WriteCircuitBlock(info.Name, hostPart, userPart); err != nil {
-			return errfmt.Emit(io.Stderr, err)
-		}
-		if err := mgr.EnsureWildcardBlock(); err != nil {
+		if err := mgr.InstallCircuit(userSSHConfigPath(), info.Name, hostPart, userPart); err != nil {
 			return errfmt.Emit(io.Stderr, err)
 		}
 	}
@@ -207,12 +195,7 @@ func runCircuitList(io IO, root *CLI, deps deps) int {
 			Circuits []entry `json:"circuits"`
 			Default  string  `json:"default_circuit"`
 		}{Circuits: entries, Default: cfg.DefaultCircuit}
-		buf, err := json.Marshal(payload)
-		if err != nil {
-			return errfmt.Emit(io.Stderr, err)
-		}
-		fmt.Fprintln(io.Stdout, string(buf))
-		return 0
+		return emitJSON(io, payload)
 	}
 
 	if len(entries) == 0 {
@@ -228,13 +211,7 @@ func runCircuitList(io IO, root *CLI, deps deps) int {
 		}
 		rows = append(rows, []string{e.Name, e.Host, def})
 	}
-	writeTable(io.Stdout, p, []string{"NAME", "HOST", "DEFAULT"}, rows,
-		func(_, col int, _ *style.Palette) lipgloss.Style {
-			if col == 0 {
-				return lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-			}
-			return lipgloss.NewStyle()
-		})
+	writeTable(io.Stdout, p, []string{"NAME", "HOST", "DEFAULT"}, rows, accentCellStyler(0))
 	return 0
 }
 
@@ -255,12 +232,7 @@ func emitCircuitAdd(io IO, root *CLI, info *wire.ServerInfo, cfg *config.Client,
 			Lakitu:     info.Version,
 			API:        info.API,
 		}
-		buf, err := json.Marshal(payload)
-		if err != nil {
-			return errfmt.Emit(io.Stderr, err)
-		}
-		fmt.Fprintln(io.Stdout, string(buf))
-		return 0
+		return emitJSON(io, payload)
 	}
 
 	p := style.For(io.Stdout, false)
@@ -278,16 +250,10 @@ func emitCircuitAdd(io IO, root *CLI, info *wire.ServerInfo, cfg *config.Client,
 
 func emitCircuitRm(io IO, root *CLI, circuitName string) int {
 	if root.Output == "json" {
-		payload := struct {
+		return emitJSON(io, struct {
 			Circuit string `json:"circuit"`
 			Removed bool   `json:"removed"`
-		}{Circuit: circuitName, Removed: true}
-		buf, err := json.Marshal(payload)
-		if err != nil {
-			return errfmt.Emit(io.Stderr, err)
-		}
-		fmt.Fprintln(io.Stdout, string(buf))
-		return 0
+		}{Circuit: circuitName, Removed: true})
 	}
 	fmt.Fprintf(io.Stdout, "removed circuit %q\n", circuitName)
 	return 0
@@ -300,7 +266,7 @@ func runCircuitSetName(ctx context.Context, io IO, root *CLI, cmd circuitSetName
 	if err := name.Validate("circuit", cmd.NewName); err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
-	oldName, err := resolveCircuit(root, deps)
+	cfg, oldName, err := resolveCircuit(root, deps)
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
@@ -316,12 +282,9 @@ func runCircuitSetName(ctx context.Context, io IO, root *CLI, cmd circuitSetName
 		return errfmt.Emit(io.Stderr, err)
 	}
 
-	// Update local config + SSH block to use the new name.
+	// Update local config + SSH block to use the new name. Re-use the
+	// already-loaded cfg from resolveCircuit — no second YAML parse.
 	cfgPath, err := deps.clientConfigPath()
-	if err != nil {
-		return errfmt.Emit(io.Stderr, err)
-	}
-	cfg, err := config.LoadClient(cfgPath)
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
@@ -355,24 +318,16 @@ func runCircuitSetName(ctx context.Context, io IO, root *CLI, cmd circuitSetName
 		if err := mgr.RemoveCircuitBlock(oldName); err != nil {
 			return errfmt.Emit(io.Stderr, err)
 		}
-		if err := mgr.WriteCircuitBlock(cmd.NewName, hostPart, userPart); err != nil {
-			return errfmt.Emit(io.Stderr, err)
-		}
-		if err := mgr.EnsureWildcardBlock(); err != nil {
+		if err := mgr.InstallCircuit(userSSHConfigPath(), cmd.NewName, hostPart, userPart); err != nil {
 			return errfmt.Emit(io.Stderr, err)
 		}
 	}
 
 	if root.Output == "json" {
-		buf, err := json.Marshal(struct {
+		return emitJSON(io, struct {
 			Old string `json:"old_name"`
 			New string `json:"new_name"`
 		}{Old: oldName, New: cmd.NewName})
-		if err != nil {
-			return errfmt.Emit(io.Stderr, err)
-		}
-		fmt.Fprintln(io.Stdout, string(buf))
-		return 0
 	}
 	fmt.Fprintf(io.Stdout, "renamed circuit %q → %q\n", oldName, cmd.NewName)
 	return 0
@@ -408,7 +363,7 @@ func runCircuitSetDefault(io IO, root *CLI, cmd circuitSetDefaultCmd, deps deps)
 		target = picked
 	}
 	if _, ok := cfg.Circuits[target]; !ok {
-		return errfmt.Emit(io.Stderr, rpcerr.NotFound(rpcerr.TypeKartNotFound,
+		return errfmt.Emit(io.Stderr, rpcerr.NotFound(rpcerr.TypeCircuitNotFound,
 			"circuit %q not found", target).With("circuit", target))
 	}
 	if cfg.DefaultCircuit == target {
@@ -421,23 +376,18 @@ func runCircuitSetDefault(io IO, root *CLI, cmd circuitSetDefaultCmd, deps deps)
 	}
 
 	if root.Output == "json" {
-		buf, err := json.Marshal(struct {
+		return emitJSON(io, struct {
 			DefaultCircuit string `json:"default_circuit"`
 		}{DefaultCircuit: target})
-		if err != nil {
-			return errfmt.Emit(io.Stderr, err)
-		}
-		fmt.Fprintln(io.Stdout, string(buf))
-		return 0
 	}
 	p := style.For(io.Stdout, false)
 	fmt.Fprintf(io.Stdout, "default circuit → %s\n", p.Accent(target))
 	return 0
 }
 
-// pickCircuitDefault renders a numbered list on stderr, reads a choice on
-// stdin, and returns the picked name. Non-TTY stdin is a user error —
-// scripted callers should pass the name as an argument.
+// pickCircuitDefault renders a huh.Select over the configured circuits
+// and returns the picked name. Non-TTY stdin is a user error — scripted
+// callers should pass the name as an argument.
 func pickCircuitDefault(io IO, cfg *config.Client) (string, bool, error) {
 	if !stdinIsTTY(io.Stdin) {
 		return "", false, rpcerr.UserError(rpcerr.TypeInvalidFlag,
@@ -449,47 +399,29 @@ func pickCircuitDefault(io IO, cfg *config.Client) (string, bool, error) {
 	}
 	sort.Strings(names)
 
-	p := style.For(io.Stderr, false)
-	fmt.Fprintln(io.Stderr, p.Bold("circuits:"))
-	rows := make([][]string, 0, len(names))
-	defaultRow := -1
-	for i, n := range names {
-		marker := ""
+	opts := make([]huh.Option[string], 0, len(names))
+	for _, n := range names {
+		label := fmt.Sprintf("%s    %s", n, cfg.Circuits[n].Host)
 		if n == cfg.DefaultCircuit {
-			marker = p.Dim("(current default)")
-			defaultRow = i
+			label += "  (current default)"
 		}
-		rows = append(rows, []string{
-			fmt.Sprintf("[%d]", i+1),
-			n,
-			cfg.Circuits[n].Host,
-			marker,
-		})
+		opts = append(opts, huh.NewOption(label, n))
 	}
-	_ = defaultRow
-	writeTable(io.Stderr, p, []string{"", "NAME", "HOST", ""}, rows,
-		func(_, col int, _ *style.Palette) lipgloss.Style {
-			if col == 1 {
-				return lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-			}
-			return lipgloss.NewStyle()
-		})
-
-	br := bufio.NewReader(io.Stdin)
-	fmt.Fprint(io.Stderr, "pick (number, empty to cancel): ")
-	line, err := br.ReadString('\n')
-	if err != nil && !strings.HasSuffix(err.Error(), "EOF") {
+	pick := cfg.DefaultCircuit
+	sel := huh.NewSelect[string]().
+		Title("drift circuit set default — pick a circuit").
+		Description("type to filter · enter to pick · esc to cancel").
+		Options(opts...).
+		Filtering(true).
+		Height(12).
+		Value(&pick)
+	if err := huh.NewForm(huh.NewGroup(sel)).Run(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return "", false, nil
+		}
 		return "", false, err
 	}
-	line = strings.TrimSpace(line)
-	if line == "" {
-		return "", false, nil
-	}
-	idx, err := strconv.Atoi(line)
-	if err != nil || idx < 1 || idx > len(names) {
-		return "", false, fmt.Errorf("invalid pick %q (expected 1..%d)", line, len(names))
-	}
-	return names[idx-1], true, nil
+	return pick, true, nil
 }
 
 func sshManagerFor(cfgPath string) (*sshconf.Manager, error) {

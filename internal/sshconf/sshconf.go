@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/kurisu-agent/drift/internal/config"
+	"github.com/kurisu-agent/drift/internal/name"
 )
 
 // IncludeDirective must match byte-for-byte so [EnsureInclude] can detect
@@ -75,7 +76,6 @@ func parseManagedBytes(data []byte) *managedFile {
 	mf := &managedFile{}
 	var cur *HostBlock
 	scanner := bufio.NewScanner(bytes.NewReader(data))
-	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
 	for scanner.Scan() {
 		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
@@ -321,7 +321,6 @@ func (m *Manager) EnsureInclude(path string) error {
 
 func hasIncludeAtTop(data []byte) bool {
 	scanner := bufio.NewScanner(bytes.NewReader(data))
-	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -330,6 +329,24 @@ func hasIncludeAtTop(data []byte) bool {
 		return line == IncludeDirective
 	}
 	return false
+}
+
+// InstallCircuit is the "full install" fan-out used by the CLI init/circuit
+// flows: prepend the Include line to the user's ssh_config, make sure the
+// sockets dir exists, (re)write the drift.<circuit> Host block, and ensure
+// the trailing wildcard block is present. No-ops when m.Options.Manage is
+// false — matches the other mutating Manager methods.
+func (m *Manager) InstallCircuit(userSSHConfigPath, circuit, host, user string) error {
+	if err := m.EnsureInclude(userSSHConfigPath); err != nil {
+		return err
+	}
+	if err := m.EnsureSocketsDir(); err != nil {
+		return err
+	}
+	if err := m.WriteCircuitBlock(circuit, host, user); err != nil {
+		return err
+	}
+	return m.EnsureWildcardBlock()
 }
 
 func (m *Manager) EnsureSocketsDir() error {
@@ -352,11 +369,22 @@ func (m *Manager) EnsureSocketsDir() error {
 	return nil
 }
 
-func circuitBlock(name, host, user string) HostBlock {
-	// Accept host as either "example.com" or "example.com:2222"; the
-	// explicit `Port` directive matters because OpenSSH does not parse a
-	// colon-port inside HostName.
-	hostname, port := splitHostPort(host)
+func circuitBlock(circuitName, host, user string) HostBlock {
+	// Accept host as either "example.com", "example.com:2222", "[::1]",
+	// or "[::1]:2222"; the explicit `Port` directive matters because
+	// OpenSSH does not parse a colon-port inside HostName. name.SplitHostPort
+	// strips the IPv6 brackets from hostname; re-wrap them on emit so the
+	// HostName value stays unambiguous for OpenSSH.
+	hostname, port, err := name.SplitHostPort(host)
+	if err != nil {
+		// Fall back to the raw input — a malformed host will surface at
+		// connect time rather than corrupting the managed file.
+		hostname = host
+		port = ""
+	}
+	if strings.Contains(hostname, ":") {
+		hostname = "[" + hostname + "]"
+	}
 	body := []string{
 		"  HostName " + hostname,
 	}
@@ -373,32 +401,7 @@ func circuitBlock(name, host, user string) HostBlock {
 		"  ServerAliveInterval 30",
 		"  ServerAliveCountMax 3",
 	)
-	return HostBlock{Name: CircuitHostName(name), Body: body}
-}
-
-// splitHostPort is a tiny local variant so sshconf doesn't import internal/name.
-// Bracketed IPv6 (`[::1]:22`) preserves the brackets in HostName; bare IPv6
-// with multiple colons is left intact with no port extraction.
-func splitHostPort(host string) (hostname, port string) {
-	if strings.HasPrefix(host, "[") {
-		end := strings.Index(host, "]")
-		if end < 0 {
-			return host, ""
-		}
-		hostname = host[:end+1]
-		rest := host[end+1:]
-		if strings.HasPrefix(rest, ":") {
-			return hostname, rest[1:]
-		}
-		return hostname, ""
-	}
-	if strings.Count(host, ":") > 1 {
-		return host, ""
-	}
-	if i := strings.IndexByte(host, ':'); i >= 0 {
-		return host[:i], host[i+1:]
-	}
-	return host, ""
+	return HostBlock{Name: CircuitHostName(circuitName), Body: body}
 }
 
 func wildcardBlock() HostBlock {

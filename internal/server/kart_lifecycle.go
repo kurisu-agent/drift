@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/devpod"
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
+	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/slogfmt"
@@ -297,6 +298,9 @@ func bindLifecycleParams(params json.RawMessage, method string) (KartLifecyclePa
 	if p.Name == "" {
 		return p, rpcerr.UserError(rpcerr.TypeInvalidFlag, "%s: name is required", method)
 	}
+	if err := name.Validate("kart", p.Name); err != nil {
+		return p, err
+	}
 	return p, nil
 }
 
@@ -362,7 +366,7 @@ func (d KartDeps) workspaceEnvKVs(name string) ([]string, error) {
 }
 
 func (d KartDeps) removeKartDir(name string) error {
-	dir := filepath.Join(d.GarageDir, "karts", name)
+	dir := config.KartDir(d.GarageDir, name)
 	if err := os.RemoveAll(dir); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil

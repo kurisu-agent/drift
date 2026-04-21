@@ -202,7 +202,15 @@ func callAndPrint(ctx context.Context, io IO, method string, params any) int {
 		Params:  raw,
 		ID:      json.RawMessage(`1`),
 	}
-	resp := Registry().Dispatch(ctx, req)
+	// Only materialize the pinned devpod when the method needs it —
+	// `lakitu character list` shouldn't trigger a 117MB download on a
+	// fresh circuit.
+	needDevpod := methodNeedsDevpod(method)
+	reg, regErr := buildRegistry(ctx, needDevpod, false)
+	if regErr != nil && needDevpod {
+		return errfmt.Emit(io.Stderr, regErr)
+	}
+	resp := reg.Dispatch(ctx, req)
 	if resp.Error != nil {
 		return errfmt.Emit(io.Stderr, rpcerr.FromWire(resp.Error))
 	}

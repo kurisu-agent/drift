@@ -49,6 +49,39 @@ func InitGarage(root string) (*InitResult, error) {
 	return res, nil
 }
 
+// InitGarageFull runs the full `lakitu init` filesystem sequence: the
+// garage tree plus the three $DRIFT_HOME siblings (CLAUDE.md, runs.yaml,
+// recipes/scaffolder.md). The returned result reports every path touched
+// — garage-relative entries from InitGarage plus "../CLAUDE.md",
+// "../runs.yaml", "../recipes/scaffolder.md" for sibling files that were
+// created.
+//
+// Separated from InitGarage so the server.init RPC and `lakitu init` CLI
+// share one code path; the CLI prints from Created, the RPC hands the
+// result back to the drift client which renders the same list.
+func InitGarageFull(root, driftHome string) (*InitResult, error) {
+	res, err := InitGarage(root)
+	if err != nil {
+		return nil, err
+	}
+	if created, cerr := EnsureClaudeMD(driftHome); cerr != nil {
+		return nil, cerr
+	} else if created {
+		res.Created = append(res.Created, "../CLAUDE.md")
+	}
+	if created, rerr := EnsureRunsYAML(driftHome); rerr != nil {
+		return nil, rerr
+	} else if created {
+		res.Created = append(res.Created, "../runs.yaml")
+	}
+	if created, rcerr := EnsureScaffolderRecipe(driftHome); rcerr != nil {
+		return nil, rcerr
+	} else if created {
+		res.Created = append(res.Created, "../recipes/scaffolder.md")
+	}
+	return res, nil
+}
+
 // ensureDir leaves existing directories untouched — even if their
 // permissions drift from mode — so init stays safe to re-run on a garage
 // the user tightened manually.

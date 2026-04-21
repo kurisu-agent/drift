@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/devpod"
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
@@ -55,7 +55,7 @@ func (r *recorder) upCalls() []driftexec.Cmd {
 func TestNewRejectsCollision(t *testing.T) {
 	// Real collision: garage dir AND devpod both know the workspace.
 	garage := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(garage, "karts", "dup"), 0o755); err != nil {
+	if err := os.MkdirAll(config.KartDir(garage, "dup"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	rec := &recorder{listStdout: `[{"id":"dup"}]`}
@@ -79,7 +79,7 @@ func TestNewDetectsStaleGarageCorpse(t *testing.T) {
 	// devpod knows nothing. Next attempt must return stale_kart with a
 	// suggestion the user can act on.
 	garage := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(garage, "karts", "ghost"), 0o755); err != nil {
+	if err := os.MkdirAll(config.KartDir(garage, "ghost"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	rec := &recorder{} // default listStdout "" → recorder returns "[]"
@@ -163,7 +163,7 @@ func TestNewClonePathAndConfig(t *testing.T) {
 	}
 
 	// Config.yaml landed with the right fields.
-	cfg := filepath.Join(garage, "karts", "myproj", "config.yaml")
+	cfg := config.KartConfigPath(garage, "myproj")
 	buf, err := os.ReadFile(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -177,9 +177,14 @@ func TestNewClonePathAndConfig(t *testing.T) {
 	if !contains(buf, "character: kurisu") {
 		t.Fatalf("config.yaml missing character: %s", buf)
 	}
-	// Autostart marker
-	if _, err := os.Stat(filepath.Join(garage, "karts", "myproj", "autostart")); err != nil {
+	// Autostart marker (legacy sentinel; the authoritative field now lives
+	// on config.yaml via cluster 25, but the sentinel still lands for one
+	// release so older readers keep working).
+	if _, err := os.Stat(config.KartAutostartPath(garage, "myproj")); err != nil {
 		t.Fatalf("autostart marker missing: %v", err)
+	}
+	if !contains(buf, "autostart: true") {
+		t.Fatalf("config.yaml missing autostart field: %s", buf)
 	}
 }
 
@@ -210,7 +215,7 @@ func TestNewDevpodFailureRollsBackGarageDir(t *testing.T) {
 	if !errors.As(err, &re) || re.Type != rpcerr.TypeDevpodUpFailed {
 		t.Fatalf("expected devpod_up_failed, got %v", err)
 	}
-	kartDir := filepath.Join(garage, "karts", "brokenkart")
+	kartDir := config.KartDir(garage, "brokenkart")
 	if _, statErr := os.Stat(kartDir); !os.IsNotExist(statErr) {
 		t.Fatalf("kart dir should be removed after rollback, stat err = %v", statErr)
 	}

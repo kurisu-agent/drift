@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/kurisu-agent/drift/internal/chest"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/rpc"
@@ -47,8 +48,6 @@ type CharacterNameOnly struct {
 	Name string `json:"name"`
 }
 
-const chestRefPrefix = "chest:"
-
 // CharacterAddHandler is create-only — edits go through remove + add.
 func (d *Deps) CharacterAddHandler(_ context.Context, params json.RawMessage) (any, error) {
 	var p CharacterAddParams
@@ -64,10 +63,10 @@ func (d *Deps) CharacterAddHandler(_ context.Context, params json.RawMessage) (a
 	if p.GitEmail == "" {
 		return nil, rpcerr.UserError(rpcerr.TypeInvalidFlag, "character.add: git_email is required")
 	}
-	if p.PATSecret != "" && !strings.HasPrefix(p.PATSecret, chestRefPrefix) {
+	if p.PATSecret != "" && !strings.HasPrefix(p.PATSecret, chest.RefPrefix) {
 		return nil, rpcerr.UserError(rpcerr.TypeInvalidFlag,
 			"character.add: pat_secret must be a chest reference of the form %q; literal tokens are not accepted",
-			chestRefPrefix+"<name>").With("pat_secret", "redacted")
+			chest.RefPrefix+"<name>").With("pat_secret", "redacted")
 	}
 
 	path := d.characterPath(p.Name)
@@ -102,27 +101,18 @@ func (d *Deps) CharacterListHandler(_ context.Context, params json.RawMessage) (
 	if err := rpc.BindParams(params, &p); err != nil {
 		return nil, err
 	}
-	dir := d.characterDir()
-	entries, err := os.ReadDir(dir)
+	names, err := listYAMLNames(d.characterDir())
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return []CharacterResult{}, nil
-		}
 		return nil, rpcerr.Internal("character.list: %v", err).Wrap(err)
 	}
-	out := make([]CharacterResult, 0, len(entries))
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
-			continue
-		}
-		n := strings.TrimSuffix(e.Name(), ".yaml")
+	out := make([]CharacterResult, 0, len(names))
+	for _, n := range names {
 		c, err := d.loadCharacter(n)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, CharacterResult{Name: n, Character: *c})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 
@@ -206,7 +196,7 @@ func (d *Deps) loadCharacter(n string) (*Character, error) {
 // so a malformed kart config doesn't block character/tune removal.
 func (d *Deps) kartsReferencing(field, value string) ([]string, error) {
 	g, _ := d.garageDir()
-	kartsDir := filepath.Join(g, "karts")
+	kartsDir := config.KartsDir(g)
 	entries, err := os.ReadDir(kartsDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -219,7 +209,7 @@ func (d *Deps) kartsReferencing(field, value string) ([]string, error) {
 		if !e.IsDir() {
 			continue
 		}
-		cfg := filepath.Join(kartsDir, e.Name(), "config.yaml")
+		cfg := config.KartConfigPath(g, e.Name())
 		buf, err := os.ReadFile(cfg)
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {

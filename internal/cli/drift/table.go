@@ -1,14 +1,95 @@
 package drift
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"text/tabwriter"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/cli/style"
 )
+
+// emitJSON marshals v as a single-line JSON object and writes it to
+// io.Stdout with a trailing newline. Marshal failures land on io.Stderr
+// as an errfmt-formatted "error:" line and the helper returns the
+// errfmt exit code — matches the 7+ hand-rolled copies it replaces.
+func emitJSON(io IO, v any) int {
+	buf, err := json.Marshal(v)
+	if err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+	fmt.Fprintln(io.Stdout, string(buf))
+	return 0
+}
+
+// accentCellStyler returns a tableCellStyler that paints the given
+// zero-indexed column with the palette's accent color. Other columns
+// get the default (unstyled) cell. Matches the 4 call sites that used
+// an inline closure with lipgloss.Color("6").
+func accentCellStyler(col int) tableCellStyler {
+	accent := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	return func(_, c int, _ *style.Palette) lipgloss.Style {
+		if c == col {
+			return accent
+		}
+		return lipgloss.NewStyle()
+	}
+}
+
+// tableCellColor is the closed set of named cell colors the drift tables
+// use. Keeping the enum + styler here lets callers stay off a direct
+// lipgloss import — the palette's color choices only live in one place.
+type tableCellColor int
+
+const (
+	tableCellDefault tableCellColor = iota
+	tableCellAccent                 // 6 — accent / circuit / kart name
+	tableCellSuccess                // 2 — "running"
+	tableCellWarn                   // 3 — "stale"
+	tableCellDim                    // 8 — "stopped"
+	tableCellError                  // 1 — "unreachable"
+)
+
+// tableCell describes how writeTable should style one cell — a named
+// color plus an optional bold flag. Zero value is the unstyled default.
+type tableCell struct {
+	Color tableCellColor
+	Bold  bool
+}
+
+// colorCellStyler wraps a per-cell color resolver into a tableCellStyler.
+// Callers implement the small closure without touching lipgloss.
+func colorCellStyler(fn func(row, col int) tableCell) tableCellStyler {
+	return func(row, col int, _ *style.Palette) lipgloss.Style {
+		return styleForCell(fn(row, col))
+	}
+}
+
+// styleForCell maps a tableCell → lipgloss.Style.
+func styleForCell(c tableCell) lipgloss.Style {
+	var s lipgloss.Style
+	switch c.Color {
+	case tableCellAccent:
+		s = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	case tableCellSuccess:
+		s = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	case tableCellWarn:
+		s = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	case tableCellDim:
+		s = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	case tableCellError:
+		s = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	default:
+		s = lipgloss.NewStyle()
+	}
+	if c.Bold {
+		s = s.Bold(true)
+	}
+	return s
+}
 
 // tableCellStyler receives the zero-indexed row/column of a cell (row == -1
 // is the header row) and returns a Palette-aware style applied to the cell

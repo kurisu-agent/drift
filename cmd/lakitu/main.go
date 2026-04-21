@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -23,12 +22,10 @@ func main() {
 		if r := recover(); r != nil {
 			e := rpcerr.Internal("panic: %v", r)
 			if len(os.Args) > 1 && os.Args[1] == "rpc" {
-				buf, _ := e.MarshalJSON()
-				var we wire.Error
-				_ = json.Unmarshal(buf, &we)
 				_ = wire.EncodeResponse(os.Stdout, &wire.Response{
 					JSONRPC: wire.Version,
-					Error:   &we,
+					ID:      nil,
+					Error:   e.Wire(),
 				})
 			} else {
 				fmt.Fprintf(os.Stderr, "lakitu: %v\n", e)

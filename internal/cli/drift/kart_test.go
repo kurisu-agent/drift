@@ -186,11 +186,11 @@ func TestRunKartLogs_JSONOutputPassesThrough(t *testing.T) {
 }
 
 func TestRunKartLogs_SendsFilterParams(t *testing.T) {
-	var gotParams logsParams
+	var gotParams logsCmd
 	d, _ := newKartDeps(t, func(_ context.Context, _, _ string, params, out any) error {
 		// deps.call receives the same struct value the caller passed — we're
 		// the stub so we can type-assert back.
-		if p, ok := params.(logsParams); ok {
+		if p, ok := params.(logsCmd); ok {
 			gotParams = p
 		}
 		*(out.(*json.RawMessage)) = json.RawMessage(`{"name":"alpha","format":"text","lines":[]}`)

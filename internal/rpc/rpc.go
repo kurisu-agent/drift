@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"runtime/debug"
 
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/wire"
@@ -34,11 +36,6 @@ func (r *Registry) Register(name string, h Handler) {
 		panic(fmt.Sprintf("rpc: method %q already registered", name))
 	}
 	r.methods[name] = h
-}
-
-func (r *Registry) Has(name string) bool {
-	_, ok := r.methods[name]
-	return ok
 }
 
 // Dispatch never returns an error: every failure (unknown method, handler
@@ -71,10 +68,13 @@ func (r *Registry) Dispatch(ctx context.Context, req *wire.Request) *wire.Respon
 }
 
 // call recovers handler panics so a buggy handler cannot escape the
-// dispatcher and corrupt stdout.
+// dispatcher and corrupt stdout. The stack trace is logged to stderr
+// before wrapping — swallowing it silently made live panics effectively
+// invisible on the server side.
 func call(ctx context.Context, h Handler, params json.RawMessage) (result any, err error) {
 	defer func() {
 		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "rpc: handler panic: %v\n%s\n", r, debug.Stack())
 			err = rpcerr.Internal("handler panic: %v", r)
 		}
 	}()

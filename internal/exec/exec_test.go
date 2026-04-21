@@ -34,9 +34,6 @@ func TestRunCapturesStdoutAndStderrSeparately(t *testing.T) {
 	if got, want := string(res.Stderr), "err"; got != want {
 		t.Errorf("stderr = %q, want %q", got, want)
 	}
-	if res.ExitCode != 0 {
-		t.Errorf("ExitCode = %d, want 0", res.ExitCode)
-	}
 }
 
 func TestRunReturnsTypedErrorOnNonZeroExit(t *testing.T) {

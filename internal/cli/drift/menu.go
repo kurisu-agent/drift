@@ -2,7 +2,6 @@ package drift
 
 import (
 	"errors"
-	"os"
 
 	"github.com/charmbracelet/huh"
 )
@@ -106,18 +105,4 @@ func runMenu(io IO) ([]string, error) {
 	argv := append([]string{}, entry.prefix...)
 	argv = append(argv, val)
 	return argv, nil
-}
-
-// stdoutIsTTY mirrors stdinIsTTY (see init.go) for the output stream — the
-// menu needs both ends connected to a real terminal before it will fire.
-func stdoutIsTTY(w any) bool {
-	f, ok := w.(*os.File)
-	if !ok {
-		return false
-	}
-	st, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return st.Mode()&os.ModeCharDevice != 0
 }

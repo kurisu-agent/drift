@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -134,21 +133,18 @@ func (kd KartNewDeps) resolvePATSecret(ref string) (string, error) {
 	if ref == "" {
 		return "", nil
 	}
-	if !strings.HasPrefix(ref, "chest:") {
-		return "", rpcerr.UserError(rpcerr.TypeInvalidFlag,
-			"kart.new: character pat_secret must be a chest:<name> reference")
-	}
-	key := strings.TrimPrefix(ref, "chest:")
 	backend, err := kd.openChestBackend()
 	if err != nil {
 		return "", err
 	}
-	val, err := backend.Get(key)
+	val, err := dechestRef(backend, "character", "pat_secret", ref)
 	if err != nil {
 		return "", err
 	}
-	kd.verboseChest("dechested chest:%s (character pat, %d bytes)", key, len(val))
-	return string(val), nil
+	if key, ok := chest.ParseRef(ref); ok {
+		kd.verboseChest("dechested chest:%s (character pat, %d bytes)", key, len(val))
+	}
+	return val, nil
 }
 
 // resolveChestRef dechests a single `chest:<name>` value. Caller has already
@@ -156,7 +152,7 @@ func (kd KartNewDeps) resolvePATSecret(ref string) (string, error) {
 // chest_entry_not_found rpcerr so the resolver can wrap it with field
 // context.
 func (kd KartNewDeps) resolveChestRef(ref string) (string, error) {
-	key := strings.TrimPrefix(strings.TrimSpace(ref), "chest:")
+	key := strings.TrimPrefix(strings.TrimSpace(ref), chest.RefPrefix)
 	backend, err := kd.openChestBackend()
 	if err != nil {
 		return "", err
@@ -214,13 +210,8 @@ func (kd KartNewDeps) resolveTuneEnv(refs kart.TuneEnv) (kart.ResolvedTuneEnv, e
 			continue
 		}
 		resolved := make(map[string]string, len(b.src))
+		field := "env." + b.name
 		for k, ref := range b.src {
-			if !strings.HasPrefix(ref, "chest:") {
-				return kart.ResolvedTuneEnv{}, rpcerr.UserError(rpcerr.TypeInvalidFlag,
-					"kart.new: env.%s.%s must be a chest:<name> reference", b.name, k).
-					With("block", b.name).With("key", k)
-			}
-			name := strings.TrimPrefix(ref, "chest:")
 			if backend == nil {
 				var err error
 				backend, err = kd.openChestBackend()
@@ -228,20 +219,14 @@ func (kd KartNewDeps) resolveTuneEnv(refs kart.TuneEnv) (kart.ResolvedTuneEnv, e
 					return kart.ResolvedTuneEnv{}, err
 				}
 			}
-			val, err := backend.Get(name)
+			val, err := dechestRef(backend, field, k, ref)
 			if err != nil {
-				var rpcErr *rpcerr.Error
-				if errors.As(err, &rpcErr) && rpcErr.Type == rpcerr.TypeChestEntryNotFound {
-					return kart.ResolvedTuneEnv{}, rpcerr.New(rpcerr.CodeNotFound,
-						rpcerr.TypeChestEntryNotFound,
-						"kart.new: env.%s.%s references missing chest entry %q",
-						b.name, k, name).
-						With("block", b.name).With("key", k).With("name", name)
-				}
 				return kart.ResolvedTuneEnv{}, err
 			}
-			kd.verboseChest("dechested chest:%s (env.%s.%s, %d bytes)", name, b.name, k, len(val))
-			resolved[k] = string(val)
+			if name, ok := chest.ParseRef(ref); ok {
+				kd.verboseChest("dechested chest:%s (env.%s.%s, %d bytes)", name, b.name, k, len(val))
+			}
+			resolved[k] = val
 		}
 		*b.dst = resolved
 	}
