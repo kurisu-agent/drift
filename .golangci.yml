@@ -1,5 +1,13 @@
 version: "2"
 
+run:
+  # Lint integration-tagged files too. Without this the pre-commit hook's
+  # per-package golangci-lint run on ./integration/ fails with "build
+  # constraints exclude all Go files" since every file there carries
+  # //go:build integration.
+  build-tags:
+    - integration
+
 linters:
   default: standard
   enable:

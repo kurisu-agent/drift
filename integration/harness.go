@@ -241,6 +241,12 @@ func (c *Circuit) runContainer(ctx context.Context) {
 		// and sshd-spawned sessions see the same value. A single source of
 		// truth avoids provider registrations vanishing between the two.
 		"-e", "DEVPOD_HOME=" + devpodHome,
+		// Pin lakitu's devpod binary to the one the Dockerfile installed
+		// under /usr/local/bin. Without this, lakitu's EnsurePinned would
+		// download its own copy under ~/.drift/bin/devpod, shadowing the
+		// shim-based tests (InstallDevpodShim / InstallDevpodRecorder)
+		// which overwrite /usr/local/bin/devpod.
+		"-e", "DRIFT_DEVPOD_BINARY=/usr/local/bin/devpod",
 		"--group-add", strconv.Itoa(dockerGID),
 		"drift-integration-circuit",
 	}
@@ -273,11 +279,13 @@ func (c *Circuit) runContainer(ctx context.Context) {
 		c.t.Fatalf("chmod authorized_keys: %v", err)
 	}
 
-	// Pin TMPDIR/DEVPOD_HOME for ssh sessions. Sshd-spawned sessions don't
-	// inherit PID 1's env, so the docker run -e above isn't enough on its
-	// own — ~/.ssh/environment covers the ssh login path.
+	// Pin TMPDIR/DEVPOD_HOME/DRIFT_DEVPOD_BINARY for ssh sessions. Sshd-spawned
+	// sessions don't inherit PID 1's env, so the docker run -e above isn't
+	// enough on its own — ~/.ssh/environment covers the ssh login path (which
+	// is how drift's RPC transport spawns lakitu on the circuit).
 	envLine := "TMPDIR=" + c.sharedScratch + "\n" +
-		"DEVPOD_HOME=" + devpodHome + "\n"
+		"DEVPOD_HOME=" + devpodHome + "\n" +
+		"DRIFT_DEVPOD_BINARY=/usr/local/bin/devpod\n"
 	envPath := filepath.Join(c.WorkDir, "ssh_environment")
 	if err := os.WriteFile(envPath, []byte(envLine), 0o600); err != nil {
 		c.t.Fatalf("stage ssh environment: %v", err)
@@ -312,7 +320,7 @@ func (c *Circuit) waitForSSH(ctx context.Context) {
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", c.SSHPort), time.Second)
 		if err == nil {
-			conn.Close()
+			_ = conn.Close()
 			return
 		}
 		time.Sleep(200 * time.Millisecond)
@@ -769,7 +777,7 @@ Host drift.%s
 	if err != nil {
 		c.t.Fatalf("open ssh config for append: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := f.WriteString(block); err != nil {
 		c.t.Fatalf("append ssh config: %v", err)
 	}
@@ -867,7 +875,7 @@ func freePort() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 

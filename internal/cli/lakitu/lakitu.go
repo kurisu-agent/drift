@@ -171,15 +171,12 @@ func Registry() *rpc.Registry {
 		// downloads ~117MB. Fall back to $PATH when the fetch fails so
 		// a transient network glitch doesn't brick the whole RPC
 		// server — the operator sees the warning and can retry later.
-		driftHome, _ := config.DriftHomeDir()
-		pinnedBin := ""
-		if driftHome != "" {
-			p, perr := devpod.EnsurePinned(context.Background(), driftHome)
-			if perr != nil {
-				fmt.Fprintf(os.Stderr, "warning: pinned devpod unavailable (%v); falling back to $PATH\n", perr)
-			}
-			pinnedBin = p
-		}
+		//
+		// DRIFT_DEVPOD_BINARY short-circuits the download entirely —
+		// useful for operators pointing at a custom build and for the
+		// integration harness, which installs a devpod shim at a fixed
+		// path that would otherwise be shadowed by the pinned binary.
+		pinnedBin := resolvePinnedDevpod(context.Background())
 		lifeDeps := &server.Deps{GarageDir: garage}
 		kartDeps := server.KartDeps{
 			Devpod:    &devpod.Client{Binary: pinnedBin, Mirror: mirror, DevpodHome: driftDevpod},
@@ -338,13 +335,29 @@ func serverInitHandler(ctx context.Context, params json.RawMessage) (any, error)
 // present so the init-time check matches the runtime binary exactly.
 func ensureDockerProvider(ctx context.Context) (added bool, err error) {
 	home, _ := config.DriftDevpodHome()
-	driftHome, _ := config.DriftHomeDir()
-	var pinned string
-	if driftHome != "" {
-		pinned, _ = devpod.EnsurePinned(ctx, driftHome)
-	}
-	dev := &devpod.Client{Binary: pinned, DevpodHome: home}
+	dev := &devpod.Client{Binary: resolvePinnedDevpod(ctx), DevpodHome: home}
 	return dev.EnsureProvider(ctx, "docker")
+}
+
+// resolvePinnedDevpod returns the path to the devpod binary lakitu should
+// spawn for kart operations. DRIFT_DEVPOD_BINARY overrides everything (used
+// by operators testing a custom build and by the integration harness whose
+// shim lives at a fixed path). Otherwise we materialize the pinned release
+// under <driftHome>/bin/devpod via EnsurePinned and fall back to $PATH on
+// any failure — the warning tells the operator what happened.
+func resolvePinnedDevpod(ctx context.Context) string {
+	if override := os.Getenv("DRIFT_DEVPOD_BINARY"); override != "" {
+		return override
+	}
+	driftHome, _ := config.DriftHomeDir()
+	if driftHome == "" {
+		return ""
+	}
+	p, err := devpod.EnsurePinned(ctx, driftHome)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: pinned devpod unavailable (%v); falling back to $PATH\n", err)
+	}
+	return p
 }
 
 // runRPC honors the stdout invariant: only the JSON-RPC response (or
