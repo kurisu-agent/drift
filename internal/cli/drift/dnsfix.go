@@ -3,6 +3,8 @@ package drift
 import (
 	"context"
 	"net"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -17,23 +19,49 @@ var fallbackDNS = []string{
 	"8.8.8.8:53",
 }
 
-// installDNSFallback overrides net.DefaultResolver with a wrapper that
-// retries against fallbackDNS when the native resolver would query a
-// loopback address AND that dial fails. Process-wide so every http/net
-// call in the drift binary inherits the fix — not just `drift update`.
+// resolvConfPath is the file probed to decide whether Go's loopback
+// resolver target will be reachable. Package var so tests can point it
+// at a fixture instead of touching the real system file.
+var resolvConfPath = "/etc/resolv.conf"
+
+// installDNSFallback overrides net.DefaultResolver so outbound HTTP
+// calls in the drift binary resolve even on platforms where Go's
+// pure-Go resolver can't find a working nameserver. Two modes:
 //
-// Try-first ordering matters: on standard Linux with systemd-resolved,
-// the resolver legitimately points at 127.0.0.53 — the local stub is
-// what knows about VPN-overridden DNS, split-horizon, and per-link
-// nameservers. Substituting eagerly would break those setups. The
-// fallback only fires when the loopback dial itself fails (typical
-// Termux/Android case where /etc/resolv.conf is missing and Go's
-// resolver picks IANA-default [::1]:53 with nothing listening).
+//   - Eager (needsEagerFallback == true): /etc/resolv.conf is missing
+//     or lists no nameserver. Go's resolver then dials its IANA-default
+//     loopback target (127.0.0.1:53 / [::1]:53). On Termux nothing is
+//     listening there, so the fallback IPs are substituted for the
+//     loopback address before dialing. This is the path the previous
+//     lazy-only fix missed: net.Dialer.DialContext on UDP always
+//     "succeeds" at connect(2) time — the ECONNREFUSED only surfaces
+//     when the resolver reads the response, and that read never flows
+//     through this Dial callback. Preempting is the only way.
+//
+//   - Lazy (needsEagerFallback == false): resolv.conf is present with
+//     real nameservers. On systemd-resolved systems that's 127.0.0.53,
+//     which legitimately hosts the local stub — the stub knows about
+//     VPN-overridden DNS, split-horizon, and per-link nameservers that
+//     our public fallbacks don't. So the configured server is dialed
+//     first and the fallback only fires on dial failure (TCP DNS
+//     retries do fail visibly at dial time, which is why this path
+//     still adds value on conventional Linux).
 func installDNSFallback() {
+	eager := needsEagerFallback(resolvConfPath)
 	net.DefaultResolver = &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
 			d := net.Dialer{Timeout: 5 * time.Second}
+			if eager && isLoopbackDNS(address) {
+				for _, fb := range fallbackDNS {
+					if c, err := d.DialContext(ctx, network, fb); err == nil {
+						return c, nil
+					}
+				}
+				// All fallbacks unreachable — fall through to the original
+				// address so the caller sees the real underlying error
+				// rather than one synthesized here.
+			}
 			conn, err := d.DialContext(ctx, network, address)
 			if err == nil || !isLoopbackDNS(address) {
 				return conn, err
@@ -46,6 +74,24 @@ func installDNSFallback() {
 			return conn, err
 		},
 	}
+}
+
+// needsEagerFallback reports whether the given resolv.conf is unusable —
+// missing, unreadable, or containing no "nameserver <addr>" line. In
+// those states Go's resolver silently picks the IANA-default loopback
+// and (on Termux/Android) nothing is listening there.
+func needsEagerFallback(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return true
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "nameserver" {
+			return false
+		}
+	}
+	return true
 }
 
 func isLoopbackDNS(addr string) bool {
