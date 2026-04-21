@@ -317,9 +317,12 @@ func serverInitHandler(ctx context.Context, params json.RawMessage) (any, error)
 
 // ensureDockerProvider: first-run `devpod up` fails with "provider with
 // name docker not found" unless this has run — folding it into init saves
-// users a broken first `drift new`.
+// users a broken first `drift new`. The provider has to be registered in
+// the same DEVPOD_HOME that kart.new will read from later (drift's own
+// home, not the user's ~/.devpod/), so the caller passes it in.
 func ensureDockerProvider(ctx context.Context) (added bool, err error) {
-	dev := &devpod.Client{}
+	home, _ := config.DriftDevpodHome()
+	dev := &devpod.Client{DevpodHome: home}
 	return dev.EnsureProvider(ctx, "docker")
 }
 
