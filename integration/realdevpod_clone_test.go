@@ -3,10 +3,7 @@
 package integration_test
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -35,14 +32,9 @@ func TestRealDevpodCloneAndDelete(t *testing.T) {
 		t.Skip("skipping real-devpod --clone E2E in -short mode")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 10*time.Minute)
 
-	c := integration.StartCircuit(ctx, t)
-	if err := integration.SSHCommand(ctx, c, "lakitu", "init"); err != nil {
-		t.Fatalf("lakitu init: %v", err)
-	}
-	c.RegisterCircuit(ctx, "test")
+	c, _ := integration.StartReadyCircuit(ctx, t, false)
 
 	// Bare repo lives under the bind-mounted shared scratch so file:// URLs
 	// resolve identically on the circuit (where lakitu runs) and on the
@@ -55,7 +47,7 @@ func TestRealDevpodCloneAndDelete(t *testing.T) {
 	})
 
 	kart := c.KartName("clone")
-	baseline := devcontainerIDs(ctx, t)
+	baseline := integration.DevcontainerIDs(ctx, t)
 
 	stdout, stderr, code := c.Drift(ctx, "new", kart,
 		"--tune", "none",
@@ -79,8 +71,8 @@ func TestRealDevpodCloneAndDelete(t *testing.T) {
 		t.Fatalf("kart.info status = %q, want running", info.Status)
 	}
 
-	afterUp := devcontainerIDs(ctx, t)
-	created := setDiff(afterUp, baseline)
+	afterUp := integration.DevcontainerIDs(ctx, t)
+	created := integration.SetDiff(afterUp, baseline)
 	if len(created) == 0 {
 		t.Fatalf("no new devcontainer on host after drift new --clone; baseline=%v after=%v", baseline, afterUp)
 	}
@@ -89,8 +81,8 @@ func TestRealDevpodCloneAndDelete(t *testing.T) {
 	// directly. devpod labels every container it builds with the
 	// dev.containers.id we captured in `created`; pick the first one.
 	var wcID string
-	for id := range setDiffSet(afterUp, baseline) {
-		wcID = workspaceContainerName(ctx, t, id)
+	for id := range integration.SetDiffSet(afterUp, baseline) {
+		wcID = integration.WorkspaceContainerName(ctx, t, id)
 		if wcID != "" {
 			break
 		}
@@ -101,7 +93,7 @@ func TestRealDevpodCloneAndDelete(t *testing.T) {
 
 	// git binary must be on PATH: --clone preserves history, so the
 	// operator needs git at runtime to use it.
-	if out, err := dockerExec(ctx, wcID, "sh", "-c", "command -v git"); err != nil || strings.TrimSpace(string(out)) == "" {
+	if out, err := integration.DockerExec(ctx, wcID, "sh", "-c", "command -v git"); err != nil || strings.TrimSpace(string(out)) == "" {
 		t.Errorf("git missing in workspace container %s: err=%v out=%q", wcID, err, out)
 	}
 
@@ -109,7 +101,7 @@ func TestRealDevpodCloneAndDelete(t *testing.T) {
 	// between --clone and --starter is history retention. devpod mounts
 	// the clone at /workspaces/<kart-name>/.
 	gitDir := "/workspaces/" + kart + "/.git"
-	if out, err := dockerExec(ctx, wcID, "sh", "-c", "ls -1A "+gitDir+" | head -1"); err != nil || strings.TrimSpace(string(out)) == "" {
+	if out, err := integration.DockerExec(ctx, wcID, "sh", "-c", "ls -1A "+gitDir+" | head -1"); err != nil || strings.TrimSpace(string(out)) == "" {
 		t.Errorf(".git/ not preserved in workspace %s at %s: err=%v out=%q", wcID, gitDir, err, out)
 	}
 
@@ -119,58 +111,8 @@ func TestRealDevpodCloneAndDelete(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("drift delete: code=%d stderr=%q", code, stderr)
 	}
-	afterDelete := devcontainerIDs(ctx, t)
-	if orphans := setDiff(afterDelete, baseline); len(orphans) > 0 {
+	afterDelete := integration.DevcontainerIDs(ctx, t)
+	if orphans := integration.SetDiff(afterDelete, baseline); len(orphans) > 0 {
 		t.Errorf("devcontainer orphans after drift delete: %v", orphans)
 	}
-}
-
-// setDiffSet returns the members of a not present in b as a set.
-func setDiffSet(a, b map[string]struct{}) map[string]struct{} {
-	out := map[string]struct{}{}
-	for k := range a {
-		if _, ok := b[k]; !ok {
-			out[k] = struct{}{}
-		}
-	}
-	return out
-}
-
-// workspaceContainerName resolves a dev.containers.id label back to the
-// container name docker exec can target. Returns "" if no container matches.
-func workspaceContainerName(ctx context.Context, t *testing.T, devContainerID string) string {
-	t.Helper()
-	out, err := exec.CommandContext(ctx, "docker", "ps",
-		"--filter", "label=dev.containers.id="+devContainerID,
-		"--format", "{{.Names}}").Output()
-	if err != nil {
-		t.Fatalf("docker ps for label %q: %v", devContainerID, err)
-	}
-	name := strings.TrimSpace(string(out))
-	if name == "" || strings.ContainsRune(name, '\n') {
-		// Either no match or multiple — the first-line fallback handles the
-		// latter since devpod typically builds one container per workspace.
-		fields := strings.Fields(name)
-		if len(fields) > 0 {
-			return fields[0]
-		}
-		return ""
-	}
-	return name
-}
-
-// dockerExec runs a command inside a container and returns stdout. Used to
-// poke at the workspace filesystem without routing through devpod ssh
-// (which would need a full shell session in a -t pty context).
-func dockerExec(ctx context.Context, container string, args ...string) ([]byte, error) {
-	argv := append([]string{"exec", container}, args...)
-	cmd := exec.CommandContext(ctx, "docker", argv...)
-	out, err := cmd.Output()
-	if err != nil {
-		if ee, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("docker exec %s %v: %w (stderr=%q)", container, args, err, ee.Stderr)
-		}
-		return nil, err
-	}
-	return out, nil
 }

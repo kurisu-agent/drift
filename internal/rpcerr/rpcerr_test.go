@@ -9,29 +9,28 @@ import (
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 )
 
-func TestMarshalJSON_includesTypeAndData(t *testing.T) {
+func TestWire_includesTypeAndData(t *testing.T) {
 	e := rpcerr.NotFound(rpcerr.TypeKartNotFound, "kart %q not found", "myproject").
 		With("kart", "myproject").
 		With("circuit", "my-server")
-	buf, err := json.Marshal(e)
-	if err != nil {
-		t.Fatalf("Marshal: %v", err)
+	we := e.Wire()
+	if we.Code != 3 {
+		t.Errorf("Code = %d, want 3", we.Code)
+	}
+	if we.Message != `kart "myproject" not found` {
+		t.Errorf("Message = %q", we.Message)
 	}
 	var got map[string]any
-	if err := json.Unmarshal(buf, &got); err != nil {
-		t.Fatalf("Unmarshal: %v", err)
+	if err := json.Unmarshal(we.Data, &got); err != nil {
+		t.Fatalf("Unmarshal data: %v", err)
 	}
 	want := map[string]any{
-		"code":    float64(3),
-		"message": `kart "myproject" not found`,
-		"data": map[string]any{
-			"type":    "kart_not_found",
-			"kart":    "myproject",
-			"circuit": "my-server",
-		},
+		"type":    "kart_not_found",
+		"kart":    "myproject",
+		"circuit": "my-server",
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("marshal mismatch (-want +got):\n%s", diff)
+		t.Errorf("data mismatch (-want +got):\n%s", diff)
 	}
 }
 

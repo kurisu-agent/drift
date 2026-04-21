@@ -47,6 +47,7 @@ const (
 	TypeInvalidFlag        Type = "invalid_flag"
 	TypeMutuallyExclusive  Type = "mutually_exclusive_flags"
 	TypeKartNotFound       Type = "kart_not_found"
+	TypeCircuitNotFound    Type = "circuit_not_found"
 	TypeCharacterNotFound  Type = "character_not_found"
 	TypeChestEntryNotFound Type = "chest_entry_not_found"
 	TypeNameCollision      Type = "name_collision"
@@ -90,28 +91,6 @@ func (e *Error) Is(target error) bool {
 		return false
 	}
 	return e.Type == other.Type
-}
-
-func (e *Error) MarshalJSON() ([]byte, error) {
-	data := make(map[string]any, len(e.Data)+1)
-	for k, v := range e.Data {
-		data[k] = v
-	}
-	if e.Type != "" {
-		data["type"] = string(e.Type)
-	}
-	payload := struct {
-		Code    Code           `json:"code"`
-		Message string         `json:"message"`
-		Data    map[string]any `json:"data,omitempty"`
-	}{
-		Code:    e.Code,
-		Message: e.Message,
-	}
-	if len(data) > 0 {
-		payload.Data = data
-	}
-	return json.Marshal(payload)
 }
 
 // Wire produces the JSON-RPC error object. Cause is dropped — it's for

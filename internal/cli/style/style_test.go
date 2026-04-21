@@ -2,7 +2,6 @@ package style_test
 
 import (
 	"bytes"
-	"strings"
 	"testing"
 
 	"github.com/kurisu-agent/drift/internal/cli/style"
@@ -30,12 +29,17 @@ func TestFor_JSONModeDisables(t *testing.T) {
 	}
 }
 
-func TestDisabled_ReturnsInputsUnchanged(t *testing.T) {
-	p := style.Disabled()
+// Callers relied on style.Disabled() for a guaranteed no-op palette; after
+// the cluster-10 removal, style.For(w, false) with a non-TTY writer is the
+// canonical way to get one. This test guards that every styled method
+// stays a pass-through in that mode.
+func TestFor_NonTTY_AllMethodsPassThrough(t *testing.T) {
+	var buf bytes.Buffer
+	p := style.For(&buf, false)
 	for _, s := range []string{"", "x", "colored\ttext"} {
 		if p.Success(s) != s || p.Warn(s) != s || p.Error(s) != s ||
 			p.Dim(s) != s || p.Accent(s) != s || p.Bold(s) != s {
-			t.Errorf("Disabled palette altered %q", s)
+			t.Errorf("non-TTY palette altered %q", s)
 		}
 	}
 }
@@ -44,23 +48,5 @@ func TestNilReceiver_IsNoOp(t *testing.T) {
 	var p *style.Palette
 	if got := p.Accent("x"); got != "x" {
 		t.Errorf("nil palette Accent = %q, want %q", got, "x")
-	}
-}
-
-func TestStripANSI(t *testing.T) {
-	in := "\x1b[31merror\x1b[0m: \x1b[1;32mgreen\x1b[0m tail"
-	want := "error: green tail"
-	if got := style.StripANSI(in); got != want {
-		t.Errorf("StripANSI = %q, want %q", got, want)
-	}
-	if got := style.StripANSI("plain"); got != "plain" {
-		t.Errorf("StripANSI plain altered: %q", got)
-	}
-}
-
-func TestStripANSI_HandlesCursorMoves(t *testing.T) {
-	in := "\x1b[2K\x1b[1Gline\n"
-	if !strings.Contains(style.StripANSI(in), "line\n") {
-		t.Errorf("StripANSI dropped content: %q", style.StripANSI(in))
 	}
 }

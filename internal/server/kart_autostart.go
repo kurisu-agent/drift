@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/kurisu-agent/drift/internal/config"
+	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/systemd"
@@ -35,7 +37,7 @@ func (d *KartAutostartDeps) kartEnableHandler(ctx context.Context, params json.R
 	if err := rpc.BindParams(params, &p); err != nil {
 		return nil, err
 	}
-	if err := requireKartName(p.Name); err != nil {
+	if err := name.Validate("kart", p.Name); err != nil {
 		return nil, err
 	}
 	if d.Systemd == nil {
@@ -55,7 +57,7 @@ func (d *KartAutostartDeps) kartDisableHandler(ctx context.Context, params json.
 	if err := rpc.BindParams(params, &p); err != nil {
 		return nil, err
 	}
-	if err := requireKartName(p.Name); err != nil {
+	if err := name.Validate("kart", p.Name); err != nil {
 		return nil, err
 	}
 	if d.Systemd == nil {
@@ -73,7 +75,7 @@ func (d *KartAutostartDeps) kartDisableHandler(ctx context.Context, params json.
 // autostartMarkerPath: presence of this file signals "autostart on" to
 // lakitu init's reconciliation pass.
 func (d *KartAutostartDeps) autostartMarkerPath(kart string) string {
-	return filepath.Join(d.GarageDir, "karts", kart, "autostart")
+	return config.KartAutostartPath(d.GarageDir, kart)
 }
 
 func (d *KartAutostartDeps) writeAutostartMarker(kart string) error {
@@ -104,11 +106,4 @@ func wrapSystemdError(err error) error {
 			With("suggestion", "ensure `loginctl enable-linger <user>` has been run on the circuit")
 	}
 	return rpcerr.New(rpcerr.CodeDevpod, "systemctl_failed", "%v", err).Wrap(err)
-}
-
-func requireKartName(n string) error {
-	if n == "" {
-		return rpcerr.UserError(rpcerr.TypeInvalidFlag, "kart name is required")
-	}
-	return nil
 }

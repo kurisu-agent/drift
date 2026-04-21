@@ -12,15 +12,7 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// Local mirrors keep the CLI off a compile-time dep on internal/server.
-type logsParams struct {
-	Name  string        `json:"name"`
-	Tail  int           `json:"tail,omitempty"`
-	Since time.Duration `json:"since,omitempty"`
-	Level string        `json:"level,omitempty"`
-	Grep  string        `json:"grep,omitempty"`
-}
-
+// Local mirror keeps the CLI off a compile-time dep on internal/server.
 type logsResult struct {
 	Name   string   `json:"name"`
 	Format string   `json:"format"`
@@ -43,13 +35,12 @@ type logsCmd struct {
 }
 
 func runKartLogs(ctx context.Context, io IO, root *CLI, cmd logsCmd, deps deps) int {
-	circuit, err := resolveCircuit(root, deps)
+	_, circuit, err := resolveCircuit(root, deps)
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
-	params := logsParams(cmd)
 	var raw json.RawMessage
-	if err := deps.call(ctx, circuit, wire.MethodKartLogs, params, &raw); err != nil {
+	if err := deps.call(ctx, circuit, wire.MethodKartLogs, cmd, &raw); err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
 	if root != nil && root.Output == "json" {

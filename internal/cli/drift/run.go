@@ -9,7 +9,6 @@ import (
 	osexec "os/exec"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/cli/style"
 	"github.com/kurisu-agent/drift/internal/connect"
@@ -32,7 +31,7 @@ type runCmd struct {
 }
 
 func runRunsList(ctx context.Context, io IO, root *CLI, _ runsCmd, deps deps) int {
-	circuit, err := resolveCircuit(root, deps)
+	_, circuit, err := resolveCircuit(root, deps)
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
@@ -58,18 +57,12 @@ func runRunsList(ctx context.Context, io IO, root *CLI, _ runsCmd, deps deps) in
 	for _, e := range res.Entries {
 		rows = append(rows, []string{e.Name, string(e.Mode), e.Description})
 	}
-	writeTable(io.Stdout, p, []string{"NAME", "MODE", "DESCRIPTION"}, rows,
-		func(_, col int, _ *style.Palette) lipgloss.Style {
-			if col == 0 {
-				return lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-			}
-			return lipgloss.NewStyle()
-		})
+	writeTable(io.Stdout, p, []string{"NAME", "MODE", "DESCRIPTION"}, rows, accentCellStyler(0))
 	return 0
 }
 
 func runRunExec(ctx context.Context, io IO, root *CLI, cmd runCmd, deps deps) int {
-	circuit, err := resolveCircuit(root, deps)
+	_, circuit, err := resolveCircuit(root, deps)
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}

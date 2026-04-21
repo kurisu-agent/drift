@@ -41,8 +41,6 @@ type Cmd struct {
 type Result struct {
 	Stdout []byte
 	Stderr []byte
-	// ExitCode is always 0 — non-zero exits return *Error instead.
-	ExitCode int
 }
 
 type Error struct {
@@ -91,37 +89,10 @@ func Interactive(ctx context.Context, bin string, argv []string, stdin io.Reader
 	c.Stdout = stdout
 	c.Stderr = stderr
 
-	c.Cancel = func() error {
-		if c.Process == nil {
-			return errors.New("exec: Cancel called before process started")
-		}
-		return c.Process.Signal(syscall.SIGTERM)
-	}
-	c.WaitDelay = DefaultWaitDelay
+	applyCancelAndWaitDelay(c, DefaultWaitDelay)
 
 	runErr := c.Run()
-
-	// Context cancellation wins over the child's signal-killed exit status
-	// so callers can branch via errors.Is(err, context.Canceled).
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return fmt.Errorf("exec: %s: %w", bin, ctxErr)
-	}
-
-	if runErr == nil {
-		return nil
-	}
-
-	var exitErr *osexec.ExitError
-	if errors.As(runErr, &exitErr) {
-		return &Error{
-			Name:     bin,
-			Args:     append([]string(nil), argv...),
-			ExitCode: exitErr.ExitCode(),
-		}
-	}
-
-	// Startup failures (binary missing, exec permission denied) land here.
-	return fmt.Errorf("exec: %s: %w", bin, runErr)
+	return finishRun(ctx, bin, argv, runErr, nil, nil)
 }
 
 func Run(ctx context.Context, cmd Cmd) (Result, error) {
@@ -147,49 +118,68 @@ func Run(ctx context.Context, cmd Cmd) (Result, error) {
 		c.Stderr = &stderr
 	}
 
+	applyCancelAndWaitDelay(c, cmd.WaitDelay)
+
+	runErr := c.Run()
+	if err := finishRun(ctx, cmd.Name, cmd.Args, runErr, stderr.Bytes(), stdout.Bytes()); err != nil {
+		return Result{}, err
+	}
+	return Result{
+		Stdout: stdout.Bytes(),
+		Stderr: stderr.Bytes(),
+	}, nil
+}
+
+// applyCancelAndWaitDelay wires the SIGTERM-on-cancel closure and sets a
+// WaitDelay (falling back to DefaultWaitDelay on zero).
+func applyCancelAndWaitDelay(c *osexec.Cmd, waitDelay time.Duration) {
 	c.Cancel = func() error {
 		if c.Process == nil {
 			return errors.New("exec: Cancel called before process started")
 		}
 		return c.Process.Signal(syscall.SIGTERM)
 	}
-	c.WaitDelay = cmd.WaitDelay
-	if c.WaitDelay == 0 {
-		c.WaitDelay = DefaultWaitDelay
+	if waitDelay == 0 {
+		waitDelay = DefaultWaitDelay
 	}
+	c.WaitDelay = waitDelay
+}
 
-	runErr := c.Run()
-
+// finishRun maps c.Run()'s return into the package's typed error discipline:
+// context cancellation wins over any child exit status, *osexec.ExitError
+// becomes *Error, and anything else (startup failures) wraps with %s: %w.
+// stderr/stdout are the captured buffers for Run's rich *Error; Interactive
+// passes nil for both since stdio streams straight through.
+func finishRun(ctx context.Context, name string, args []string, runErr error, stderr, stdout []byte) error {
 	// Context cancellation wins over the child's signal-killed exit status
 	// so callers can branch via errors.Is(err, context.Canceled).
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		return Result{}, fmt.Errorf("exec: %s: %w", cmd.Name, ctxErr)
+		return fmt.Errorf("exec: %s: %w", name, ctxErr)
 	}
 
 	if runErr == nil {
-		return Result{
-			Stdout:   stdout.Bytes(),
-			Stderr:   stderr.Bytes(),
-			ExitCode: 0,
-		}, nil
+		return nil
 	}
 
 	var exitErr *osexec.ExitError
 	if errors.As(runErr, &exitErr) {
-		return Result{}, &Error{
-			Name:            cmd.Name,
-			Args:            append([]string(nil), cmd.Args...),
-			ExitCode:        exitErr.ExitCode(),
-			Stderr:          stderr.Bytes(),
-			Stdout:          stdout.Bytes(),
-			FirstStderrLine: firstLine(stderr.Bytes()),
+		e := &Error{
+			Name:     name,
+			Args:     append([]string(nil), args...),
+			ExitCode: exitErr.ExitCode(),
 		}
+		if stderr != nil || stdout != nil {
+			e.Stderr = stderr
+			e.Stdout = stdout
+			e.FirstStderrLine = firstLine(stderr)
+		}
+		return e
 	}
 
 	// Startup failures (program not found, exec permission denied, pipe
 	// setup errors) land here. Wrap so errors.Is against os/exec sentinels
 	// still works.
-	return Result{}, fmt.Errorf("exec: %s: %w", cmd.Name, runErr)
+	return fmt.Errorf("exec: %s: %w", name, runErr)
 }
 
 // StderrTail unwraps *Error and returns the trailing ~20 lines of captured

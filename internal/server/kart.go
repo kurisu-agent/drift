@@ -6,11 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
-	"strings"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/kurisu-agent/drift/internal/chest"
+	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/devpod"
 	"github.com/kurisu-agent/drift/internal/model"
 	"github.com/kurisu-agent/drift/internal/rpc"
@@ -34,22 +35,11 @@ func RegisterKart(reg *rpc.Registry, d KartDeps) {
 	reg.Register(wire.MethodKartInfo, d.kartInfoHandler)
 }
 
-// KartConfig is the on-disk shape of garage/karts/<name>/config.yaml. Only
-// identifiers (tune, character, source) round-trip — runtime details come
-// from devpod at query time.
-type KartConfig struct {
-	Repo         string              `yaml:"repo,omitempty"`
-	Tune         string              `yaml:"tune,omitempty"`
-	Character    string              `yaml:"character,omitempty"`
-	SourceMode   string              `yaml:"source_mode,omitempty"`
-	User         string              `yaml:"user,omitempty"`
-	Shell        string              `yaml:"shell,omitempty"`
-	Image        string              `yaml:"image,omitempty"`
-	Workdir      string              `yaml:"workdir,omitempty"`
-	CreatedAt    string              `yaml:"created_at,omitempty"`
-	Env          model.TuneEnv       `yaml:"env,omitempty"`
-	MigratedFrom *model.MigratedFrom `yaml:"migrated_from,omitempty"`
-}
+// KartConfig is aliased to model.KartConfig so server and kart packages
+// share one on-disk type while existing server.KartConfig callers (tests,
+// CLI glue) still compile. The wire-format (YAML tags) lives on the
+// canonical type in internal/model.
+type KartConfig = model.KartConfig
 
 // KartSource is aliased to model.KartSource so server and kart packages
 // share one type while existing server.KartSource callers still compile.
@@ -126,10 +116,6 @@ func (d KartDeps) kartListHandler(ctx context.Context, params json.RawMessage) (
 	for _, w := range workspaces {
 		wsByID[w.ID] = w
 	}
-	garageByName := make(map[string]KartConfig, len(garage))
-	for name, cfg := range garage {
-		garageByName[name] = cfg
-	}
 
 	// Union by name so a kart present in either system shows up once;
 	// sorted so output is stable for testscript diffs.
@@ -146,12 +132,23 @@ func (d KartDeps) kartListHandler(ctx context.Context, params json.RawMessage) (
 	}
 	sort.Strings(ordered)
 
-	karts := make([]KartInfo, 0, len(ordered))
-	for _, name := range ordered {
+	// Fan out buildInfo across karts so each kart's devpod status probe
+	// doesn't serialize behind the previous one's SSH handshake. Ordering
+	// is preserved via pre-indexed slots; the limit caps concurrent devpod
+	// subprocesses so a 50-kart circuit doesn't launch 50 child processes.
+	karts := make([]KartInfo, len(ordered))
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(4)
+	for i, name := range ordered {
 		ws, inDevpod := wsByID[name]
-		cfg, inGarage := garageByName[name]
-		info := d.buildInfo(ctx, name, cfg, ws, inDevpod, inGarage)
-		karts = append(karts, info)
+		cfg, inGarage := garage[name]
+		g.Go(func() error {
+			karts[i] = d.buildInfo(gctx, name, cfg, ws, inDevpod, inGarage)
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 	return KartListResult{Karts: karts}, nil
 }
@@ -289,7 +286,7 @@ func (d KartDeps) listWorkspaces(ctx context.Context) ([]devpod.Workspace, error
 // listGarageKarts tolerates a missing karts/ dir — returns an empty map
 // rather than erroring on a circuit that hasn't run `lakitu init` yet.
 func (d KartDeps) listGarageKarts() (map[string]KartConfig, error) {
-	root := filepath.Join(d.GarageDir, "karts")
+	root := config.KartsDir(d.GarageDir)
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -320,11 +317,11 @@ func (d KartDeps) listGarageKarts() (map[string]KartConfig, error) {
 // readKartConfig returns (cfg, true, nil) when the kart is garage-known and
 // (_, false, nil) when there's no garage entry at all.
 func (d KartDeps) readKartConfig(name string) (KartConfig, bool, error) {
-	path := filepath.Join(d.GarageDir, "karts", name, "config.yaml")
+	path := config.KartConfigPath(d.GarageDir, name)
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			dir := filepath.Join(d.GarageDir, "karts", name)
+			dir := config.KartDir(d.GarageDir, name)
 			if _, derr := os.Stat(dir); derr == nil {
 				// Dir exists but config.yaml doesn't — treat as garage-known
 				// with zero config so stale detection still fires.
@@ -341,9 +338,16 @@ func (d KartDeps) readKartConfig(name string) (KartConfig, bool, error) {
 	return cfg, true, nil
 }
 
+// kartAutostartEnabled consults the YAML field first — set by kart.new on
+// autostarted karts — and falls back to the on-disk sentinel file so pre-
+// Autostart-field karts still report correctly. Agent 3 continues to write
+// the sentinel during migration, so this fallback stays useful.
 func (d KartDeps) kartAutostartEnabled(name string) bool {
-	path := filepath.Join(d.GarageDir, "karts", name, "autostart")
-	if _, err := os.Stat(path); err == nil {
+	cfg, ok, err := d.readKartConfig(name)
+	if err == nil && ok && cfg.Autostart {
+		return true
+	}
+	if _, err := os.Stat(config.KartAutostartPath(d.GarageDir, name)); err == nil {
 		return true
 	}
 	return false
@@ -361,22 +365,22 @@ func findWorkspace(workspaces []devpod.Workspace, name string) (devpod.Workspace
 // sourceFromConfig: garage config is authoritative for mode. If garage has
 // no opinion, fall back to the devpod workspace's Source.
 func sourceFromConfig(cfg KartConfig, ws devpod.Workspace) KartSource {
-	mode := cfg.SourceMode
+	mode := model.SourceMode(cfg.SourceMode)
 	url := cfg.Repo
 	if mode == "" {
 		switch {
 		case ws.Source.GitRepository != "":
-			mode = "clone"
+			mode = model.SourceModeClone
 			url = ws.Source.GitRepository
 		case ws.Source.LocalFolder != "":
-			mode = "starter"
+			mode = model.SourceModeStarter
 			url = ws.Source.LocalFolder
 		default:
-			mode = "none"
+			mode = model.SourceModeNone
 		}
 	}
-	src := KartSource{Mode: mode}
-	if mode != "none" {
+	src := KartSource{Mode: string(mode)}
+	if mode != model.SourceModeNone {
 		src.URL = url
 	}
 	return src
@@ -397,7 +401,7 @@ func containerFromConfig(cfg KartConfig) *KartContainer {
 // resolveEnvBlock de-chests a single env block (build / workspace /
 // session) against the current chest state. Rotated secrets land on the
 // next call. Unresolvable refs surface as chest_entry_not_found with
-// block + key in Data, mirroring the kart.new resolver.
+// field + key in Data, mirroring the kart.new resolver.
 //
 // A nil OpenChest or empty input returns an empty map without touching
 // any backend — callers can pass the result straight to devpod.
@@ -409,25 +413,14 @@ func (d KartDeps) resolveEnvBlock(block string, refs map[string]string) (map[str
 	if err != nil {
 		return nil, err
 	}
+	field := "env." + block
 	out := make(map[string]string, len(refs))
 	for k, ref := range refs {
-		if !strings.HasPrefix(ref, "chest:") {
-			return nil, rpcerr.UserError(rpcerr.TypeInvalidFlag,
-				"kart: env.%s.%s is not a chest reference", block, k).
-				With("block", block).With("key", k)
-		}
-		name := strings.TrimPrefix(ref, "chest:")
-		val, err := backend.Get(name)
+		val, err := dechestRef(backend, field, k, ref)
 		if err != nil {
-			var rpcErr *rpcerr.Error
-			if errors.As(err, &rpcErr) && rpcErr.Type == rpcerr.TypeChestEntryNotFound {
-				return nil, rpcerr.New(rpcerr.CodeNotFound, rpcerr.TypeChestEntryNotFound,
-					"env.%s.%s references missing chest entry %q", block, k, name).
-					With("block", block).With("key", k).With("name", name)
-			}
 			return nil, err
 		}
-		out[k] = string(val)
+		out[k] = val
 	}
 	return out, nil
 }

@@ -46,16 +46,7 @@ func runInit(ctx context.Context, io IO, root *CLI, cmd initCmd, deps deps) int 
 			if err != nil {
 				return err
 			}
-			if err := mgr.EnsureInclude(userSSHConfigPath()); err != nil {
-				return err
-			}
-			if err := mgr.EnsureSocketsDir(); err != nil {
-				return err
-			}
-			if err := mgr.WriteCircuitBlock(circuit, hostPart, userPart); err != nil {
-				return err
-			}
-			return mgr.EnsureWildcardBlock()
+			return mgr.InstallCircuit(userSSHConfigPath(), circuit, hostPart, userPart)
 		},
 		Probe: func(ctx context.Context, circuit string) (*warmup.ProbeResult, error) {
 			if deps.probe == nil {
@@ -84,18 +75,22 @@ func runInit(ctx context.Context, io IO, root *CLI, cmd initCmd, deps deps) int 
 	return errfmt.Emit(io.Stderr, err)
 }
 
-// stdinIsTTY returns true only when r is a *os.File backed by an actual
+// isTTY returns true only when fd is a *os.File backed by an actual
 // terminal. An earlier version leaned on os.ModeCharDevice to avoid
 // pulling in golang.org/x/term, but that also matches /dev/null — the
-// file Go's os/exec hands a child when Stdin is nil — so every
+// file Go's os/exec hands a child when Stdin/Stdout are nil — so every
 // non-interactive caller (CI runners, systemd, cron) was being
 // misclassified as interactive and features like drift-new auto-connect
 // would fire by accident. term.IsTerminal does a proper TIOCGWINSZ
 // ioctl and distinguishes a TTY from /dev/null.
-func stdinIsTTY(r any) bool {
-	f, ok := r.(*os.File)
+func isTTY(fd any) bool {
+	f, ok := fd.(*os.File)
 	if !ok {
 		return false
 	}
 	return term.IsTerminal(int(f.Fd()))
 }
+
+// stdinIsTTY / stdoutIsTTY are thin aliases kept for call-site clarity.
+func stdinIsTTY(r any) bool  { return isTTY(r) }
+func stdoutIsTTY(w any) bool { return isTTY(w) }

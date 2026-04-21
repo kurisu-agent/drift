@@ -3,10 +3,7 @@
 package integration_test
 
 import (
-	"context"
 	"encoding/json"
-	"os/exec"
-	"strings"
 	"testing"
 	"time"
 
@@ -29,14 +26,9 @@ func TestRealDevpodUpAndDelete(t *testing.T) {
 		t.Skip("skipping real-devpod E2E in -short mode")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
-	defer cancel()
+	ctx := integration.TestCtx(t, 6*time.Minute)
 
-	c := integration.StartCircuit(ctx, t)
-	if err := integration.SSHCommand(ctx, c, "lakitu", "init"); err != nil {
-		t.Fatalf("lakitu init: %v", err)
-	}
-	c.RegisterCircuit(ctx, "test")
+	c, _ := integration.StartReadyCircuit(ctx, t, false)
 	// `lakitu init` already auto-registers the docker provider idempotently
 	// via devpod.EnsureProvider, so no follow-up `provider add` is needed.
 
@@ -55,7 +47,7 @@ func TestRealDevpodUpAndDelete(t *testing.T) {
 	// Devpod tags every devcontainer it builds with that label, so the
 	// assertion can watch the population grow (on new) and shrink (on
 	// delete) regardless of the auto-generated container names.
-	baseline := devcontainerIDs(ctx, t)
+	baseline := integration.DevcontainerIDs(ctx, t)
 
 	stdout, stderr, code := c.Drift(ctx, "new", kart,
 		"--tune", "none",
@@ -82,8 +74,8 @@ func TestRealDevpodUpAndDelete(t *testing.T) {
 	}
 
 	// New workspace containers should now exist on the host.
-	afterUp := devcontainerIDs(ctx, t)
-	created := setDiff(afterUp, baseline)
+	afterUp := integration.DevcontainerIDs(ctx, t)
+	created := integration.SetDiff(afterUp, baseline)
 	if len(created) == 0 {
 		t.Fatalf("no new devcontainer on host after drift new; baseline=%v after=%v", baseline, afterUp)
 	}
@@ -96,37 +88,8 @@ func TestRealDevpodUpAndDelete(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("drift delete: code=%d stderr=%q", code, stderr)
 	}
-	afterDelete := devcontainerIDs(ctx, t)
-	if orphans := setDiff(afterDelete, baseline); len(orphans) > 0 {
+	afterDelete := integration.DevcontainerIDs(ctx, t)
+	if orphans := integration.SetDiff(afterDelete, baseline); len(orphans) > 0 {
 		t.Errorf("devcontainer orphans after drift delete: %v", orphans)
 	}
-}
-
-// devcontainerIDs returns the unique dev.containers.id values present on the
-// outer docker daemon — one per devpod-managed workspace regardless of the
-// generated container name.
-func devcontainerIDs(ctx context.Context, t *testing.T) map[string]struct{} {
-	t.Helper()
-	out, err := exec.CommandContext(ctx, "docker", "ps", "-a",
-		"--filter", "label=dev.containers.id",
-		"--format", "{{.Label \"dev.containers.id\"}}").Output()
-	if err != nil {
-		t.Fatalf("docker ps dev.containers.id: %v", err)
-	}
-	ids := map[string]struct{}{}
-	for _, id := range strings.Fields(strings.TrimSpace(string(out))) {
-		ids[id] = struct{}{}
-	}
-	return ids
-}
-
-// setDiff returns the members of a not present in b.
-func setDiff(a, b map[string]struct{}) []string {
-	var out []string
-	for k := range a {
-		if _, ok := b[k]; !ok {
-			out = append(out, k)
-		}
-	}
-	return out
 }

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/cli/style"
 	"github.com/kurisu-agent/drift/internal/wire"
@@ -36,7 +35,7 @@ type listResult struct {
 }
 
 func runKartList(ctx context.Context, io IO, root *CLI, _ listCmd, deps deps) int {
-	circuit, err := resolveCircuit(root, deps)
+	_, circuit, err := resolveCircuit(root, deps)
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
@@ -80,28 +79,28 @@ func runKartList(ctx context.Context, io IO, root *CLI, _ listCmd, deps deps) in
 		staleRows = append(staleRows, k.Stale)
 	}
 	writeTable(io.Stdout, p, []string{"NAME", "STATUS", "SOURCE", "TUNE", "AUTOSTART"}, rows,
-		func(row, col int, _ *style.Palette) lipgloss.Style {
+		colorCellStyler(func(row, col int) tableCell {
 			switch col {
 			case 0: // NAME
-				return lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+				return tableCell{Color: tableCellAccent}
 			case 1: // STATUS
 				if row >= 0 && row < len(staleRows) && staleRows[row] {
-					return lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+					return tableCell{Color: tableCellWarn}
 				}
 				switch rows[row][1] {
 				case "running":
-					return lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+					return tableCell{Color: tableCellSuccess}
 				case "stopped":
-					return lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+					return tableCell{Color: tableCellDim}
 				}
 			}
-			return lipgloss.NewStyle()
-		})
+			return tableCell{}
+		}))
 	return 0
 }
 
 func runKartInfo(ctx context.Context, io IO, root *CLI, cmd infoCmd, deps deps) int {
-	circuit, err := resolveCircuit(root, deps)
+	_, circuit, err := resolveCircuit(root, deps)
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}

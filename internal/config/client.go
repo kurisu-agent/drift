@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+
+	"github.com/kurisu-agent/drift/internal/name"
 )
 
 type Client struct {
@@ -23,12 +25,12 @@ func (c *Client) ManagesSSHConfig() bool {
 }
 
 func (c *Client) Validate() error {
-	for name, circuit := range c.Circuits {
-		if !CircuitNameRE.MatchString(name) {
-			return fmt.Errorf("config: circuit name %q invalid (must match %s)", name, CircuitNameRE.String())
+	for circuitName, circuit := range c.Circuits {
+		if err := name.Validate("circuit", circuitName); err != nil {
+			return fmt.Errorf("config: %w", err)
 		}
 		if circuit.Host == "" {
-			return fmt.Errorf("config: circuit %q: host is required", name)
+			return fmt.Errorf("config: circuit %q: host is required", circuitName)
 		}
 	}
 	if c.DefaultCircuit != "" {

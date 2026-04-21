@@ -17,10 +17,6 @@ import (
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 )
 
-// osEnviron is a package-level indirection so tests that stub the runner
-// don't need to manipulate the real process env.
-var osEnviron = os.Environ
-
 // EnvOrNilForTest exposes envOrNil to the external test package so
 // tests can assert the DEVPOD_HOME injection without a full exec
 // roundtrip.
@@ -91,11 +87,19 @@ func (c *Client) runner() driftexec.Runner {
 }
 
 func (c *Client) run(ctx context.Context, args ...string) (driftexec.Result, error) {
+	return c.runWithEnv(ctx, c.envOrNil(), args)
+}
+
+// runWithEnv is the single place every devpod spawn lands, with an
+// explicit env slice. Use this over c.run when the call needs one-shot
+// process env (e.g. InstallDotfilesWithOpts layering secrets on top of
+// c.envOrNil()) so the argv-echo/mirror wiring stays centralized.
+func (c *Client) runWithEnv(ctx context.Context, env []string, args []string) (driftexec.Result, error) {
 	c.echoArgv(args)
 	return c.runner().Run(ctx, driftexec.Cmd{
 		Name:         c.binary(),
 		Args:         args,
-		Env:          c.envOrNil(),
+		Env:          env,
 		MirrorStdout: c.streamMirror(),
 		MirrorStderr: c.streamMirror(),
 	})
@@ -149,7 +153,7 @@ func (c *Client) envOrNil() []string {
 	if c.Env != nil {
 		base = append(base, c.Env...)
 	} else {
-		base = append(base, osEnviron()...)
+		base = append(base, os.Environ()...)
 	}
 	for _, e := range base {
 		if strings.HasPrefix(e, "DEVPOD_HOME=") {
@@ -362,7 +366,7 @@ func (c *Client) List(ctx context.Context) ([]Workspace, error) {
 		return nil, err
 	}
 	// devpod emits `null` or `[]` on an empty garage depending on version.
-	trimmed := trimJSONSpace(res.Stdout)
+	trimmed := bytes.TrimSpace(res.Stdout)
 	if len(trimmed) == 0 || string(trimmed) == "null" {
 		return []Workspace{}, nil
 	}
@@ -425,7 +429,7 @@ func (c *Client) ProviderList(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	trimmed := trimJSONSpace(res.Stdout)
+	trimmed := bytes.TrimSpace(res.Stdout)
 	if len(trimmed) == 0 || string(trimmed) == "null" {
 		return []string{}, nil
 	}
@@ -475,22 +479,16 @@ type InstallDotfilesOpts struct {
 	ProcessEnv []string
 }
 
-// InstallDotfiles invokes `devpod agent workspace install-dotfiles`. A
-// file:// URL is valid — lakitu writes the generated layer-1 script to a
-// tmpdir and passes it here.
+// InstallDotfilesWithOpts invokes `devpod agent workspace install-dotfiles`.
+// A file:// URL is valid — lakitu writes the generated layer-1 script to a
+// tmpdir and passes it here. opts.ProcessEnv layers one-shot env on top of
+// c.envOrNil() so chest-backed build-time secrets (e.g. a GITHUB_TOKEN for
+// a private dotfiles_repo clone) reach the install-dotfiles process
+// without persisting into the container's containerEnv.
 //
 // The skevetter/devpod fork renamed --dotfiles to --repository; flake.nix
 // pins the fork so this flag is correct. A future rename would motivate a
 // fallback probe.
-func (c *Client) InstallDotfiles(ctx context.Context, url string) error {
-	return c.InstallDotfilesWithOpts(ctx, InstallDotfilesOpts{URL: url})
-}
-
-// InstallDotfilesWithOpts extends InstallDotfiles with extra per-invocation
-// process env — used to deliver chest-backed build-time secrets to the
-// install-dotfiles process (e.g. a GITHUB_TOKEN for a private
-// dotfiles_repo clone) without writing them anywhere on disk or into the
-// container's persistent env.
 func (c *Client) InstallDotfilesWithOpts(ctx context.Context, opts InstallDotfilesOpts) error {
 	if opts.URL == "" {
 		return errors.New("devpod: InstallDotfiles: url is required")
@@ -501,37 +499,11 @@ func (c *Client) InstallDotfilesWithOpts(ctx context.Context, opts InstallDotfil
 		// HOME, TMPDIR, DEVPOD_HOME still reach the child — then layer the
 		// secret env on top so a name collision lets the caller override.
 		if env == nil {
-			env = append(env, osEnviron()...)
+			env = append(env, os.Environ()...)
 		}
 		env = append(env, opts.ProcessEnv...)
 	}
 	args := []string{"agent", "workspace", "install-dotfiles", "--repository", opts.URL}
-	c.echoArgv(args)
-	_, err := c.runner().Run(ctx, driftexec.Cmd{
-		Name:         c.binary(),
-		Args:         args,
-		Env:          env,
-		MirrorStdout: c.streamMirror(),
-		MirrorStderr: c.streamMirror(),
-	})
+	_, err := c.runWithEnv(ctx, env, args)
 	return err
-}
-
-func trimJSONSpace(b []byte) []byte {
-	start, end := 0, len(b)
-	for start < end {
-		c := b[start]
-		if c != ' ' && c != '\t' && c != '\n' && c != '\r' {
-			break
-		}
-		start++
-	}
-	for end > start {
-		c := b[end-1]
-		if c != ' ' && c != '\t' && c != '\n' && c != '\r' {
-			break
-		}
-		end--
-	}
-	return b[start:end]
 }

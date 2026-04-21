@@ -6,6 +6,7 @@ package warmup
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -16,11 +17,13 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	figure "github.com/common-nighthawk/go-figure"
+	"github.com/kurisu-agent/drift/internal/chest"
 	"github.com/kurisu-agent/drift/internal/cli/style"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/wire"
+	"golang.org/x/sync/errgroup"
 )
 
 type Options struct {
@@ -353,7 +356,7 @@ func addOneCharacter(ctx context.Context, deps Deps, br *bufio.Reader, w io.Writ
 		}, nil); err != nil {
 			return fmt.Errorf("chest.set: %w", err)
 		}
-		params["pat_secret"] = "chest:" + chestName
+		params["pat_secret"] = chest.RefPrefix + chestName
 	}
 
 	if err := deps.Call(ctx, circuit, wire.MethodCharacterAdd, params, nil); err != nil {
@@ -412,25 +415,48 @@ func runSummary(ctx context.Context, opts Options, deps Deps, w io.Writer, cfg *
 		fmt.Fprintln(w, "next: drift circuit add <name> --host user@host")
 		return nil
 	}
-	for _, n := range names {
-		pr := probes[n]
-		if pr == nil && !opts.NoProbe && deps.Probe != nil {
-			// Catches the case where the user skipped the probe earlier but
-			// NoProbe is still off at the wizard level.
-			if got, err := deps.Probe(ctx, n); err == nil {
-				pr = got
-				probes[n] = got
+
+	// Fan out per-circuit probe+list across up to 4 workers; each worker
+	// renders into its own buffer at a fixed slot so the final concat
+	// preserves the sortedKeys order no matter who finishes first. Probes
+	// populate the shared `probes` map on success so follow-up runs see
+	// the cache — the map is only written by the goroutine that owns that
+	// circuit's slot, so no lock is needed.
+	buffers := make([]bytes.Buffer, len(names))
+	probeResults := make([]*ProbeResult, len(names))
+	for i, n := range names {
+		probeResults[i] = probes[n]
+	}
+	var g errgroup.Group
+	g.SetLimit(4)
+	for i, n := range names {
+		g.Go(func() error {
+			if probeResults[i] == nil && !opts.NoProbe && deps.Probe != nil {
+				if got, err := deps.Probe(ctx, n); err == nil {
+					probeResults[i] = got
+				}
 			}
+			listCharactersFor(ctx, deps, &buffers[i], n)
+			return nil
+		})
+	}
+	_ = g.Wait()
+
+	for i, n := range names {
+		if pr := probeResults[i]; pr != nil {
+			probes[n] = pr
 		}
 		def := ""
 		if n == cfg.DefaultCircuit {
 			def = " (default)"
 		}
 		fmt.Fprintf(w, "  circuit %s → %s%s\n", n, cfg.Circuits[n].Host, def)
-		if pr != nil {
+		if pr := probeResults[i]; pr != nil {
 			fmt.Fprintf(w, "    lakitu %s (api %d, %dms)\n", pr.Version, pr.API, pr.LatencyMS)
 		}
-		listCharactersFor(ctx, deps, w, n)
+		if _, err := buffers[i].WriteTo(w); err != nil {
+			return fmt.Errorf("write summary: %w", err)
+		}
 	}
 
 	fmt.Fprintln(w, "")
@@ -439,7 +465,9 @@ func runSummary(ctx context.Context, opts Options, deps Deps, w io.Writer, cfg *
 }
 
 // listCharactersFor fetches characters and prints them. Failure is
-// non-fatal — the summary should render even if a probe failed.
+// non-fatal — the summary should render even if a probe failed. Writes
+// go to w (typically a per-circuit buffer in runSummary) so callers can
+// serialize output order across parallel calls.
 func listCharactersFor(ctx context.Context, deps Deps, w io.Writer, circuit string) {
 	if deps.Call == nil {
 		return

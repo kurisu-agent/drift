@@ -44,8 +44,6 @@ func (e *TransportError) Unwrap() error { return e.Cause }
 
 type Client struct {
 	Transport Transport
-	// nextID overrides the request id (tests). Nil uses `1` per call.
-	nextID func() json.RawMessage
 }
 
 func New() *Client {
@@ -59,7 +57,9 @@ func (c *Client) Call(ctx context.Context, circuit, method string, params, resul
 		return rpcerr.Internal("rpc client: no transport configured")
 	}
 
-	id := c.allocID()
+	// Fixed id 1 per call: each SSH invocation is a fresh process with a
+	// single request/response pair, so there is nothing to collide with.
+	id := json.RawMessage(`1`)
 	reqBody, err := buildRequest(id, method, params)
 	if err != nil {
 		return rpcerr.Internal("build request: %v", err).Wrap(err)
@@ -87,15 +87,6 @@ func (c *Client) Call(ctx context.Context, circuit, method string, params, resul
 		return rpcerr.Internal("decode result for %q: %v", method, err).Wrap(err)
 	}
 	return nil
-}
-
-func (c *Client) allocID() json.RawMessage {
-	if c.nextID != nil {
-		return c.nextID()
-	}
-	// Fixed id 1 per call: each SSH invocation is a fresh process with a
-	// single request/response pair, so there is nothing to collide with.
-	return json.RawMessage(`1`)
 }
 
 func buildRequest(id json.RawMessage, method string, params any) ([]byte, error) {
@@ -137,16 +128,27 @@ func SSHTransportArgs(sshArgs []string) Transport {
 	}
 }
 
+// driftDebug is captured once at process start. The envvar does not change
+// between calls within a single drift invocation, so repeated os.Getenv on
+// the hot path (every RPC) is wasted work. `remoteArgs` is the prebuilt
+// trailing argv — with or without the `env LAKITU_DEBUG=1` wrapper — that
+// every SSH call appends after its destination.
+var (
+	driftDebug = os.Getenv("DRIFT_DEBUG") != ""
+	remoteArgs = func() []string {
+		// Forward verbose mode to the circuit. `env KEY=VALUE cmd` is the
+		// shell-agnostic way to thread an env var across SSH without
+		// depending on sshd's `AcceptEnv` config, which most circuits
+		// don't ship with LAKITU_* whitelisted.
+		if driftDebug {
+			return []string{"env", "LAKITU_DEBUG=1", "lakitu", "rpc"}
+		}
+		return []string{"lakitu", "rpc"}
+	}()
+)
+
 func runSSHRPC(ctx context.Context, sshArgs []string, request []byte) ([]byte, error) {
-	remote := []string{"lakitu", "rpc"}
-	// Forward verbose mode to the circuit. `env KEY=VALUE cmd` is the
-	// shell-agnostic way to thread an env var across SSH without depending
-	// on sshd's `AcceptEnv` config, which most circuits don't ship with
-	// LAKITU_* whitelisted.
-	if os.Getenv("DRIFT_DEBUG") != "" {
-		remote = append([]string{"env", "LAKITU_DEBUG=1"}, remote...)
-	}
-	args := append(append([]string(nil), sshArgs...), remote...)
+	args := append(append([]string(nil), sshArgs...), remoteArgs...)
 	cmd := driftexec.Cmd{
 		Name:  "ssh",
 		Args:  args,
@@ -155,7 +157,7 @@ func runSSHRPC(ctx context.Context, sshArgs []string, request []byte) ([]byte, e
 	// In verbose mode, mirror SSH stderr to ours so the user sees lakitu's
 	// streamed devpod output live. Stdout stays buffered — it carries the
 	// JSON-RPC response and we're about to parse it.
-	if os.Getenv("DRIFT_DEBUG") != "" {
+	if driftDebug {
 		cmd.MirrorStderr = os.Stderr
 	}
 	res, err := driftexec.Run(ctx, cmd)

@@ -36,7 +36,7 @@ func runSSHProxy(ctx context.Context, io IO, _ *CLI, cmd sshProxyCmd, deps deps)
 	}
 	if _, ok := cfg.Circuits[circuit]; !ok {
 		return errfmt.Emit(io.Stderr, rpcerr.NotFound(
-			"circuit_not_found",
+			rpcerr.TypeCircuitNotFound,
 			"circuit %q in alias %q is not configured (run `drift circuit add %s`)",
 			circuit, cmd.Alias, circuit,
 		))

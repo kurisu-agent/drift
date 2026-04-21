@@ -12,7 +12,6 @@ package style
 import (
 	"io"
 	"os"
-	"regexp"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-isatty"
@@ -30,7 +29,8 @@ type Palette struct {
 }
 
 // For constructs a Palette appropriate for w. jsonMode short-circuits to
-// a no-op palette so --output json never gains ANSI.
+// a no-op palette so --output json never gains ANSI. Passing a non-TTY
+// writer (e.g. a bytes.Buffer in tests) also yields a no-op palette.
 func For(w io.Writer, jsonMode bool) *Palette {
 	return &Palette{
 		Enabled: shouldStyle(w, jsonMode),
@@ -42,9 +42,6 @@ func For(w io.Writer, jsonMode bool) *Palette {
 		bold:    lipgloss.NewStyle().Bold(true),
 	}
 }
-
-// Disabled returns a palette that never styles. Useful for tests.
-func Disabled() *Palette { return &Palette{Enabled: false} }
 
 func (p *Palette) Success(s string) string {
 	if p == nil || !p.Enabled {
@@ -100,12 +97,4 @@ func shouldStyle(w io.Writer, jsonMode bool) bool {
 		return false
 	}
 	return isatty.IsTerminal(f.Fd()) || isatty.IsCygwinTerminal(f.Fd())
-}
-
-var ansiRE = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]`)
-
-// StripANSI removes SGR / CSI escape sequences. Used to scrub devpod's own
-// colored output before we re-emit it through our styler.
-func StripANSI(s string) string {
-	return ansiRE.ReplaceAllString(s, "")
 }

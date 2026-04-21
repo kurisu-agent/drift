@@ -28,13 +28,20 @@ type VerifyResult struct {
 }
 
 // VerifyHandler folds every problem into VerifyResult — never RPC-errors —
-// so clients get a complete picture from one round-trip.
-func VerifyHandler(ctx context.Context, params json.RawMessage) (any, error) {
+// so clients get a complete picture from one round-trip. Hangs off *Deps
+// so lakitu's wired devpod client (the pinned one) is re-used — the
+// previous package-level form always built a default-configured client and
+// bypassed the pin.
+func (d *Deps) VerifyHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	var p struct{}
 	if err := rpc.BindParams(params, &p); err != nil {
 		return nil, err
 	}
-	return verifyNow(ctx, &devpod.Client{}), nil
+	dev := d.Devpod
+	if dev == nil {
+		dev = &devpod.Client{}
+	}
+	return verifyNow(ctx, dev), nil
 }
 
 func verifyNow(ctx context.Context, dev *devpod.Client) VerifyResult {
