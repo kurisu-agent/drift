@@ -61,6 +61,12 @@ type Client struct {
 	// stdout+stderr. Wire to os.Stderr in lakitu's verbose mode so SSH
 	// relays devpod progress to the drift client in real time.
 	Mirror io.Writer
+	// Context, if non-empty, is prepended as `--context <ctx>` to every
+	// devpod invocation. Zero value (empty string) runs against devpod's
+	// current default context — the historical behavior. Used by
+	// `kart.migrate_delete_old` to delete a workspace in a specific
+	// non-drift context.
+	Context string
 }
 
 func (c *Client) binary() string {
@@ -78,14 +84,28 @@ func (c *Client) runner() driftexec.Runner {
 }
 
 func (c *Client) run(ctx context.Context, args ...string) (driftexec.Result, error) {
-	c.echoArgv(args)
+	full := c.withContext(args)
+	c.echoArgv(full)
 	return c.runner().Run(ctx, driftexec.Cmd{
 		Name:         c.binary(),
-		Args:         args,
+		Args:         full,
 		Env:          c.envOrNil(),
 		MirrorStdout: c.streamMirror(),
 		MirrorStderr: c.streamMirror(),
 	})
+}
+
+// withContext prepends `--context <ctx>` to args when c.Context is set.
+// Global flags go before the subcommand in devpod's CLI, so the prefix
+// has to land at position zero.
+func (c *Client) withContext(args []string) []string {
+	if c == nil || c.Context == "" {
+		return args
+	}
+	out := make([]string, 0, len(args)+2)
+	out = append(out, "--context", c.Context)
+	out = append(out, args...)
+	return out
 }
 
 // streamMirror returns a per-call, per-stream redacting wrapper around
@@ -470,7 +490,7 @@ func (c *Client) InstallDotfilesWithOpts(ctx context.Context, opts InstallDotfil
 		}
 		env = append(env, opts.ProcessEnv...)
 	}
-	args := []string{"agent", "workspace", "install-dotfiles", "--repository", opts.URL}
+	args := c.withContext([]string{"agent", "workspace", "install-dotfiles", "--repository", opts.URL})
 	c.echoArgv(args)
 	_, err := c.runner().Run(ctx, driftexec.Cmd{
 		Name:         c.binary(),
