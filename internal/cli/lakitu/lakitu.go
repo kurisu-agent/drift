@@ -165,9 +165,24 @@ func Registry() *rpc.Registry {
 			fmt.Fprintf(os.Stderr, "warning: could not resolve DEVPOD_HOME: %v\n", homeErr)
 			driftDevpod = ""
 		}
+		// Pinned devpod: ensure <driftHome>/bin/devpod is the exact
+		// release asset this lakitu was built against. Happy path on
+		// every run after the first is a cheap hash compare; first run
+		// downloads ~117MB. Fall back to $PATH when the fetch fails so
+		// a transient network glitch doesn't brick the whole RPC
+		// server — the operator sees the warning and can retry later.
+		driftHome, _ := config.DriftHomeDir()
+		pinnedBin := ""
+		if driftHome != "" {
+			p, perr := devpod.EnsurePinned(context.Background(), driftHome)
+			if perr != nil {
+				fmt.Fprintf(os.Stderr, "warning: pinned devpod unavailable (%v); falling back to $PATH\n", perr)
+			}
+			pinnedBin = p
+		}
 		lifeDeps := &server.Deps{GarageDir: garage}
 		kartDeps := server.KartDeps{
-			Devpod:    &devpod.Client{Mirror: mirror, DevpodHome: driftDevpod},
+			Devpod:    &devpod.Client{Binary: pinnedBin, Mirror: mirror, DevpodHome: driftDevpod},
 			GarageDir: garage,
 			OpenChest: lifeDeps.OpenChestForLifecycle,
 		}
@@ -178,7 +193,7 @@ func Registry() *rpc.Registry {
 			Deps: &server.Deps{GarageDir: garage},
 			Kart: kart.NewDeps{
 				GarageDir: garage,
-				Devpod:    &devpod.Client{Mirror: mirror, DevpodHome: driftDevpod},
+				Devpod:    &devpod.Client{Binary: pinnedBin, Mirror: mirror, DevpodHome: driftDevpod},
 			},
 			// Same sink as the devpod tee: phase markers, resolver dump,
 			// and chest dechest events stream alongside devpod's output
@@ -319,10 +334,16 @@ func serverInitHandler(ctx context.Context, params json.RawMessage) (any, error)
 // name docker not found" unless this has run — folding it into init saves
 // users a broken first `drift new`. The provider has to be registered in
 // the same DEVPOD_HOME that kart.new will read from later (drift's own
-// home, not the user's ~/.devpod/), so the caller passes it in.
+// home, not the user's ~/.devpod/), and it uses the pinned devpod when
+// present so the init-time check matches the runtime binary exactly.
 func ensureDockerProvider(ctx context.Context) (added bool, err error) {
 	home, _ := config.DriftDevpodHome()
-	dev := &devpod.Client{DevpodHome: home}
+	driftHome, _ := config.DriftHomeDir()
+	var pinned string
+	if driftHome != "" {
+		pinned, _ = devpod.EnsurePinned(ctx, driftHome)
+	}
+	dev := &devpod.Client{Binary: pinned, DevpodHome: home}
 	return dev.EnsureProvider(ctx, "docker")
 }
 
