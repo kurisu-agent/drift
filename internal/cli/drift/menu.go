@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/charmbracelet/huh"
+	"golang.org/x/term"
 )
 
 // menuEntry describes a single row in the top-level interactive menu.
@@ -108,16 +109,14 @@ func runMenu(io IO) ([]string, error) {
 	return argv, nil
 }
 
-// stdoutIsTTY mirrors stdinIsTTY (see init.go) for the output stream — the
-// menu needs both ends connected to a real terminal before it will fire.
+// stdoutIsTTY mirrors stdinIsTTY (see init.go) for the output stream —
+// the menu needs both ends connected to a real terminal before it will
+// fire. term.IsTerminal excludes /dev/null, which os/exec hands a child
+// when Stdout is left nil.
 func stdoutIsTTY(w any) bool {
 	f, ok := w.(*os.File)
 	if !ok {
 		return false
 	}
-	st, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return st.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(f.Fd()))
 }
