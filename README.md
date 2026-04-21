@@ -8,7 +8,7 @@
 
 ## Why not just devpod?
 
-> drift is a remote control for devpod running on your servers.
+> drift is a remote control for devpods on your servers.
 
 [devpod] keeps workspace state on whichever client created it. Spin up a
 workspace from your desktop, then try to manage it from your laptop,
@@ -23,6 +23,11 @@ drift boost included.
 
 ## Highlights
 
+- **Multiple circuits, one client.** Register more than one host and
+  switch between them with `drift -c <name>`. Fly from Osaka to London
+  and the box in your attic is suddenly 200ms away; spin up a kart on a
+  nearer circuit and keep going. `drift status` shows every circuit
+  you've registered side by side.
 - **AI at the CLI.** `drift run ai` drops you into Claude on the circuit
   with drift's command surface preloaded. Long commands are painful to
   type on a phone, easy to dictate.
