@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -71,11 +72,7 @@ func runUpdate(ctx context.Context, ioStreams IO, cmd updateCmd) int {
 		return errfmt.Emit(ioStreams.Stderr, err)
 	}
 	fmt.Fprintf(ioStreams.Stderr, "→ selected asset %s (%s)\n", asset.Name, humanBytes(asset.Size))
-	exe, err := os.Executable()
-	if err != nil {
-		return errfmt.Emit(ioStreams.Stderr, err)
-	}
-	exe, err = filepath.EvalSymlinks(exe)
+	exe, err := resolveSelfPath()
 	if err != nil {
 		return errfmt.Emit(ioStreams.Stderr, err)
 	}
@@ -85,6 +82,59 @@ func runUpdate(ctx context.Context, ioStreams IO, cmd updateCmd) int {
 	}
 	fmt.Fprintf(ioStreams.Stdout, "updated to %s\n", latestClean)
 	return 0
+}
+
+// resolveSelfPath returns the path to the running drift binary. On
+// Termux/Android, termux-exec runs every $PREFIX-data-partition binary
+// through the Android dynamic linker (/apex/com.android.runtime/bin/linker64
+// on A10+, /system/bin/linker{,64} on older releases) to dodge the W^X
+// SELinux restriction. That means /proc/self/exe — and thus
+// os.Executable() — resolves to the linker rather than drift, so a naive
+// self-update would try to replace the linker on the read-only /apex
+// overlay. When we detect that, fall back to argv[0] (PATH-resolved): the
+// linker hands drift its own original path back as argv[0] on entry.
+func resolveSelfPath() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(exe)
+	if err != nil {
+		return "", err
+	}
+	if !isAndroidLinker(resolved) {
+		return resolved, nil
+	}
+	return resolveViaArgv0(os.Args, osexec.LookPath)
+}
+
+func isAndroidLinker(path string) bool {
+	base := filepath.Base(path)
+	if base != "linker" && base != "linker64" {
+		return false
+	}
+	return strings.HasPrefix(path, "/apex/") || strings.HasPrefix(path, "/system/")
+}
+
+func resolveViaArgv0(argv []string, lookPath func(string) (string, error)) (string, error) {
+	if len(argv) == 0 || argv[0] == "" {
+		return "", errors.New("self-update: os.Executable reported the Android linker and argv[0] is empty")
+	}
+	p, err := lookPath(argv[0])
+	if err != nil {
+		return "", fmt.Errorf("self-update: locate drift via argv[0]=%q: %w", argv[0], err)
+	}
+	if !filepath.IsAbs(p) {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return "", err
+		}
+		p = abs
+	}
+	if real, err := filepath.EvalSymlinks(p); err == nil {
+		return real, nil
+	}
+	return p, nil
 }
 
 func orDevel(s string) string {

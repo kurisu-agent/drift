@@ -168,6 +168,62 @@ func TestDownloadAndReplace_NoDriftEntry(t *testing.T) {
 	}
 }
 
+func TestIsAndroidLinker(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"/apex/com.android.runtime/bin/linker64", true},
+		{"/apex/com.android.runtime/bin/linker", true},
+		{"/system/bin/linker64", true},
+		{"/system/bin/linker", true},
+		{"/data/data/com.termux/files/usr/bin/drift", false},
+		{"/usr/local/bin/drift", false},
+		{"/apex/com.android.runtime/bin/drift", false},
+		{"/system/bin/linker-prefix", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		if got := isAndroidLinker(tc.path); got != tc.want {
+			t.Errorf("isAndroidLinker(%q) = %v, want %v", tc.path, got, tc.want)
+		}
+	}
+}
+
+func TestResolveViaArgv0(t *testing.T) {
+	const target = "/data/data/com.termux/files/usr/bin/drift"
+	lookPath := func(name string) (string, error) {
+		if name == "drift" {
+			return target, nil
+		}
+		if filepath.IsAbs(name) {
+			return name, nil
+		}
+		return "", os.ErrNotExist
+	}
+	got, err := resolveViaArgv0([]string{"drift", "update"}, lookPath)
+	if err != nil {
+		t.Fatalf("resolveViaArgv0: %v", err)
+	}
+	// EvalSymlinks will fail on this synthetic path; the function must
+	// still return the unresolved lookPath result rather than error.
+	if got != target {
+		t.Errorf("got %q, want %q", got, target)
+	}
+
+	if _, err := resolveViaArgv0(nil, lookPath); err == nil {
+		t.Error("expected error for empty argv")
+	}
+	if _, err := resolveViaArgv0([]string{""}, lookPath); err == nil {
+		t.Error("expected error for empty argv[0]")
+	}
+
+	failLookPath := func(string) (string, error) { return "", os.ErrNotExist }
+	if _, err := resolveViaArgv0([]string{"drift"}, failLookPath); err == nil {
+		t.Error("expected error when lookPath fails")
+	}
+}
+
 func buildTarball(t *testing.T, name string, body []byte) []byte {
 	t.Helper()
 	var buf bytes.Buffer
