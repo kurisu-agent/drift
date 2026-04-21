@@ -31,10 +31,11 @@ a customs queue the day after.
   `drift new scratch-pad --clone git@github.com:you/playground.git` is one
   command from your phone and you're inside a fresh devcontainer on your
   server.
-- **AI scaffolding on mobile.** `drift ai` drops you straight into Claude
-  running on your circuit, preloaded with drift's command surface. On a
-  phone, voice-type the project you want; on a laptop, just describe it.
-  Claude can run drift commands directly to spin the workspace up.
+- **AI scaffolding on mobile.** `drift run ai` drops you straight into
+  Claude running on your circuit, preloaded with drift's command surface.
+  On a phone, voice-type the project you want; on a laptop, just describe
+  it. `drift run scaffolder` goes one step further — hands Claude a
+  scaffolding recipe, creates a new kart, and drops you inside it on exit.
 
 ## Concepts
 
@@ -101,7 +102,8 @@ drift enable|disable <name>  # auto-start on circuit reboot
 drift circuit    [list|add|rm]
 drift character  [list|add|show|rm]
 drift chest      [set|get|list|rm]
-drift ai                     # Claude session on the circuit
+drift runs                   # list server-side shorthand commands
+drift run <name> [args…]     # execute one (built-ins: ai, scaffolder, ping, uptime, …)
 ```
 
 ## IDE integration

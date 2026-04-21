@@ -7,7 +7,7 @@ import (
 )
 
 // helpCmd is the LLM-context one-stop for an agent on the circuit
-// (typically launched via `drift ai`).
+// (typically launched via `drift run ai`).
 type helpCmd struct{}
 
 const lakituHelpIntro = `lakitu is the server half of drift. It is invoked two ways: as a long-lived

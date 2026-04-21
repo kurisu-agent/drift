@@ -10,7 +10,7 @@ import (
 //go:embed CLAUDE.md
 var embeddedClaudeMD []byte
 
-// ClaudeMDPath: the agent context file `drift ai` drops into. Lives at
+// ClaudeMDPath: the agent context file `drift run ai` drops into. Lives at
 // $HOME/.drift/CLAUDE.md alongside the garage.
 func ClaudeMDPath() (string, error) {
 	home, err := DriftHomeDir()
@@ -21,7 +21,7 @@ func ClaudeMDPath() (string, error) {
 }
 
 // DriftHomeDir = $HOME/.drift. CLAUDE.md sits here (one level up from
-// the garage) because that's the cwd `drift ai` drops into.
+// the garage) because that's the cwd `drift run ai` drops into.
 func DriftHomeDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {

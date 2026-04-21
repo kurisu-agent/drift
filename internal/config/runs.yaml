@@ -1,0 +1,61 @@
+# ~/.drift/runs.yaml — drift run shorthand registry.
+#
+# Edit freely. `lakitu init` only seeds this file on first run; later
+# invocations preserve your changes. Every entry here becomes
+# `drift run <name>` on any workstation pointed at this circuit.
+#
+# Schema:
+#   runs:
+#     <name>:
+#       description: string            # shown in `drift runs`
+#       mode: interactive | output      # interactive → mosh/ssh TTY handoff
+#                                       # output       → plain ssh, pretty-printed
+#       post: ""                        # (optional) named client post-hook:
+#                                       #   connect-last-scaffold
+#       command: |                      # go text/template, server-rendered
+#         ...shell snippet...
+#
+# Template data:
+#   {{ .Arg N }}   Nth positional arg ("" if missing)
+#   {{ .Args }}    all args, each single-quoted
+#   {{ .Arg 0 | shq }}   explicit shell-quote helper
+runs:
+  ai:
+    description: "Claude Code REPL in ~/.drift"
+    mode: interactive
+    command: 'cd "$HOME/.drift" && exec claude --dangerously-skip-permissions'
+
+  scaffolder:
+    description: "AI-scaffold a new project + kart, then drop into it"
+    mode: interactive
+    post: connect-last-scaffold
+    command: |
+      cd "$HOME/.drift" && \
+      rm -f last-scaffold && \
+      exec claude --dangerously-skip-permissions \
+        --append-system-prompt "$(cat recipes/scaffolder.md)"
+
+  ping:
+    description: "Ping a host (drift run ping <host>)"
+    mode: output
+    command: 'ping -c 4 {{ .Arg 0 | shq }}'
+
+  speedtest:
+    description: "Internet speed test"
+    mode: output
+    command: 'speedtest-cli --simple'
+
+  uptime:
+    description: "Circuit uptime + load"
+    mode: output
+    command: 'uptime'
+
+  disk:
+    description: "Disk usage"
+    mode: output
+    command: 'df -h /'
+
+  mem:
+    description: "Memory usage"
+    mode: output
+    command: 'free -h'

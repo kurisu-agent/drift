@@ -40,7 +40,10 @@ var driftHelpSections = []struct {
 		{"enable|disable <name>", "Toggle kart autostart on circuit reboot"},
 		{"logs <name>", "Fetch a chunk of kart logs"},
 		{"connect|into|attach <name>", "mosh (ssh fallback) into a kart; auto-starts"},
-		{"ai", "Launch claude on the circuit (mosh/ssh)"},
+	}},
+	{"RUNS", [][2]string{
+		{"runs", "List server-side shorthand commands"},
+		{"run <name> [args...]", "Execute a shorthand (e.g. run ai, run scaffolder)"},
 	}},
 }
 

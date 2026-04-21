@@ -42,7 +42,9 @@ type CLI struct {
 	Enable  enableCmd  `cmd:"" help:"Enable kart autostart on circuit reboot (idempotent)."`
 	Disable disableCmd `cmd:"" help:"Disable kart autostart (idempotent)."`
 	Connect connectCmd `cmd:"" aliases:"into,attach" help:"Connect to a kart via mosh (ssh fallback); auto-starts if stopped."`
-	AI      aiCmd      `cmd:"" name:"ai" help:"Launch claude --dangerously-skip-permissions on the circuit (mosh/ssh)."`
+
+	Runs runsCmd `cmd:"" name:"runs" help:"List server-side shorthand commands (see drift run)."`
+	Run  runCmd  `cmd:"" name:"run" help:"Execute a server-side shorthand (e.g. drift run ai)."`
 
 	Update updateCmd `cmd:"" name:"update" help:"Check GitHub for a newer drift release and self-install."`
 
@@ -160,8 +162,10 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runKartDisable(ctx, io, &cli, cli.Disable, deps)
 	case "connect <name>":
 		return runConnect(ctx, io, &cli, cli.Connect, deps)
-	case "ai":
-		return runAI(ctx, io, &cli, cli.AI, deps)
+	case "runs":
+		return runRunsList(ctx, io, &cli, cli.Runs, deps)
+	case "run <name>", "run <name> <args>":
+		return runRunExec(ctx, io, &cli, cli.Run, deps)
 	case "update":
 		return runUpdate(ctx, io, cli.Update)
 	case "ssh-proxy <alias>", "ssh-proxy <alias> <port>":

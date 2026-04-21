@@ -16,6 +16,10 @@ import (
 type Deps struct {
 	// GarageDir overrides the resolved path. Tests set this to a tempdir.
 	GarageDir string
+	// DriftHome overrides the $HOME/.drift path. Tests set this so the
+	// run-registry handlers read a fixture runs.yaml instead of the real
+	// user home. Empty falls back to config.DriftHomeDir().
+	DriftHome string
 	// OpenChest: nil runs per-call [chest.Open] against the current server
 	// config so a backend swap via `config.set` takes effect next RPC.
 	OpenChest func(garageDir string, cfg config.ChestConfig) (chest.Backend, error)
@@ -46,6 +50,16 @@ func RegisterServer(reg *rpc.Registry, d *Deps) {
 	reg.Register(wire.MethodChestGet, d.ChestGetHandler)
 	reg.Register(wire.MethodChestList, d.ChestListHandler)
 	reg.Register(wire.MethodChestRemove, d.ChestRemoveHandler)
+
+	reg.Register(wire.MethodRunList, d.RunListHandler)
+	reg.Register(wire.MethodRunResolve, d.RunResolveHandler)
+}
+
+func (d *Deps) driftHome() (string, error) {
+	if d.DriftHome != "" {
+		return d.DriftHome, nil
+	}
+	return config.DriftHomeDir()
 }
 
 func (d *Deps) garageDir() (string, error) {

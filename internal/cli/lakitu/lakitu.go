@@ -34,6 +34,7 @@ type CLI struct {
 	RPC       rpcCmd       `cmd:"" name:"rpc" help:"Read one JSON-RPC 2.0 request from stdin and write a response to stdout."`
 	List      kartListCmd  `cmd:"" help:"List karts known to this circuit."`
 	Info      kartInfoCmd  `cmd:"" help:"Show one kart's state (JSON)."`
+	Kart      kartCmd      `cmd:"" help:"Kart subcommands (new; list/info are top-level)."`
 	Config    configCmd    `cmd:"" help:"Manage server-level config."`
 	Character characterCmd `cmd:"" help:"Manage character (git/GitHub identity) profiles."`
 	Tune      tuneCmd      `cmd:"" help:"Manage tune profiles."`
@@ -84,6 +85,8 @@ func Run(ctx context.Context, argv []string, io IO) int {
 		return runKartList(ctx, io)
 	case "info <name>":
 		return runKartInfo(ctx, io, cli.Info)
+	case "kart new <name>":
+		return runKartNewLocal(ctx, io, cli.Kart.New)
 	case "config show":
 		return runConfigShow(ctx, io)
 	case "config set <key> <value>":
@@ -196,7 +199,15 @@ func runInit(ctx context.Context, io IO) int {
 	if cerr != nil {
 		return errfmt.Emit(io.Stderr, cerr)
 	}
-	if len(res.Created) == 0 && !claudeCreated {
+	runsCreated, rerr := config.EnsureRunsYAML(driftHome)
+	if rerr != nil {
+		return errfmt.Emit(io.Stderr, rerr)
+	}
+	recipeCreated, rcerr := config.EnsureScaffolderRecipe(driftHome)
+	if rcerr != nil {
+		return errfmt.Emit(io.Stderr, rcerr)
+	}
+	if len(res.Created) == 0 && !claudeCreated && !runsCreated && !recipeCreated {
 		fmt.Fprintf(io.Stdout, "garage already initialized at %s\n", res.GarageDir)
 	} else {
 		created := append([]string(nil), res.Created...)
@@ -207,6 +218,12 @@ func runInit(ctx context.Context, io IO) int {
 		}
 		if claudeCreated {
 			fmt.Fprintf(io.Stdout, "  + %s\n", "../CLAUDE.md")
+		}
+		if runsCreated {
+			fmt.Fprintf(io.Stdout, "  + %s\n", "../runs.yaml")
+		}
+		if recipeCreated {
+			fmt.Fprintf(io.Stdout, "  + %s\n", "../recipes/scaffolder.md")
 		}
 	}
 	added, perr := ensureDockerProvider(ctx)
@@ -269,6 +286,16 @@ func serverInitHandler(ctx context.Context, params json.RawMessage) (any, error)
 		return nil, rpcerr.Internal("write CLAUDE.md: %v", cerr).Wrap(cerr)
 	} else if created {
 		res.Created = append(res.Created, "../CLAUDE.md")
+	}
+	if created, rerr := config.EnsureRunsYAML(driftHome); rerr != nil {
+		return nil, rpcerr.Internal("write runs.yaml: %v", rerr).Wrap(rerr)
+	} else if created {
+		res.Created = append(res.Created, "../runs.yaml")
+	}
+	if created, rcerr := config.EnsureScaffolderRecipe(driftHome); rcerr != nil {
+		return nil, rpcerr.Internal("write scaffolder recipe: %v", rcerr).Wrap(rcerr)
+	} else if created {
+		res.Created = append(res.Created, "../recipes/scaffolder.md")
 	}
 	// Best-effort provider registration. Errors are swallowed — `Created`
 	// is for filesystem paths, not diagnostic lines. The drift client sees

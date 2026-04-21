@@ -1,9 +1,11 @@
 # circuit — agent context
 
 You are an AI agent running on a **drift circuit** — a remote dev server.
-The user launched you via `drift ai` on their workstation, which mosh/ssh'd
-in and ran `claude --dangerously-skip-permissions` from this directory
-(`~/.drift/`).
+The user launched you via `drift run ai` on their workstation, which
+mosh/ssh'd in and ran `claude --dangerously-skip-permissions` from this
+directory (`~/.drift/`). (`drift run` is the generic shorthand dispatcher —
+`drift runs` lists all available entries; the registry is the file
+`~/.drift/runs.yaml` on this circuit.)
 
 ## First thing to do
 
