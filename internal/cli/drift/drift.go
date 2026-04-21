@@ -15,7 +15,7 @@ import (
 )
 
 type CLI struct {
-	Debug            bool   `help:"Verbose output." env:"DRIFT_DEBUG"`
+	Debug            bool   `help:"Verbose output (default on; --no-debug to silence)." env:"DRIFT_DEBUG" default:"true" negatable:""`
 	SkipVersionCheck bool   `name:"skip-version-check" hidden:"" env:"DRIFT_SKIP_VERSION_CHECK" help:"Bypass drift↔lakitu semver check."`
 	NoColor          bool   `name:"no-color" env:"NO_COLOR" help:"Disable ANSI colors in text output."`
 	Circuit          string `short:"c" help:"Target circuit (overrides default)."`
