@@ -106,8 +106,11 @@ func runMigrate(ctx context.Context, io IO, root *CLI, _ migrateCmd, deps deps) 
 	}
 
 	fmt.Fprintf(io.Stdout, "migrated to kart %q\n", kartName)
-
-	return maybeDeleteOldWorkspace(ctx, io, deps, circuit, picked)
+	// The old devpod workspace in the user's ~/.devpod/ is left in place
+	// — cleanup is the user's call, on their own devpod. Drift prints the
+	// exact command so they don't have to remember the --context flag.
+	printManualCleanup(io.Stderr, picked)
+	return 0
 }
 
 // pickMigrateCandidate renders the filterable workspace list. Returns
@@ -290,47 +293,10 @@ func promptMigrateRename(io IO, taken, suggestion string) (string, error) {
 	return val, nil
 }
 
-// maybeDeleteOldWorkspace prompts about the pre-migration devpod
-// workspace and either fires migrate_delete_old or prints the manual
-// `devpod delete` command. Never blocks the overall success — a failed
-// cleanup warns, prints the manual recipe, and returns 0.
-func maybeDeleteOldWorkspace(
-	ctx context.Context,
-	io IO,
-	deps deps,
-	circuit string,
-	c migrateCandidate,
-) int {
-	var del bool
-	prompt := huh.NewConfirm().
-		Title(fmt.Sprintf("Delete old devpod workspace %s/%s?", c.Context, c.Name)).
-		Description("The new drift kart is fully independent. Keeping the old workspace around is safe but its state will drift from the kart.").
-		Affirmative("delete").
-		Negative("keep").
-		Value(&del)
-	if err := huh.NewForm(huh.NewGroup(prompt)).Run(); err != nil {
-		if !errors.Is(err, huh.ErrUserAborted) {
-			return errfmt.Emit(io.Stderr, err)
-		}
-		del = false
-	}
-	if !del {
-		printManualCleanup(io.Stderr, c)
-		return 0
-	}
-	params := map[string]string{"context": c.Context, "name": c.Name}
-	var reply struct{}
-	if err := deps.call(ctx, circuit, wire.MethodKartMigrateDeleteOld, params, &reply); err != nil {
-		fmt.Fprintf(io.Stderr, "warning: failed to delete old devpod workspace: %v\n", err)
-		printManualCleanup(io.Stderr, c)
-		return 0
-	}
-	fmt.Fprintf(io.Stdout, "deleted old devpod workspace %s/%s\n", c.Context, c.Name)
-	return 0
-}
-
 // printManualCleanup dumps the exact command to run so the user doesn't
-// have to remember devpod's context flag.
+// have to remember devpod's context flag. Cleanup is the user's
+// responsibility — drift never reaches into the user's ~/.devpod/ to
+// delete on their behalf.
 func printManualCleanup(w io.Writer, c migrateCandidate) {
 	p := style.For(w, false)
 	fmt.Fprintln(w, p.Dim(fmt.Sprintf(

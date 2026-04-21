@@ -1,17 +1,13 @@
 package server_test
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/kurisu-agent/drift/internal/devpod"
-	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/model"
 	"github.com/kurisu-agent/drift/internal/rpc"
-	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/server"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
@@ -122,65 +118,3 @@ func TestKartMigrateListMultipleContexts(t *testing.T) {
 	}
 }
 
-func TestKartMigrateDeleteOldRefusesDriftContext(t *testing.T) {
-	t.Parallel()
-	deps := newKartDeps(t, &fakeDevpod{replies: map[string]fakeReply{}})
-	reg := rpc.NewRegistry()
-	server.RegisterKartMigrate(reg, server.KartMigrateDeps{KartDeps: deps})
-	resp := reg.Dispatch(t.Context(), &wire.Request{
-		JSONRPC: wire.Version,
-		Method:  wire.MethodKartMigrateDeleteOld,
-		Params:  json.RawMessage(`{"context":"drift","name":"whatever"}`),
-		ID:      json.RawMessage("1"),
-	})
-	if resp.Error == nil {
-		t.Fatal("want error when targeting drift context, got nil")
-	}
-	// Surface the typed error for specific assertion.
-	got := rpcerr.FromWire(resp.Error)
-	if got == nil || got.Type != rpcerr.TypeInvalidFlag {
-		t.Errorf("want invalid_flag, got %+v", got)
-	}
-}
-
-func TestKartMigrateDeleteOldPassesContextFlag(t *testing.T) {
-	t.Parallel()
-	// fakeDevpod keyed by the FIRST arg — but withContext prepends
-	// --context so the subcommand is now at index 2. Detect both shapes
-	// so this test doesn't silently pass through a regression.
-	rec := &contextCaptureRunner{}
-	deps := server.KartDeps{
-		Devpod:    &devpod.Client{Binary: "devpod", Runner: rec},
-		GarageDir: t.TempDir(),
-	}
-	if err := os.MkdirAll(filepath.Join(deps.GarageDir, "karts"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	reg := rpc.NewRegistry()
-	server.RegisterKartMigrate(reg, server.KartMigrateDeps{KartDeps: deps})
-	resp := reg.Dispatch(t.Context(), &wire.Request{
-		JSONRPC: wire.Version,
-		Method:  wire.MethodKartMigrateDeleteOld,
-		Params:  json.RawMessage(`{"context":"work","name":"alpha"}`),
-		ID:      json.RawMessage("1"),
-	})
-	if resp.Error != nil {
-		t.Fatalf("dispatch error: %+v", resp.Error)
-	}
-	if len(rec.calls) != 1 {
-		t.Fatalf("want 1 devpod call, got %d", len(rec.calls))
-	}
-	args := rec.calls[0].Args
-	if len(args) < 4 || args[0] != "--context" || args[1] != "work" || args[2] != "delete" {
-		t.Errorf("unexpected argv: %v (want --context work delete --force alpha)", args)
-	}
-}
-
-type contextCaptureRunner struct {
-	calls []driftexec.Cmd
-}
-
-func (r *contextCaptureRunner) Run(_ context.Context, cmd driftexec.Cmd) (driftexec.Result, error) {
-	r.calls = append(r.calls, cmd)
-	return driftexec.Result{}, nil
-}

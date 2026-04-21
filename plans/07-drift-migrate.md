@@ -55,23 +55,35 @@ it. A sentinel file (`~/.devpod/agent/contexts/drift/.drift-managed`)
 identifies the context as drift's; if the context exists without the
 sentinel, server refuses to proceed with a clear error.
 
-### Bundled devpod (server only)
+### Bundled devpod + DEVPOD_HOME isolation (server only)
 
 The server binary (`lakitu`) embeds a pinned devpod binary via
-`go:embed`, extracted to `~/.drift/bin/devpod` on startup. Client has no
-devpod dependency — migrate works on clients with no devpod installed.
+`go:embed`, extracted to `~/.drift/bin/devpod` on startup. It runs with
+`DEVPOD_HOME=~/.drift/devpod/` so every drift-managed workspace lives
+in a completely separate state tree from the user's `~/.devpod/`. The
+user's `devpod list` / `devpod delete` operate on their own HOME and
+literally cannot see drift's state. Client has no devpod dependency —
+migrate works on clients with no devpod installed.
 
-This is an implementation follow-up separate from this plan; until it
-lands, the server uses `$PATH` devpod with a version preflight.
+Migrate's candidate scanner always reads from the user's
+`~/.devpod/agent/contexts/*/workspaces/*/workspace.json` — pure
+filesystem reads, no binary invoked. The bundled devpod is only used
+for drift's own operations (`kart.new`, lifecycle), against drift's
+own HOME.
+
+Bundling mechanics (`go:embed` + goreleaser vendoring) are an
+implementation follow-up; the `DEVPOD_HOME` wiring lands first against
+whatever devpod binary is on the server's `$PATH`, and the bundle
+transparently replaces it later.
 
 ### Migrate flow (pure RPC)
 
 Client is UI-only:
 
 ```
-1. kart.migrate-list                          -> [{Name, Context, Repo}]
+1. kart.migrate_list                          -> [{Name, Context, Repo}]
 2. huh.Select  "<context>/<name>  <repo>"     -> pick one
-3. kart.list-tunes, kart.list-characters      (parallel)
+3. tune.list, character.list                  (populate dropdowns)
 4. huh.Select tune    (default: server's default_tune)
    huh.Select character   (default: server's default_character)
 5. huh.Confirm
@@ -79,8 +91,9 @@ Client is UI-only:
    └─ TypeNameCollision -> huh.Input "new name"
                             (suggestion: "<ctx>-<name>")
                             -> retry kart.new
-7. huh.Confirm "delete old devpod workspace <ctx>/<name>?"  (default NO)
-8. kart.migrate-delete-old(ctx, name) if yes
+7. Print the manual `devpod delete` recipe (with --context flag when
+   non-default). Cleanup is the user's responsibility — drift never
+   touches the user's ~/.devpod/ state.
 ```
 
 Non-TTY stdin: migrate errors out immediately with a clear message. No
@@ -114,15 +127,19 @@ dedup.
 
 | method | request | response |
 |---|---|---|
-| `kart.migrate-list` | — | `[]{Name, Context, Repo}` |
-| `kart.list-tunes` | — | `[]string` |
-| `kart.list-characters` | — | `[]string` |
-| `kart.migrate-delete-old` | `{Context, Name}` | ok / err |
+| `kart.migrate_list` | — | `{Candidates: []{Name, Context, Repo}, DefaultTune, DefaultCharacter}` |
 
-Plus updates to `kart.new`:
-- optional `migrated_from: {context, name}` field in params
-- returns `rpcerr.TypeNameCollision` (already exists) on name collision
-  — migrate client catches and reprompts.
+Plus one additive field on `kart.new` params:
+- optional `migrated_from: {context, name}` — persisted on the kart's
+  on-disk config so subsequent migrate runs can dedup.
+
+`kart.new` already returns `rpcerr.TypeNameCollision` on name collision
+— migrate client catches and reprompts for a new kart name.
+
+Tune and character enumeration reuses the existing `tune.list` and
+`character.list` RPCs; the CLI picks `.name` from each result. Server
+defaults ride on the `kart.migrate_list` response so the dropdown's
+pre-selection needs no extra round trip.
 
 ## Out of scope / follow-ups
 

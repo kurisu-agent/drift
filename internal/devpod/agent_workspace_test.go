@@ -1,14 +1,12 @@
 package devpod_test
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/kurisu-agent/drift/internal/devpod"
-	driftexec "github.com/kurisu-agent/drift/internal/exec"
 )
 
 func TestParseAgentWorkspaceJSON_Wrapped(t *testing.T) {
@@ -140,50 +138,6 @@ func TestListAgentWorkspaces_MultipleContexts(t *testing.T) {
 			t.Errorf("missing %q in %v", key, got)
 		}
 	}
-}
-
-func TestClientContextPrependsFlag(t *testing.T) {
-	// Verify Client.Context is threaded as `--context <ctx>` before the
-	// subcommand. Exercise the zero-value path (no flag) and the set
-	// path in one test so a future refactor that collapses the prefix
-	// logic stays honest.
-	cases := []struct {
-		name    string
-		context string
-		want    []string
-	}{
-		{"empty", "", []string{"stop", "proj"}},
-		{"set", "default", []string{"--context", "default", "stop", "proj"}},
-	}
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			f := &fakeRunnerCtx{}
-			c := &devpod.Client{Binary: "devpod", Runner: f, Context: tc.context}
-			_ = c.Stop(t.Context(), "proj")
-			if len(f.calls) != 1 {
-				t.Fatalf("want 1 call, got %d", len(f.calls))
-			}
-			got := f.calls[0].Args
-			if len(got) != len(tc.want) {
-				t.Fatalf("args len = %d, want %d (%v vs %v)", len(got), len(tc.want), got, tc.want)
-			}
-			for i := range got {
-				if got[i] != tc.want[i] {
-					t.Errorf("arg[%d] = %q, want %q", i, got[i], tc.want[i])
-				}
-			}
-		})
-	}
-}
-
-type fakeRunnerCtx struct {
-	calls []driftexec.Cmd
-}
-
-func (f *fakeRunnerCtx) Run(_ context.Context, cmd driftexec.Cmd) (driftexec.Result, error) {
-	f.calls = append(f.calls, cmd)
-	return driftexec.Result{}, nil
 }
 
 func write(t *testing.T, root, ctx, wsID, body string) {

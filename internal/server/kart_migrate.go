@@ -41,17 +41,8 @@ type KartMigrateListResult struct {
 	DefaultCharacter string                 `json:"default_character,omitempty"`
 }
 
-// KartMigrateDeleteOldParams targets one pre-migrate devpod workspace.
-// Both fields are required; the server refuses a delete targeting
-// drift's own context so a misrouted call can't nuke a drift kart.
-type KartMigrateDeleteOldParams struct {
-	Context string `json:"context"`
-	Name    string `json:"name"`
-}
-
 func RegisterKartMigrate(reg *rpc.Registry, d KartMigrateDeps) {
 	reg.Register(wire.MethodKartMigrateList, d.kartMigrateListHandler)
-	reg.Register(wire.MethodKartMigrateDeleteOld, d.kartMigrateDeleteOldHandler)
 }
 
 func (d KartMigrateDeps) kartMigrateListHandler(_ context.Context, params json.RawMessage) (any, error) {
@@ -125,45 +116,6 @@ func (d KartMigrateDeps) kartMigrateListHandler(_ context.Context, params json.R
 		DefaultTune:      defaultTune,
 		DefaultCharacter: defaultCharacter,
 	}, nil
-}
-
-func (d KartMigrateDeps) kartMigrateDeleteOldHandler(ctx context.Context, params json.RawMessage) (any, error) {
-	var p KartMigrateDeleteOldParams
-	if err := rpc.BindParams(params, &p); err != nil {
-		return nil, err
-	}
-	if p.Name == "" {
-		return nil, rpcerr.UserError(rpcerr.TypeInvalidFlag,
-			"kart.migrate_delete_old: name is required")
-	}
-	if p.Context == "" {
-		return nil, rpcerr.UserError(rpcerr.TypeInvalidFlag,
-			"kart.migrate_delete_old: context is required")
-	}
-	// Defense in depth: migrate-delete-old is only for the user's
-	// pre-drift devpod workspaces. A UI bug that routes a drift kart
-	// into this handler must fail loudly instead of silently nuking the
-	// kart.
-	if p.Context == "drift" {
-		return nil, rpcerr.UserError(rpcerr.TypeInvalidFlag,
-			"kart.migrate_delete_old: refusing to delete in drift context")
-	}
-	if d.Devpod == nil {
-		return nil, rpcerr.Internal("kart.migrate_delete_old: devpod client not configured")
-	}
-	// Shallow-copy the client so the context override is scoped to this
-	// one call — the server-wide Devpod keeps its original context
-	// (empty today, "drift" once the context switch lands).
-	cp := *d.Devpod
-	cp.Context = p.Context
-	if err := cp.Delete(ctx, p.Name); err != nil {
-		return nil, rpcerr.New(rpcerr.CodeDevpod, rpcerr.TypeDevpodUpFailed,
-			"kart.migrate_delete_old: devpod delete: %v", err).
-			Wrap(err).
-			With("context", p.Context).
-			With("name", p.Name)
-	}
-	return struct{}{}, nil
 }
 
 // migrateKey joins (context, name) with a delimiter that can't appear in
