@@ -88,7 +88,7 @@ func isTTY(fd any) bool {
 	if !ok {
 		return false
 	}
-	return term.IsTerminal(int(f.Fd()))
+	return term.IsTerminal(int(f.Fd())) //nolint:gosec // G115: posix file descriptors always fit in int
 }
 
 // stdinIsTTY / stdoutIsTTY are thin aliases kept for call-site clarity.
