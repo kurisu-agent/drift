@@ -46,6 +46,8 @@ type CLI struct {
 	Runs runsCmd `cmd:"" name:"runs" help:"List server-side shorthand commands (see drift run)."`
 	Run  runCmd  `cmd:"" name:"run" help:"Execute a server-side shorthand (e.g. drift run ai)."`
 
+	Migrate migrateCmd `cmd:"" name:"migrate" help:"Adopt an existing devpod workspace as a drift kart (interactive)."`
+
 	Update updateCmd `cmd:"" name:"update" help:"Check GitHub for a newer drift release and self-install."`
 
 	SshProxy sshProxyCmd `cmd:"" name:"ssh-proxy" hidden:"" help:"ProxyCommand helper for drift.<circuit>.<kart> aliases (invoked by OpenSSH)."`
@@ -166,6 +168,8 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runRunsList(ctx, io, &cli, cli.Runs, deps)
 	case "run <name>", "run <name> <args>":
 		return runRunExec(ctx, io, &cli, cli.Run, deps)
+	case "migrate":
+		return runMigrate(ctx, io, &cli, cli.Migrate, deps)
 	case "update":
 		return runUpdate(ctx, io, cli.Update)
 	case "ssh-proxy <alias>", "ssh-proxy <alias> <port>":
