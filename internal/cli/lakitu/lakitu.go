@@ -163,6 +163,7 @@ func Registry() *rpc.Registry {
 		}
 		server.RegisterKart(reg, kartDeps)
 		server.RegisterKartLifecycle(reg, kartDeps)
+		server.RegisterKartMigrate(reg, server.KartMigrateDeps{KartDeps: kartDeps})
 		server.RegisterKartNew(reg, server.KartNewDeps{
 			Deps: &server.Deps{GarageDir: garage},
 			Kart: kart.NewDeps{
