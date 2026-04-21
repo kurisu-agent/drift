@@ -11,6 +11,7 @@ import (
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/warmup"
+	"golang.org/x/term"
 )
 
 type initCmd struct {
@@ -74,20 +75,20 @@ func runInit(ctx context.Context, io IO, root *CLI, cmd initCmd, deps deps) int 
 	return errfmt.Emit(io.Stderr, err)
 }
 
-// isTTY: avoid pulling golang.org/x/term for one call — *os.File mode
-// check covers files/pipes/TTYs. Non-*os.File readers/writers
-// (bytes.Buffer in unit tests) are treated as non-TTY; those tests drive
-// the library directly with IsTTY set explicitly.
+// isTTY returns true only when fd is a *os.File backed by an actual
+// terminal. An earlier version leaned on os.ModeCharDevice to avoid
+// pulling in golang.org/x/term, but that also matches /dev/null — the
+// file Go's os/exec hands a child when Stdin/Stdout are nil — so every
+// non-interactive caller (CI runners, systemd, cron) was being
+// misclassified as interactive and features like drift-new auto-connect
+// would fire by accident. term.IsTerminal does a proper TIOCGWINSZ
+// ioctl and distinguishes a TTY from /dev/null.
 func isTTY(fd any) bool {
 	f, ok := fd.(*os.File)
 	if !ok {
 		return false
 	}
-	st, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return st.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(f.Fd())) //nolint:gosec // G115: posix file descriptors always fit in int
 }
 
 // stdinIsTTY / stdoutIsTTY are thin aliases kept for call-site clarity.
