@@ -1,75 +1,91 @@
 ---
 name: drift-docs
-description: Refresh drift's user-facing docs so they match the actual CLI. Regenerates `docs/drift-cli.md` as an exhaustive per-subcommand `--help` reference, keeps the README's "Commands" section and quickstart in sync with reality, and ensures the shorthand/cheat-sheet snippet near the top of README.md reflects the current surface. Invoke whenever the user says "update the docs", "sync the README", "regenerate the CLI reference", "docs are stale", after CLI flags or subcommands change, or when preparing a release. Prefer this skill over ad-hoc editing — it's what keeps the docs and the binary from drifting apart.
+description: Refresh drift's user-facing docs so they match the actual CLI and RPC surface. Regenerates `docs/drift-cli.md` as an exhaustive per-subcommand `--help` reference, regenerates `docs/lakitu-rpc.md` as the JSON-RPC protocol + method catalog, verifies the hand-curated `drift help` in `internal/cli/drift/help.go` still covers every leaf command, and keeps the README's Commands/Quickstart/Shorthand sections in sync. Invoke whenever the user says "update the docs", "sync the README", "regenerate the CLI reference", "docs are stale", "refresh the RPC reference", after CLI flags or subcommands change, after adding or renaming a wire method, or when preparing a release. Prefer this skill over ad-hoc editing — it's what keeps the docs, help.go, and the binaries from drifting apart.
 ---
 
 # drift-docs
 
-The drift CLI is the source of truth. Docs exist to serve humans reading them;
-they're only useful if they match what the binary actually does. This skill's
-job is to close that gap: build the CLI, dump `--help` for every subcommand,
-and reconcile the README and `docs/drift-cli.md` against the result.
+The `drift` binary, the `lakitu` binary, and `internal/wire/methods.go` are
+the source of truth. Docs exist to serve humans reading them; they're only
+useful if they match what the code actually does. This skill's job is to
+close that gap across three artifacts:
 
-## What "up to date" means
+- `docs/drift-cli.md` — exhaustive per-subcommand `--help` dump
+- `docs/lakitu-rpc.md` — JSON-RPC protocol + method catalog
+- `README.md` — Commands, Quickstart, and shorthand cheat-sheet
 
-Three artifacts, in order of authority:
+Plus one correctness check on the code itself:
 
-1. **The `drift` binary's own `--help` and `help --full` output.** This is
-   generated from the Kong CLI struct in `internal/cli/drift/`. If it's
-   wrong, fix the code — don't paper over it in the docs.
-2. **`docs/drift-cli.md`** — an exhaustive reference. Every subcommand,
-   every flag, copy-pasted from `drift <cmd> --help`. Humans read this when
-   they need detail the README doesn't have.
-3. **`README.md`** — the entry point. Keep it short. It needs a Commands
-   section that matches `drift help` (the curated LLM-friendly top-level),
-   a correct Quickstart, and a "Shorthand / cheat sheet" block near the
-   top with the commands people actually type day to day.
+- `internal/cli/drift/help.go`'s `driftHelpSections` — the hand-curated
+  `drift help` output. Unlike `drift help --full` (auto-derived, cannot
+  drift), this block is edited by hand and can go stale.
 
-If the three disagree, the binary wins.
+If any of these disagree with the binary, the binary wins.
 
 ## Workflow
 
-### 1. Build and capture the current CLI surface
+Go may not be on `$PATH` directly (this repo is developed on NixOS). The
+bundled scripts locate `go` automatically, falling back to `/nix/store`.
+You can still set `GO=<path>` explicitly if needed.
 
-Go may not be on `$PATH` directly (this repo is developed on NixOS). Prefer
-`go` if it resolves; otherwise fall back to the nix store path the user has:
-
-```bash
-GO=$(command -v go || ls /nix/store/*-go-*/bin/go 2>/dev/null | head -1)
-```
-
-Then run the bundled script, which shells out to `$GO run ./cmd/drift`:
+### 1. Regenerate `docs/drift-cli.md`
 
 ```bash
 bash .claude/skills/drift-docs/scripts/dump_cli.sh > /tmp/drift-cli.new.md
-```
-
-The script:
-- runs `drift --help` for the top-level usage,
-- runs `drift help --full` for the LLM-friendly catalog (including RPC
-  methods and exit codes),
-- walks every subcommand discovered from `--help` and captures
-  `drift <cmd> --help` verbatim — including nested subcommands like
-  `circuit set default`.
-
-If the script fails to build, **stop**. A stale doc regenerated from a
-broken binary is worse than no regen. Report the build error and ask the
-user how they want to proceed.
-
-### 2. Reconcile `docs/drift-cli.md`
-
-Diff the fresh dump against the committed file and write it back:
-
-```bash
 diff -u docs/drift-cli.md /tmp/drift-cli.new.md || true
 cp /tmp/drift-cli.new.md docs/drift-cli.md
 ```
 
-If the diff is surprisingly large (e.g. whole sections missing that you'd
-expect to be there), investigate before overwriting — a subcommand may
-have been renamed or deleted and the user should know.
+The script walks the Kong command tree (including nested leaves like
+`circuit set default`), so new subcommands appear automatically. If the
+diff is surprisingly large — whole sections missing — investigate before
+overwriting. A subcommand may have been renamed or deleted and the user
+should know before it disappears from the committed reference.
 
-### 3. Reconcile `README.md`
+### 2. Regenerate `docs/lakitu-rpc.md`
+
+```bash
+bash .claude/skills/drift-docs/scripts/dump_rpc.sh > /tmp/lakitu-rpc.new.md
+diff -u docs/lakitu-rpc.md /tmp/lakitu-rpc.new.md 2>/dev/null || true
+cp /tmp/lakitu-rpc.new.md docs/lakitu-rpc.md
+```
+
+The script sources the method list from `lakitu help` (which renders
+`wire.Methods()`), the error-type taxonomy from `internal/rpcerr/rpcerr.go`,
+and a short hand-written transport/versioning preamble. If you added a
+wire method, confirm it shows up in the methods block — if it doesn't,
+you forgot to register it in `internal/wire/methods.go` (the one source
+both sides read from).
+
+### 3. Verify `internal/cli/drift/help.go` is still accurate
+
+```bash
+bash .claude/skills/drift-docs/scripts/verify_help.sh
+```
+
+The script prints both the auto-derived leaf catalog (`drift help --full`)
+and the hand-curated output (`drift help`), then checks that every leaf
+path has its tokens represented somewhere in the curated sections. If
+a leaf is missing, the script exits non-zero and names it.
+
+Token-coverage is coarse — it'll miss **stale** rows (a curated line
+pointing at a removed command, or using an old name). Read the curated
+output by eye and confirm:
+
+- Every row still names a real subcommand.
+- Groupings (CIRCUITS / KARTS / RUNS) still match the command's role.
+- Shorthand like `circuit add|list|rm` lists the actual present leaves.
+
+Edit `driftHelpSections` in `internal/cli/drift/help.go` to fix — the
+same file ships a comment reminding future-you that `--full` is the
+safety net. When the set of top-level verbs changes, `driftHelpFullIntro`
+may also want a tweak.
+
+lakitu's equivalent (`internal/cli/lakitu/help.go`) is purely auto-derived
+through `clihelp.Render` and has no curated block to maintain. A passing
+`lakitu help` run is enough.
+
+### 4. Reconcile `README.md`
 
 Three specific sections to check:
 
@@ -94,38 +110,45 @@ drift status                 # circuits + lakitu health
 ```
 
 It's a *cheat sheet*, not a manual — flags people won't remember anyway
-don't belong here.
+don't belong here. If the README already has a Commands block that
+doubles as shorthand, consolidate rather than duplicate.
 
-### 4. Sanity-check before declaring done
-
-Run these and read the output:
+### 5. Sanity-check before declaring done
 
 ```bash
+GO=$(command -v go || ls /nix/store/*-go-*/bin/go 2>/dev/null | head -1)
 $GO run ./cmd/drift --help
+$GO run ./cmd/drift help
 $GO run ./cmd/drift help --full
-grep -E '^drift ' README.md
+$GO run ./cmd/lakitu help
 ```
 
 Then re-read the Commands section and the shorthand block with fresh eyes.
 If a reader unfamiliar with drift couldn't go from README → first kart in
 under five minutes, the Quickstart needs more work, not less.
 
-### 5. Commit
+### 6. Commit
 
-Stage `README.md` and `docs/drift-cli.md` together — they're one logical
-change. Commit message shape: `docs: sync README and drift-cli reference`
-(or whatever the trigger was, e.g. `docs: refresh for new 'drift info' flag`).
+Stage `README.md`, `docs/drift-cli.md`, `docs/lakitu-rpc.md`, and any
+`internal/cli/drift/help.go` edits together — they're one logical change.
+Commit message shape: `docs: sync README + CLI/RPC references` (or
+something more specific, e.g. `docs,help: wire up new 'drift foo' flag`).
 
 Do **not** tag a release. The project's `CLAUDE.md` is explicit: tags
 require the human to ask in the current turn.
 
 ## What not to do
 
-- **Don't hand-write the subcommand reference.** The script exists so you
-  can't drift (heh) from the binary. If the script is missing something
-  (e.g. a new nested subcommand), fix the script.
-- **Don't add "Coming soon" or forward-looking entries** to `docs/drift-cli.md`
-  — this file is a mirror of what the binary does *today*.
+- **Don't hand-write the subcommand reference or RPC method list.** The
+  scripts exist so the docs can't drift from the binaries. If a script
+  is missing something (e.g. a new nested subcommand, a new wire method),
+  fix the script.
+- **Don't add "Coming soon" or forward-looking entries** to
+  `docs/drift-cli.md` or `docs/lakitu-rpc.md` — they're mirrors of what
+  the binaries do *today*.
+- **Don't paper over a bad help message in the docs.** If `drift foo --help`
+  is wrong, the fix is in the Kong struct (`internal/cli/drift/foo.go`)
+  or its `help:"…"` tag, not in the generated markdown.
 - **Don't reference external repos or handles** beyond `kurisu-agent/drift`
   and its dependencies — see the project `CLAUDE.md`. Use placeholders in
   examples.
@@ -136,7 +159,16 @@ require the human to ask in the current turn.
 
 - `README.md` (sections: Commands, Quickstart, Shorthand/cheat sheet)
 - `docs/drift-cli.md` (created if missing)
+- `docs/lakitu-rpc.md` (created if missing)
 - `.claude/skills/drift-docs/scripts/dump_cli.sh`
+- `.claude/skills/drift-docs/scripts/dump_rpc.sh`
+- `.claude/skills/drift-docs/scripts/verify_help.sh`
+
+## Files this skill inspects (and may propose edits to)
+
+- `internal/cli/drift/help.go` — curated `drift help` output; edit
+  `driftHelpSections` and `driftHelpFullIntro` when the top-level verb
+  set changes.
 
 Everything else — architecture docs, design notes, changelog — is out of
 scope unless the user specifically asks.
