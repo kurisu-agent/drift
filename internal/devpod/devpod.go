@@ -140,15 +140,21 @@ func (c *Client) envOrNil() []string {
 		}
 		return append([]string(nil), c.Env...)
 	}
-	// DEVPOD_HOME override demands an explicit env because "nil = inherit
-	// parent" would let the parent's DEVPOD_HOME (or lack thereof) leak
-	// through. Synthesize the explicit env from Env-or-parent and append
-	// DEVPOD_HOME last so it wins over any same-named entry.
+	// DevpodHome is a default, not an override. An operator or the
+	// integration harness may set DEVPOD_HOME upstream (e.g. to a
+	// bind-mounted path that docker-on-host can resolve); respect that
+	// setting and only inject ours when nothing's been declared
+	// upstream.
 	var base []string
 	if c.Env != nil {
 		base = append(base, c.Env...)
 	} else {
 		base = append(base, osEnviron()...)
+	}
+	for _, e := range base {
+		if strings.HasPrefix(e, "DEVPOD_HOME=") {
+			return base
+		}
 	}
 	return append(base, "DEVPOD_HOME="+c.DevpodHome)
 }

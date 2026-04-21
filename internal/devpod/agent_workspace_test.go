@@ -123,7 +123,7 @@ func TestClientDevpodHomeInjectsEnv(t *testing.T) {
 			t.Errorf("unexpected env: %v", got)
 		}
 	})
-	t.Run("nil env + DevpodHome promotes to parent + override", func(t *testing.T) {
+	t.Run("nil env + DevpodHome promotes to parent + default", func(t *testing.T) {
 		c := &devpod.Client{DevpodHome: "/tmp/drift-dp"}
 		got := devpod.EnvOrNilForTest(c)
 		if len(got) < 1 {
@@ -131,7 +131,32 @@ func TestClientDevpodHomeInjectsEnv(t *testing.T) {
 		}
 		last := got[len(got)-1]
 		if last != "DEVPOD_HOME=/tmp/drift-dp" {
-			t.Errorf("DEVPOD_HOME override should land last; got %q", last)
+			t.Errorf("DEVPOD_HOME default should land last; got %q", last)
+		}
+	})
+	t.Run("explicit parent DEVPOD_HOME beats client default", func(t *testing.T) {
+		// Integration harness / operator override: parent env already has
+		// DEVPOD_HOME pointing at a bind-mounted path. Client.DevpodHome
+		// is a default and must step aside so docker-on-host can still
+		// resolve mount sources.
+		c := &devpod.Client{
+			Env:        []string{"FOO=bar", "DEVPOD_HOME=/shared/.devpod-home"},
+			DevpodHome: "/tmp/drift-dp",
+		}
+		got := devpod.EnvOrNilForTest(c)
+		for _, e := range got {
+			if e == "DEVPOD_HOME=/tmp/drift-dp" {
+				t.Errorf("client default should not win over parent DEVPOD_HOME; got %v", got)
+			}
+		}
+		var seen bool
+		for _, e := range got {
+			if e == "DEVPOD_HOME=/shared/.devpod-home" {
+				seen = true
+			}
+		}
+		if !seen {
+			t.Errorf("parent DEVPOD_HOME lost; got %v", got)
 		}
 	})
 }

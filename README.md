@@ -42,10 +42,38 @@ a customs queue the day after.
 | Term       | Meaning                                                    |
 |------------|------------------------------------------------------------|
 | circuit    | A remote Linux host running `lakitu`                       |
-| kart       | A devcontainer workspace on a circuit                      |
+| kart       | A managed devpod on a circuit                              |
 | character  | A git identity profile (name, email, signing key, PAT ref) |
 | chest      | Server-side secret store on a circuit                      |
 | tune       | Reusable preset bundling features, starter repo, dotfiles  |
+
+## Architecture
+
+```text
+   Client (your device)                         Circuit (remote Linux host)
+   ─────────────────────                        ───────────────────────────
+
+    drift CLI                                    lakitu  (systemd user unit)
+      │                                            │
+      │  JSON-RPC over SSH                         │  kart.new / list / delete
+      ├───────────────────────────────────────────▶│  chest  (secret store)
+      │                                            │  runs   (shorthand cmds)
+      │  SSH / mosh session                        │
+      ├──────────────────────┐                     ▼
+      │                      │                   devpod  (docker provider)
+      │                      │                     │
+    ~/.config/drift/         │                     ▼
+      ssh_config  ──────────▶│                   docker daemon
+      (managed aliases:      │                     │
+       drift.<circ>.<kart>)  │                     ▼
+                             └───────────▶  per-kart devcontainer
+   IDE / scp / rsync                         ├─ kart "myproj"
+   (any SSH tool)                            └─ kart "scratch-pad"
+```
+
+`drift` is stateless — every operation is either a JSON-RPC call to `lakitu`
+or a direct SSH/mosh session to a kart. Swapping clients is `drift init` on
+the new device; no state migrates because none lives there.
 
 ## Install
 
@@ -86,25 +114,46 @@ drift new myproj --clone git@github.com:u/myproj.git --character kurisu
 drift connect myproj
 ```
 
+Nix users can skip the install script:
+
+```bash
+nix profile install github:kurisu-agent/drift            # client
+nix profile install github:kurisu-agent/drift#circuit    # server bundle
+```
+
 `init` is an interactive wizard (circuit SSH target, managed
 `~/.config/drift/ssh_config`, git identity, optional PAT into the chest). It's
-re-runnable; each phase has a `--skip-*` flag. Non-TTY stdin exits
-`code:2 user_error` — script with `drift circuit add`, `drift character add`,
-`drift chest set` instead.
+re-runnable and each phase has a `--skip-*` flag (`--skip-circuits`,
+`--skip-characters`, `--no-probe`). Non-TTY stdin exits `code:2 user_error` —
+use `drift circuit add <ssh-target>` first, then run `drift init
+--skip-circuits` on a TTY to finish the character phase.
 
 ## Commands
 
 ```text
-drift list                   # karts + status
-drift start|stop|restart|delete <name>
-drift logs <name>
-drift enable|disable <name>  # auto-start on circuit reboot
-drift circuit    [list|add|rm]
-drift character  [list|add|show|rm]
-drift chest      [set|get|list|rm]
-drift runs                   # list server-side shorthand commands
-drift run <name> [args…]     # execute one (built-ins: ai, scaffolder, ping, uptime, …)
+drift init                          # first-time setup wizard
+drift status                        # circuits + lakitu health + kart counts
+drift update                        # self-install the newest release
+
+drift new <name> [--clone URL|--starter URL] [--tune T] [--character C]
+drift list                          # karts on the target circuit
+drift info <name>                   # one kart's state
+drift start|stop|restart <name>     # lifecycle (idempotent)
+drift delete <name>                 # remove a kart (errors if missing)
+drift enable|disable <name>         # autostart on circuit reboot
+drift logs <name>                   # fetch a chunk of kart logs
+drift connect <name>                # mosh (ssh fallback); aliases: into, attach
+drift migrate                       # adopt an existing devpod workspace
+
+drift circuit list|add|rm|set       # manage circuits (client config + SSH alias)
+
+drift runs                          # list server-side shorthand commands
+drift run <name> [args…]            # execute one (built-ins: ai, scaffolder, ping, uptime, …)
 ```
+
+Global flags: `-c/--circuit <name>`, `-o/--output text|json`, `--no-debug`,
+`--no-color`. `drift help --full` prints the Kong-derived catalog including
+every lakitu RPC and the exit-code table.
 
 ## IDE integration
 

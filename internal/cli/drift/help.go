@@ -40,6 +40,7 @@ var driftHelpSections = []struct {
 		{"enable|disable <name>", "Toggle kart autostart on circuit reboot"},
 		{"logs <name>", "Fetch a chunk of kart logs"},
 		{"connect|into|attach <name>", "mosh (ssh fallback) into a kart; auto-starts"},
+		{"migrate", "Adopt an existing devpod workspace as a drift kart (interactive)"},
 	}},
 	{"RUNS", [][2]string{
 		{"runs", "List server-side shorthand commands"},
