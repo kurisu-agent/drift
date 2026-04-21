@@ -18,10 +18,8 @@ Why worktrees instead of `git checkout` in a single tree:
 - `git add -A` from the main tree no longer accidentally stages the worktree dir as a submodule pointer, since it's gitignored.
 
 CI shape pairs with this:
-- PRs run the fast `test` job only (unit + lint + vulncheck, under a minute).
-- Pushes to `main` run `test` **and** `integration` (real devpod + docker, ~2 min). A broken merge surfaces on the push build; fix forward or revert.
+- PRs and `main` pushes both run `test` (unit + lint + vulncheck, under a minute) and `integration` (real devpod + docker, ~2 min). Branch protection on `main` requires the branch to be up-to-date before merging, so a green PR reflects the actual post-merge state.
 - Tag pushes run both via `release.yml` and gate goreleaser on the same steps — nothing ships that main hasn't already exercised.
-- Want the full suite on a feature branch before merging? Fire `ci.yml` via `workflow_dispatch` against your branch.
 
 # Release discipline
 
