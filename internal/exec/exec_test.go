@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -152,8 +153,12 @@ func TestRunRejectsEmptyName(t *testing.T) {
 
 func TestRunPropagatesStdin(t *testing.T) {
 	t.Parallel()
+	cat, err := osexec.LookPath("cat")
+	if err != nil {
+		t.Skipf("cat not found on PATH: %v", err)
+	}
 	res, err := driftexec.Run(t.Context(), driftexec.Cmd{
-		Name:  "/bin/cat",
+		Name:  cat,
 		Stdin: strings.NewReader("piped-in"),
 	})
 	if err != nil {
