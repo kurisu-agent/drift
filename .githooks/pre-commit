@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
-# Fast pre-commit lint hook with auto-fix.
+# Pre-commit lint hook with auto-fix.
 #
-# Runs only on staged Go files so the hook stays under a second on
-# typical changes. Uses the flake's golangci-lint via nix develop so
-# the same binary version CI runs fires here (golangci-lint-action
-# silently lagged the Go version we target — fixed by routing through
-# nix develop). Heavy linters (gosec full scan, unused across the
-# whole codebase) still run in CI.
+# Runs only on staged Go files so the hook stays under a couple
+# seconds. Both gofmt and golangci-lint run inside a single nix
+# develop invocation so the hook works from any shell — active dev
+# shell or not — without each tool needing its own PATH setup. One
+# nix develop spawn amortizes startup over both tools.
 #
 # Auto-fix is on: gofmt -w and golangci-lint --fix rewrite in place,
 # then any touched files are re-staged. If issues remain after --fix,
 # the hook fails and prints what to look at.
 #
 # Install: `make install-hooks` (sets core.hooksPath = .githooks).
+# Requires nix on PATH — drift's dev toolchain lives in the flake, so
+# any real contributor already has it.
 
 set -eu
 
@@ -21,21 +22,21 @@ if [ -z "$staged" ]; then
   exit 0
 fi
 
-# gofmt first — cheap, deterministic, no toolchain startup.
-gofmt -w -- $staged
-git add -- $staged
-
-# golangci-lint --fix on packages containing staged files. --fast-only
-# scopes to the quick linters (errcheck, errorlint, gofmt/goimports,
-# govet/ineffassign/staticcheck where cheap, bodyclose, etc.); heavier
-# ones (gosec, unused) run in CI.
 pkgs=$(printf '%s\n' $staged | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
-if ! nix develop --command golangci-lint run --fix --fast-only $pkgs; then
+# One nix develop spawn for both tools. Quoting $staged + $pkgs is
+# safe here: git's reserved-char filenames are far narrower than
+# bash's whitespace-split hazard, and drift's conventions (snake_case
+# Go paths under internal/) never produce spaced names.
+if ! nix develop --command bash -c "
+  set -eu
+  gofmt -w -- $staged
+  golangci-lint run --fix --fast-only $pkgs
+"; then
   echo >&2
   echo "pre-commit: lint issues remain after auto-fix — address them and re-commit." >&2
   exit 1
 fi
 
-# Re-stage files the linter may have rewritten under --fix.
+# Re-stage whatever the formatters rewrote.
 git add -- $staged
