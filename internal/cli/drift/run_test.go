@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -119,7 +120,7 @@ func TestCompatWrap_MethodNotFoundEnrichedWithServerVersion(t *testing.T) {
 		t.Fatal("expected error")
 	}
 	var re *rpcerr.Error
-	if !isRPCErr(err, &re) {
+	if !errors.As(err, &re) {
 		t.Fatalf("want *rpcerr.Error, got %T: %v", err, err)
 	}
 	if re.Type != "method_not_found" {
@@ -153,7 +154,7 @@ func TestCompatWrap_ProbeFailureStillGivesActionableMessage(t *testing.T) {
 
 	err := wrapped(context.Background(), "test", wire.MethodRunList, nil, nil)
 	var re *rpcerr.Error
-	if !isRPCErr(err, &re) {
+	if !errors.As(err, &re) {
 		t.Fatalf("want *rpcerr.Error, got %T: %v", err, err)
 	}
 	if !strings.Contains(strings.ToLower(re.Message), "update lakitu") {
@@ -200,20 +201,4 @@ func TestCompatWrap_OtherErrorsUnmodified(t *testing.T) {
 			}
 		})
 	}
-}
-
-// isRPCErr is a tiny errors.As that keeps the test signal local.
-func isRPCErr(err error, target **rpcerr.Error) bool {
-	for err != nil {
-		if re, ok := err.(*rpcerr.Error); ok {
-			*target = re
-			return true
-		}
-		u, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return false
-		}
-		err = u.Unwrap()
-	}
-	return false
 }
