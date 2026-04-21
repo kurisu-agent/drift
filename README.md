@@ -1,6 +1,6 @@
 # drift
 
-**Devpod for drifters.**
+**devpod for drifters.**
 
 [![Release](https://img.shields.io/github/v/release/kurisu-agent/drift)](https://github.com/kurisu-agent/drift/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -8,7 +8,7 @@
 
 ## Why not just devpod?
 
-> drift is a remote control for devpod running on a server.
+> drift is a remote control for devpod running on your server.
 
 [devpod] keeps workspace state on whichever client created it. Spin up a
 workspace from your desktop, then try to manage it from your laptop,
@@ -18,9 +18,8 @@ config, the agent credentials, the workspace metadata all live in
 running devpod from Termux on Android and you're in a whole separate
 world of hurt; it mostly doesn't run there at all.
 
-drift sidesteps both. All state lives on the server, the client is just
-SSH, and any device with `drift` sees the same karts and the same
-characters.
+drift sidesteps both problems, and provides extra developer experience,
+drift boost included.
 
 ## Highlights
 
