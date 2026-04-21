@@ -14,38 +14,16 @@ permissions:
   contents: write
 
 jobs:
-  test:
-    name: test (unit + integration)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
-
-      - name: Set up Nix cache
-        uses: cachix/cachix-action@v15
-        with:
-          name: kurisu
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-
-      # `nix develop` gives us the exact toolchain pinned in flake.nix
-      # (go 1.26, golangci-lint, govulncheck, devpod, make, git) so local
-      # dev and CI run against the same bits. The `-c` form avoids spawning
-      # an interactive shell.
-      - name: Vet
-        run: nix develop --command go vet ./...
-
-      - name: Unit tests (race)
-        run: nix develop --command go test -race ./...
-
-      - name: Integration tests
-        run: nix develop --command make integration
-
+  # No pre-release test gate here — ci.yml's main-push job (unit + lint
+  # + vulncheck + integration) is the gate, and drift tags are only cut
+  # from main. Re-running the same suite on the tagged commit would be
+  # duplicate work with near-zero catch rate in the happy path. If a
+  # commit ever gets tagged that skipped ci.yml (off-main tag, direct
+  # push of a patched tag), the release still ships from an untested
+  # SHA — so discipline is: only tag commits that have a green ci.yml
+  # run against them.
   release:
     name: goreleaser
-    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
