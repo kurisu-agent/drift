@@ -6,21 +6,37 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/kurisu-agent/drift/actions/workflows/ci.yml/badge.svg)](https://github.com/kurisu-agent/drift/actions)
 
-drift is devpod, managed as a long-lived service on a host you already own.
-It has two parts. **lakitu** runs on your Linux box and owns everything
-stateful — workspaces, secrets, git identities, preset bundles, shorthand
-commands. **drift** runs on your laptop (or phone) as a stateless SSH
-client to lakitu. Swap laptops, run `drift init`, you're back where you
-left off.
+drift keeps your dev environment on a Linux host you control, so switching
+devices or losing signal doesn't cost you work. Two binaries ship from
+this repo. `drift` is the thin SSH client you install on every device you
+code from. `lakitu` runs on the host and manages devcontainers via
+[devpod], holding workspaces, secrets, and git identities server-side. A
+fresh client picks up where you left off with one `drift init`.
 
-## Why this exists
+## Why not just devpod?
 
-[devpod] is a good engine for one-off devcontainers on a cloud VM, but it
-doesn't know anything about keeping workspaces around, managing secrets,
-or being driven from a phone. lakitu is that missing management layer;
-drift is the client that lets you talk to it from anywhere. I built this
-because I wanted my dev environment to survive losing a laptop, being
-offline for an hour, or working from a borrowed machine.
+[devpod] keeps workspace state on whichever client created it. Spin up a
+workspace from your laptop, then try to manage it from your phone, and
+the phone's devpod has no idea that workspace exists: the provider
+config, the agent credentials, the workspace metadata all live in
+`~/.devpod/` on the first machine. drift moves that state to the server.
+Any device with `drift` and an SSH connection sees the same karts and
+the same characters, and any secrets they need stay on the server.
+
+## Highlights
+
+- **AI at the CLI.** `drift run ai` drops you into Claude on the circuit
+  with drift's command surface preloaded. Long commands are painful to
+  type on a phone, easy to dictate.
+- **Persistent shells by default.** `drift connect` uses mosh so sessions
+  survive wifi drops and closing the lid. Falls back to ssh when mosh
+  isn't available.
+- **One-flag workspaces.** Preset environments (`tunes`) bundle features,
+  starter repos, and dotfiles, so `drift new myproj --tune <name>`
+  produces a working container without per-project setup.
+- **Secrets that stay on the server.** The `chest` on the circuit holds
+  your SSH keys and PATs; karts read them at start. A borrowed phone
+  never needs to carry them.
 
 ## What you need
 
