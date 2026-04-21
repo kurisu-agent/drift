@@ -16,12 +16,14 @@ fresh client picks up where you left off with one `drift init`.
 ## Why not just devpod?
 
 [devpod] keeps workspace state on whichever client created it. Spin up a
-workspace from your laptop, then try to manage it from your phone, and
-the phone's devpod has no idea that workspace exists: the provider
+workspace from your desktop, then try to manage it from your laptop,
+and the laptop's devpod has no idea that workspace exists: the provider
 config, the agent credentials, the workspace metadata all live in
-`~/.devpod/` on the first machine. drift moves that state to the server.
-Any device with `drift` and an SSH connection sees the same karts and
-the same characters, and any secrets they need stay on the server.
+`~/.devpod/` on the first machine. That's the client-state problem. Try
+running devpod from Termux on Android and you're in a whole separate
+world of hurt; it mostly doesn't run there at all. drift sidesteps both.
+All state lives on the server, the client is just SSH, and any device
+with `drift` sees the same karts and the same characters.
 
 ## Highlights
 
