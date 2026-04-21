@@ -49,3 +49,15 @@ type KartSource struct {
 	Mode string `json:"mode"`
 	URL  string `json:"url,omitempty"`
 }
+
+// MigratedFrom identifies the devpod workspace a kart was originally
+// adopted from via `drift migrate`. Persisted on the kart config so
+// subsequent migrate runs can filter out already-migrated workspaces
+// even when the kart has been renamed. Absent on non-migrated karts.
+type MigratedFrom struct {
+	Context string `yaml:"context" json:"context"`
+	Name    string `yaml:"name" json:"name"`
+}
+
+// IsZero reports whether no migration origin was recorded.
+func (m MigratedFrom) IsZero() bool { return m.Context == "" && m.Name == "" }

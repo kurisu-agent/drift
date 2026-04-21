@@ -261,12 +261,13 @@ func writeKartConfig(kartDir string, r *Resolved, now time.Time) error {
 		return err
 	}
 	type onDisk struct {
-		Repo       string   `yaml:"repo,omitempty"`
-		Tune       string   `yaml:"tune,omitempty"`
-		Character  string   `yaml:"character,omitempty"`
-		SourceMode string   `yaml:"source_mode,omitempty"`
-		CreatedAt  string   `yaml:"created_at,omitempty"`
-		Env        *TuneEnv `yaml:"env,omitempty"`
+		Repo         string              `yaml:"repo,omitempty"`
+		Tune         string              `yaml:"tune,omitempty"`
+		Character    string              `yaml:"character,omitempty"`
+		SourceMode   string              `yaml:"source_mode,omitempty"`
+		CreatedAt    string              `yaml:"created_at,omitempty"`
+		Env          *TuneEnv            `yaml:"env,omitempty"`
+		MigratedFrom *model.MigratedFrom `yaml:"migrated_from,omitempty"`
 	}
 	cfg := onDisk{
 		Repo:       r.SourceURL,
@@ -281,6 +282,10 @@ func writeKartConfig(kartDir string, r *Resolved, now time.Time) error {
 	if !r.EnvRefs.IsEmpty() {
 		refs := r.EnvRefs
 		cfg.Env = &refs
+	}
+	if !r.MigratedFrom.IsZero() {
+		mf := r.MigratedFrom
+		cfg.MigratedFrom = &mf
 	}
 	buf, err := yaml.Marshal(&cfg)
 	if err != nil {

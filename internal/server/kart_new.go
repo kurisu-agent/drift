@@ -34,15 +34,16 @@ type KartNewDeps struct {
 // KartNewParams field names mirror `drift new` flags so drift and lakitu
 // schemas align without translation.
 type KartNewParams struct {
-	Name         string `json:"name"`
-	Clone        string `json:"clone,omitempty"`
-	Starter      string `json:"starter,omitempty"`
-	Tune         string `json:"tune,omitempty"`
-	Features     string `json:"features,omitempty"`
-	Devcontainer string `json:"devcontainer,omitempty"`
-	Dotfiles     string `json:"dotfiles,omitempty"`
-	Character    string `json:"character,omitempty"`
-	Autostart    bool   `json:"autostart,omitempty"`
+	Name         string              `json:"name"`
+	Clone        string              `json:"clone,omitempty"`
+	Starter      string              `json:"starter,omitempty"`
+	Tune         string              `json:"tune,omitempty"`
+	Features     string              `json:"features,omitempty"`
+	Devcontainer string              `json:"devcontainer,omitempty"`
+	Dotfiles     string              `json:"dotfiles,omitempty"`
+	Character    string              `json:"character,omitempty"`
+	Autostart    bool                `json:"autostart,omitempty"`
+	MigratedFrom *model.MigratedFrom `json:"migrated_from,omitempty"`
 }
 
 func RegisterKartNew(reg *rpc.Registry, kd KartNewDeps) {
@@ -118,6 +119,9 @@ func (kd KartNewDeps) kartNewHandler(ctx context.Context, params json.RawMessage
 		Dotfiles:     p.Dotfiles,
 		Character:    p.Character,
 		Autostart:    p.Autostart,
+	}
+	if p.MigratedFrom != nil {
+		f.MigratedFrom = *p.MigratedFrom
 	}
 	return kart.New(ctx, kd.Kart, f)
 }

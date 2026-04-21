@@ -63,6 +63,11 @@ type Flags struct {
 	Dotfiles     string
 	Character    string
 	Autostart    bool
+	// MigratedFrom, when non-zero, is persisted on the kart config so
+	// `drift migrate` can filter out already-adopted devpod workspaces on
+	// subsequent runs. Never set by `drift new` — only by the migrate
+	// path.
+	MigratedFrom model.MigratedFrom
 }
 
 type Resolved struct {
@@ -82,6 +87,9 @@ type Resolved struct {
 	// chest:<name> references for persistence and `kart info` rendering.
 	Env     ResolvedTuneEnv
 	EnvRefs TuneEnv
+	// MigratedFrom threads through from Flags unchanged; the resolver has
+	// nothing to decide about it.
+	MigratedFrom model.MigratedFrom
 }
 
 type Resolver struct {
@@ -240,6 +248,7 @@ func (r *Resolver) Resolve(f Flags) (*Resolved, error) {
 		Autostart:     f.Autostart,
 		Env:           resolvedEnv,
 		EnvRefs:       envRefs,
+		MigratedFrom:  f.MigratedFrom,
 	}
 	r.logResolved(resolved)
 	return resolved, nil

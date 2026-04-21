@@ -38,16 +38,17 @@ func RegisterKart(reg *rpc.Registry, d KartDeps) {
 // identifiers (tune, character, source) round-trip — runtime details come
 // from devpod at query time.
 type KartConfig struct {
-	Repo       string        `yaml:"repo,omitempty"`
-	Tune       string        `yaml:"tune,omitempty"`
-	Character  string        `yaml:"character,omitempty"`
-	SourceMode string        `yaml:"source_mode,omitempty"`
-	User       string        `yaml:"user,omitempty"`
-	Shell      string        `yaml:"shell,omitempty"`
-	Image      string        `yaml:"image,omitempty"`
-	Workdir    string        `yaml:"workdir,omitempty"`
-	CreatedAt  string        `yaml:"created_at,omitempty"`
-	Env        model.TuneEnv `yaml:"env,omitempty"`
+	Repo         string              `yaml:"repo,omitempty"`
+	Tune         string              `yaml:"tune,omitempty"`
+	Character    string              `yaml:"character,omitempty"`
+	SourceMode   string              `yaml:"source_mode,omitempty"`
+	User         string              `yaml:"user,omitempty"`
+	Shell        string              `yaml:"shell,omitempty"`
+	Image        string              `yaml:"image,omitempty"`
+	Workdir      string              `yaml:"workdir,omitempty"`
+	CreatedAt    string              `yaml:"created_at,omitempty"`
+	Env          model.TuneEnv       `yaml:"env,omitempty"`
+	MigratedFrom *model.MigratedFrom `yaml:"migrated_from,omitempty"`
 }
 
 // KartSource is aliased to model.KartSource so server and kart packages
