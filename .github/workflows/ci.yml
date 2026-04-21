@@ -1,9 +1,10 @@
 name: ci
 
-# Temporarily manual-only while the MVP iteration is in flight — see
-# commit history. Re-enable push/pull_request triggers once the suite
-# runs green against the current devpod-fork pin.
 on:
+  push:
+    branches:
+      - main
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -62,3 +63,24 @@ jobs:
 
       - name: Vulncheck
         run: govulncheck ./...
+
+  integration:
+    name: integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v14
+
+      - name: Magic Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      # `nix develop` provides the exact toolchain pinned in flake.nix
+      # (go, make, git, pinned devpod) so the real-devpod integration
+      # tests exercise the same binary lakitu was built against. Same
+      # step release.yml runs — catching a regression here means we
+      # never ship a broken tag.
+      - name: Integration tests
+        run: nix develop --command make integration
