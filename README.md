@@ -106,6 +106,77 @@ lakitu init
 
 </details>
 
+## Bundled devpod (lakitu)
+
+drift pins a specific devpod build and ships it *inside* the `lakitu`
+binary. On first run, lakitu extracts the embedded binary to
+`~/.drift/bin/devpod` and invokes it with `DEVPOD_HOME=~/.drift/devpod/`
+for every drift-managed workspace. The user's `~/.devpod/` is never
+touched — `devpod list` / `devpod delete` from a regular shell keeps
+working against whatever devpod the user has installed (if any), fully
+isolated from drift's own state tree.
+
+### Why bundle at all
+
+- drift tracks a **fork of devpod** (currently [skevetter/devpod][fork]
+  at `v0.22.0`), not the upstream that distro package maintainers are
+  likely to ship. Expecting every circuit operator to hand-install the
+  right fork is a support-burden trap.
+- **Version drift between circuit hosts causes silent, ugly bugs.** A
+  circuit running devpod 0.19 and another running 0.22 will diverge in
+  workspace JSON shape, flag names, and provider semantics. Embedding
+  eliminates the variable.
+- **Offline-robust**: bundled binary means no network fetch at server
+  bootstrap. Circuits behind NAT, corporate proxies, or air-gapped
+  from `github.com` still come up.
+
+### Why content-addressed
+
+Both pins that feed the bundled binary are **SHA256-verified** at build
+time — if GitHub ever serves different bytes under the same tag, the
+build fails loudly instead of silently shipping a substituted binary.
+Supply-chain integrity for the one external dependency drift carries
+into every release.
+
+The pin lives in one place: `flake.nix`'s `devpodPin` attribute.
+
+```nix
+devpodPin = {
+  owner   = "skevetter";
+  repo    = "devpod";
+  version = "v0.22.0";
+  srcHash    = "sha256-MWl+c/IdrizoUMwlMegvJXJ8oerbVw3OPzxHuzMvZSc=";
+  vendorHash = "sha256-hCFvOVqtjvbP+pCbAS1LOcFHLFJLkki7DnZmQDr6QFQ=";
+};
+```
+
+- `srcHash` pins the source tarball from [github.com/skevetter/devpod][fork]
+  at tag `v0.22.0`.
+- `vendorHash` pins the vendored Go module tree — catches any upstream
+  dependency tampering that wouldn't change the tarball hash itself but
+  would change what actually gets compiled.
+
+Both are consumed by `pkgs.fetchFromGitHub` (Nix) and by the goreleaser
+pre-build hook (for non-Nix release binaries), which re-downloads the
+same release asset and verifies its SHA256 before embedding.
+
+### Bumping the pin
+
+Edit `devpodPin.version`, reset both hashes to `"sha256-AAAA…"` (44
+A's), and run `nix build .#devpod` twice. Each run fails with the
+correct hash in its `got:` line; paste each into the appropriate field.
+Same pattern any Nix-packaged Go project uses.
+
+### Non-Nix installs
+
+For manual / distro installs, `lakitu init` still prints its expected
+devpod version (from the ldflag) and warns if the on-PATH binary
+doesn't match. Once the go:embed work lands, every lakitu release
+ships with its pinned devpod inside — the "install devpod manually"
+step in the circuit setup goes away.
+
+[fork]: https://github.com/skevetter/devpod
+
 ## Quickstart
 
 ```bash
@@ -153,7 +224,9 @@ drift run <name> [args…]            # execute one (built-ins: ai, scaffolder, 
 
 Global flags: `-c/--circuit <name>`, `-o/--output text|json`, `--no-debug`,
 `--no-color`. `drift help --full` prints the Kong-derived catalog including
-every lakitu RPC and the exit-code table.
+every lakitu RPC and the exit-code table. See
+[docs/drift-cli.md](docs/drift-cli.md) for the per-flag reference of every
+subcommand.
 
 ## IDE integration
 
@@ -174,7 +247,9 @@ drift and lakitu share a semver version. Per-process, drift probes
 
 Bypass during upgrades with `drift --skip-version-check …`. The probe also
 carries an integer `api` field bumped on breaking wire changes, so a
-semver-compatible lakitu speaking an older RPC is still rejected.
+semver-compatible lakitu speaking an older RPC is still rejected. See
+[docs/lakitu-rpc.md](docs/lakitu-rpc.md) for the wire protocol and the
+full method catalog.
 
 ## Status
 
