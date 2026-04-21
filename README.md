@@ -130,7 +130,7 @@ Early / evolving. Interfaces may change between minor versions until `v1.0.0`.
 
 ## Contributing
 
-drift is developed in the open but **not accepting pull requests**. Issues for bug reports and discussion are welcome. Feel free to fork and adapt — the MIT license puts no restrictions on that.
+drift is developed in the open. Issues and pull requests are welcome. Feel free to fork and adapt; the MIT license puts no restrictions on that.
 
 ## License
 
