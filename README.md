@@ -10,14 +10,14 @@
 
 [devpod] keeps workspace state on whichever client created it. Spin up a workspace from your desktop, then try to manage it from your laptop, and the laptop's devpod has no idea that workspace exists: the provider config, the agent credentials, the workspace metadata all live in `~/.devpod/` on the desktop. Try running devpod from Termux on Android and you're in a whole separate world of hurt; it mostly doesn't run there at all, and good luck following and typing this with your thumbs:
 
-~~~bash
-devpod up myproj \
+```bash
+devpod up https://github.com/example-org/myproj.git \
   --provider docker \
-  --ide openvscode \
+  --ide none \
   --dotfiles https://github.com/example-org/dotfiles \
   --additional-features '{"ghcr.io/example-org/devpod-features/devtools:2":{}}' \
   --dotfiles-script-env GITHUB_TOKEN="$GITHUB_TOKEN"
-~~~
+```
 
 drift sidesteps both problems, letting you powerslide across devices, servers, and continents with zero friction and ride the drift boost of developer experience out of every corner.
 
