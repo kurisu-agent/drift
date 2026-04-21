@@ -47,6 +47,7 @@ const (
 	TypeInvalidFlag        Type = "invalid_flag"
 	TypeMutuallyExclusive  Type = "mutually_exclusive_flags"
 	TypeKartNotFound       Type = "kart_not_found"
+	TypeCircuitNotFound    Type = "circuit_not_found"
 	TypeCharacterNotFound  Type = "character_not_found"
 	TypeChestEntryNotFound Type = "chest_entry_not_found"
 	TypeNameCollision      Type = "name_collision"

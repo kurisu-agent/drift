@@ -55,6 +55,28 @@ func Validate(kind, s string) error {
 	return nil
 }
 
+// ValidateAllowing behaves like Validate but treats each name in allow as
+// permitted even if it would otherwise be Reserved. Useful for entity kinds
+// whose reserved set is a strict subset of the package default (e.g. tunes
+// must reject "none" but permit "default", which Validate forbids).
+// Pattern validation still applies — the allow list short-circuits only
+// the Reserved check.
+func ValidateAllowing(kind, s string, allow ...string) error {
+	for _, a := range allow {
+		if s == a {
+			if !re.MatchString(s) {
+				return rpcerr.UserError(rpcerr.TypeInvalidName,
+					"%s name %q is invalid (must match %s)", kind, s, Pattern).
+					With("kind", kind).
+					With("name", s).
+					With("pattern", Pattern)
+			}
+			return nil
+		}
+	}
+	return Validate(kind, s)
+}
+
 // SplitUserHost parses a "user@host[:port]" SSH target. host may include a
 // colon+port; the caller forwards it verbatim. An empty target returns
 // an error; a target without an @ returns (user="", host=target, nil).

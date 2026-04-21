@@ -55,3 +55,27 @@ func DriftDevpodHome() (string, error) {
 	}
 	return filepath.Join(home, ".drift", "devpod"), nil
 }
+
+// KartsDir is <garageDir>/karts — the parent directory that holds every
+// kart's config/state subdirectory.
+func KartsDir(garageDir string) string { return filepath.Join(garageDir, "karts") }
+
+// KartDir is <garageDir>/karts/<name> — the per-kart directory.
+func KartDir(garageDir, name string) string { return filepath.Join(KartsDir(garageDir), name) }
+
+// KartConfigPath is <garageDir>/karts/<name>/config.yaml.
+func KartConfigPath(garageDir, name string) string {
+	return filepath.Join(KartDir(garageDir, name), "config.yaml")
+}
+
+// KartAutostartPath is <garageDir>/karts/<name>/autostart — the sentinel
+// file checked by kart.list to flag a kart for boot-time start.
+func KartAutostartPath(garageDir, name string) string {
+	return filepath.Join(KartDir(garageDir, name), "autostart")
+}
+
+// KartStatusPath is <garageDir>/karts/<name>/status — the error-marker
+// file stamped on failed kart.new so the next run sees the kart as stale.
+func KartStatusPath(garageDir, name string) string {
+	return filepath.Join(KartDir(garageDir, name), "status")
+}
