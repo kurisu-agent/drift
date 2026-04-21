@@ -25,10 +25,17 @@ func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
+	return doConnect(ctx, io, root, circuit, cmd.Name, cmd.SSH, cmd.ForwardAgent)
+}
+
+// doConnect is the shared body behind `drift connect` and the post-create
+// auto-connect path of `drift new`. Both paths have already resolved the
+// circuit, so the helper takes it as a parameter instead of re-resolving.
+func doConnect(ctx context.Context, io IO, root *CLI, circuit, name string, forceSSH, forwardAgent bool) int {
 	rpcClient := client.New()
-	transport := connect.Transport(osexec.LookPath, cmd.SSH)
+	transport := connect.Transport(osexec.LookPath, forceSSH)
 	ph := progress.Start(io.Stderr, root.Output == "json",
-		"connecting to kart \""+cmd.Name+"\"", transport)
+		"connecting to kart \""+name+"\"", transport)
 	d := connect.Deps{
 		Call: rpcClient.Call,
 		// Stop the spinner right before Exec takes the TTY so it doesn't
@@ -37,9 +44,9 @@ func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps
 	}
 	opts := connect.Options{
 		Circuit:      circuit,
-		Kart:         cmd.Name,
-		ForceSSH:     cmd.SSH,
-		ForwardAgent: cmd.ForwardAgent,
+		Kart:         name,
+		ForceSSH:     forceSSH,
+		ForwardAgent: forwardAgent,
 	}
 	stdio := connect.Stdio{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
 
@@ -50,7 +57,7 @@ func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps
 		fmt.Fprintln(io.Stderr, p.Dim("via "+transport))
 	}
 
-	err = connect.Run(ctx, d, opts, stdio)
+	err := connect.Run(ctx, d, opts, stdio)
 	// If Run returned before reaching Exec (RPC error), the spinner is
 	// still running — make sure it cleans up before errfmt writes.
 	ph.Stop()

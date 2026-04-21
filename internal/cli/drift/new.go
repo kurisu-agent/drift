@@ -29,6 +29,12 @@ type newCmd struct {
 	Dotfiles     string `name:"dotfiles" help:"Layer-2 dotfiles repo URL (overrides tune's dotfiles_repo)."`
 	Character    string `name:"character" help:"Git/GitHub identity to inject."`
 	Autostart    bool   `name:"autostart" help:"Enable auto-start on server reboot."`
+	// Connect drops the user into the new kart after a successful create.
+	// Default-on for interactive callers; --no-connect preserves the old
+	// behavior for scripts that chain `drift new` with their own commands.
+	// Auto-connect is also suppressed when stdin is not a TTY or when
+	// --output json is in effect, since both imply a non-interactive caller.
+	Connect bool `name:"connect" default:"true" negatable:"" help:"Connect to the kart after a successful create (disable with --no-connect)."`
 }
 
 func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
@@ -110,7 +116,24 @@ func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 	if result.Warning != "" {
 		fmt.Fprintf(io.Stderr, "warning: %s\n", result.Warning)
 	}
+	if shouldAutoConnect(cmd, root, io) {
+		return doConnect(ctx, io, root, circuit, result.Name, false, false)
+	}
 	return 0
+}
+
+// shouldAutoConnect decides whether `drift new` drops the caller into the
+// new kart. Disabled explicitly with --no-connect, and implicitly when the
+// caller looks non-interactive (stdin is a pipe/file, or --output json is
+// set so stdout is being parsed).
+func shouldAutoConnect(cmd newCmd, root *CLI, io IO) bool {
+	if !cmd.Connect {
+		return false
+	}
+	if root.Output == "json" {
+		return false
+	}
+	return stdinIsTTY(io.Stdin)
 }
 
 func buildNewParams(cmd newCmd) map[string]any {

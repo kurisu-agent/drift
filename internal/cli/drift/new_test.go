@@ -1,6 +1,9 @@
 package drift
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
 
 func TestExpandOwnerRepoShorthand(t *testing.T) {
 	t.Parallel()
@@ -65,6 +68,51 @@ func TestExpandOwnerRepoShorthand(t *testing.T) {
 			}
 			if cmd.Starter != tc.wantStarter {
 				t.Errorf("Starter = %q, want %q", cmd.Starter, tc.wantStarter)
+			}
+		})
+	}
+}
+
+func TestShouldAutoConnect(t *testing.T) {
+	t.Parallel()
+
+	// stdinIsTTY returns false for non-*os.File readers, which is the
+	// realistic signal for scripted/piped invocations — exactly the case
+	// where auto-connect must stay off.
+	pipeStdin := &bytes.Buffer{}
+
+	cases := []struct {
+		name string
+		cmd  newCmd
+		root CLI
+		want bool
+	}{
+		{
+			name: "--no-connect disables even on a TTY",
+			cmd:  newCmd{Connect: false},
+			root: CLI{Output: "text"},
+			want: false,
+		},
+		{
+			name: "JSON output suppresses auto-connect",
+			cmd:  newCmd{Connect: true},
+			root: CLI{Output: "json"},
+			want: false,
+		},
+		{
+			name: "non-TTY stdin suppresses auto-connect",
+			cmd:  newCmd{Connect: true},
+			root: CLI{Output: "text"},
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			io := IO{Stdin: pipeStdin}
+			got := shouldAutoConnect(tc.cmd, &tc.root, io)
+			if got != tc.want {
+				t.Errorf("shouldAutoConnect = %v, want %v", got, tc.want)
 			}
 		})
 	}
