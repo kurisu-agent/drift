@@ -53,21 +53,6 @@ var (
 	imageErr  error
 )
 
-// TestMain builds drift + lakitu once for the whole package and tears the
-// shared tmp dir down after m.Run. Individual tests rely on driftBinary /
-// lakituBinary which gate on the Once guards below.
-func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("", "drift-integration-")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "TestMain: mkdir temp: %v\n", err)
-		os.Exit(1)
-	}
-	pkgTmpDir = dir
-	code := m.Run()
-	_ = os.RemoveAll(pkgTmpDir)
-	os.Exit(code)
-}
-
 type Circuit struct {
 	t *testing.T
 
