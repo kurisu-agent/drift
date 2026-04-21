@@ -6,10 +6,10 @@ func TestExpandOwnerRepoShorthand(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name       string
-		in         newCmd
-		wantName   string
-		wantClone  string
+		name        string
+		in          newCmd
+		wantName    string
+		wantClone   string
 		wantStarter string
 	}{
 		{

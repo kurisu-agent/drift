@@ -2,6 +2,7 @@ package exec
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	osexec "os/exec"
@@ -88,10 +89,10 @@ func readShebang(path string) (string, string, bool) {
 	if err != nil {
 		return "", "", false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	buf := make([]byte, 256)
 	n, err := io.ReadFull(f, buf)
-	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
 		return "", "", false
 	}
 	buf = buf[:n]

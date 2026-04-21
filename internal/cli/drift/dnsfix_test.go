@@ -14,7 +14,7 @@ func TestIsLoopbackDNS(t *testing.T) {
 		addr string
 		want bool
 	}{
-		{"[::1]:53", true},   // typical Termux/Android Go-resolver fallback
+		{"[::1]:53", true}, // typical Termux/Android Go-resolver fallback
 		{"127.0.0.1:53", true},
 		{"127.0.0.53:53", true}, // systemd-resolved stub on some Linux distros
 		{"1.1.1.1:53", false},

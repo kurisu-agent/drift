@@ -89,6 +89,9 @@ func ensureManaged(path, parentDir string, embedded []byte) (bool, error) {
 	if bytes.Equal(merged, existing) {
 		return false, nil
 	}
+	// #nosec G703 -- path is built from a drift-home we just resolved,
+	// not an unvalidated network/user input; the surrounding package
+	// already excludes G304 for the same reason.
 	if err := os.WriteFile(path, merged, 0o600); err != nil {
 		return false, fmt.Errorf("config: write %s: %w", path, err)
 	}
