@@ -128,27 +128,31 @@ func SSHTransportArgs(sshArgs []string) Transport {
 	}
 }
 
-// driftDebug is captured once at process start. The envvar does not change
-// between calls within a single drift invocation, so repeated os.Getenv on
-// the hot path (every RPC) is wasted work. `remoteArgs` is the prebuilt
-// trailing argv — with or without the `env LAKITU_DEBUG=1` wrapper — that
-// every SSH call appends after its destination.
-var (
-	driftDebug = os.Getenv("DRIFT_DEBUG") != ""
-	remoteArgs = func() []string {
-		// Forward verbose mode to the circuit. `env KEY=VALUE cmd` is the
-		// shell-agnostic way to thread an env var across SSH without
-		// depending on sshd's `AcceptEnv` config, which most circuits
-		// don't ship with LAKITU_* whitelisted.
-		if driftDebug {
-			return []string{"env", "LAKITU_DEBUG=1", "lakitu", "rpc"}
-		}
-		return []string{"lakitu", "rpc"}
-	}()
-)
+// debugEnabled checks DRIFT_DEBUG at call time — not at package init —
+// because the drift CLI's `--debug` default (true) is applied inside the
+// Kong parse *after* the `internal/rpc/client` package's init already ran.
+// A package-level capture always returned false for callers that didn't
+// pre-export DRIFT_DEBUG in their shell, which silently disabled both
+// the `LAKITU_DEBUG=1` wrap AND the stderr mirror — meaning long-running
+// RPCs like `kart.new` streamed no live progress despite `--debug`'s name.
+func debugEnabled() bool {
+	return os.Getenv("DRIFT_DEBUG") != ""
+}
+
+// remoteArgv builds the trailing argv the SSH call appends after its
+// destination. Forwarding verbose mode to the circuit via `env KEY=VALUE
+// cmd` is the shell-agnostic way to thread an env var across SSH without
+// depending on sshd's `AcceptEnv` config, which most circuits don't ship
+// with LAKITU_* whitelisted.
+func remoteArgv() []string {
+	if debugEnabled() {
+		return []string{"env", "LAKITU_DEBUG=1", "lakitu", "rpc"}
+	}
+	return []string{"lakitu", "rpc"}
+}
 
 func runSSHRPC(ctx context.Context, sshArgs []string, request []byte) ([]byte, error) {
-	args := append(append([]string(nil), sshArgs...), remoteArgs...)
+	args := append(append([]string(nil), sshArgs...), remoteArgv()...)
 	cmd := driftexec.Cmd{
 		Name:  "ssh",
 		Args:  args,
@@ -157,7 +161,7 @@ func runSSHRPC(ctx context.Context, sshArgs []string, request []byte) ([]byte, e
 	// In verbose mode, mirror SSH stderr to ours so the user sees lakitu's
 	// streamed devpod output live. Stdout stays buffered — it carries the
 	// JSON-RPC response and we're about to parse it.
-	if driftDebug {
+	if debugEnabled() {
 		cmd.MirrorStderr = os.Stderr
 	}
 	res, err := driftexec.Run(ctx, cmd)

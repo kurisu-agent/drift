@@ -165,7 +165,7 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runConnect(ctx, io, &cli, cli.Connect, deps)
 	case "runs":
 		return runRunsList(ctx, io, &cli, cli.Runs, deps)
-	case "run <name>", "run <name> <args>":
+	case "run", "run <name>", "run <name> <args>":
 		return runRunExec(ctx, io, &cli, cli.Run, deps)
 	case "migrate":
 		return runMigrate(ctx, io, &cli, cli.Migrate, deps)
