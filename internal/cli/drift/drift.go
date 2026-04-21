@@ -56,6 +56,12 @@ type IO struct {
 }
 
 func Run(ctx context.Context, argv []string, io IO) int {
+	// Termux/Android ships without /etc/resolv.conf, so Go's pure-Go
+	// resolver falls back to [::1]:53 and every outbound HTTP call
+	// dies with "connection refused". Install a process-wide DNS
+	// fallback before any subcommand runs so update / connect / any
+	// future net call sees a working resolver.
+	installDNSFallback()
 	return run(ctx, argv, io, defaultDeps())
 }
 
