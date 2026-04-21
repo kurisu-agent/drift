@@ -17,6 +17,12 @@ Worktrees live under `.claude/worktrees/` (already gitignored). One
 feature per worktree, one branch per feature. When the feature lands,
 `git worktree remove` to reclaim the directory.
 
+**Enable the pre-commit hook once per clone** with `make install-hooks`
+(sets `core.hooksPath = .githooks`, so every worktree inherits it).
+The hook runs `gofmt -w` and `golangci-lint run --fix --fast-only` on
+staged Go files, re-stages anything it rewrites, and fails only when
+issues remain after auto-fix. Heavy linters still run in CI.
+
 Why worktrees instead of `git checkout` in a single tree:
 - `main` stays immediately reviewable at HEAD — no stashing dance when
   a hotfix interrupts the feature.

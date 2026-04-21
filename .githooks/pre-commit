@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Fast pre-commit lint hook with auto-fix.
+#
+# Runs only on staged Go files so the hook stays under a second on
+# typical changes. Uses the flake's golangci-lint via nix develop so
+# the same binary version CI runs fires here (golangci-lint-action
+# silently lagged the Go version we target — fixed by routing through
+# nix develop). Heavy linters (gosec full scan, unused across the
+# whole codebase) still run in CI.
+#
+# Auto-fix is on: gofmt -w and golangci-lint --fix rewrite in place,
+# then any touched files are re-staged. If issues remain after --fix,
+# the hook fails and prints what to look at.
+#
+# Install: `make install-hooks` (sets core.hooksPath = .githooks).
+
+set -eu
+
+staged=$(git diff --cached --name-only --diff-filter=ACM -- '*.go' || true)
+if [ -z "$staged" ]; then
+  exit 0
+fi
+
+# gofmt first — cheap, deterministic, no toolchain startup.
+gofmt -w -- $staged
+git add -- $staged
+
+# golangci-lint --fix on packages containing staged files. --fast-only
+# scopes to the quick linters (errcheck, errorlint, gofmt/goimports,
+# govet/ineffassign/staticcheck where cheap, bodyclose, etc.); heavier
+# ones (gosec, unused) run in CI.
+pkgs=$(printf '%s\n' $staged | xargs -n1 dirname | sort -u | sed 's|^|./|')
+
+if ! nix develop --command golangci-lint run --fix --fast-only $pkgs; then
+  echo >&2
+  echo "pre-commit: lint issues remain after auto-fix — address them and re-commit." >&2
+  exit 1
+fi
+
+# Re-stage files the linter may have rewritten under --fix.
+git add -- $staged

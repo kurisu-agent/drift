@@ -62,6 +62,6 @@ ci: tidy vet test-race lint vuln
 
 .PHONY: install-hooks
 install-hooks:
-	@chmod +x scripts/pre-commit.sh
-	@ln -sf ../../scripts/pre-commit.sh .git/hooks/pre-commit
-	@echo "pre-commit hook installed -> scripts/pre-commit.sh"
+	@git config core.hooksPath .githooks
+	@echo "pre-commit hook enabled (core.hooksPath = .githooks)"
+	@echo "  applies to every worktree of this clone"
