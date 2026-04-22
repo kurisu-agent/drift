@@ -36,6 +36,7 @@ func (d *Deps) RunListHandler(_ context.Context, params json.RawMessage) (any, e
 			Description: e.Description,
 			Mode:        e.Mode,
 			Post:        e.Post,
+			Args:        e.Args,
 		})
 	}
 	return out, nil

@@ -36,6 +36,16 @@ func TestEnsureRunsYAML_seedsParsesToKnownEntries(t *testing.T) {
 	if scaf.Post != run.PostConnectLastScaffold {
 		t.Errorf("scaffolder.post = %q, want connect-last-scaffold", scaf.Post)
 	}
+	// The scaffolder gained a multi-line `prompt` arg that the client
+	// forwards to claude as the initial user message. Lock that shape in
+	// so a refactor of the embedded yaml doesn't silently regress it.
+	if len(scaf.Args) != 1 || scaf.Args[0].Name != "prompt" || scaf.Args[0].Type != run.ArgTypeText {
+		t.Errorf("scaffolder.args = %+v, want one text prompt", scaf.Args)
+	}
+	ping, _ := reg.Get("ping")
+	if len(ping.Args) != 1 || ping.Args[0].Default != "1.1.1.1" {
+		t.Errorf("ping.args = %+v, want one input with default 1.1.1.1", ping.Args)
+	}
 }
 
 func TestEnsureRunsYAML_preservesUserEdits(t *testing.T) {

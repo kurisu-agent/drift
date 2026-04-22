@@ -95,3 +95,32 @@ func TestRunResolve_requiresName(t *testing.T) {
 		t.Fatal("expected error for empty name")
 	}
 }
+
+// TestRunList_passesArgs: the handler must surface each entry's declared
+// arg spec so the client-side interactive picker has something to prompt
+// for. Without this the prompt UX would degrade to bare name selection.
+func TestRunList_passesArgs(t *testing.T) {
+	d := setupDeps(t, `
+runs:
+  ping:
+    mode: output
+    args:
+      - name: host
+        prompt: "Host"
+        type: input
+        default: "1.1.1.1"
+    command: 'ping {{ .Arg 0 | shq }}'
+`)
+	res, err := d.RunListHandler(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("RunListHandler: %v", err)
+	}
+	lr := res.(wire.RunListResult)
+	if len(lr.Entries) != 1 {
+		t.Fatalf("entries = %d, want 1", len(lr.Entries))
+	}
+	args := lr.Entries[0].Args
+	if len(args) != 1 || args[0].Name != "host" || args[0].Default != "1.1.1.1" || args[0].Type != wire.RunArgTypeInput {
+		t.Errorf("args = %+v", args)
+	}
+}
