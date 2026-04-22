@@ -38,7 +38,7 @@ var menuEntries = []menuEntry{
 	{key: "kart › enable    — autostart on reboot", needs: "kart name", prefix: []string{"enable"}},
 	{key: "kart › disable", needs: "kart name", prefix: []string{"disable"}},
 	{key: "kart › logs", needs: "kart name", prefix: []string{"logs"}},
-	{key: "kart › connect   — mosh/ssh into a kart", needs: "kart name", prefix: []string{"connect"}},
+	{key: "kart › connect   — mosh/ssh into a kart", argv: []string{"connect"}},
 
 	{key: "run › list       — server-side shorthand commands", argv: []string{"runs"}},
 	{key: "run › ai         — launch claude on the circuit", argv: []string{"run", "ai"}},

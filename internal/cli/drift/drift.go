@@ -161,7 +161,7 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runKartEnable(ctx, io, &cli, cli.Enable, deps)
 	case "disable <name>":
 		return runKartDisable(ctx, io, &cli, cli.Disable, deps)
-	case "connect <name>":
+	case "connect", "connect <name>":
 		return runConnect(ctx, io, &cli, cli.Connect, deps)
 	case "runs":
 		return runRunsList(ctx, io, &cli, cli.Runs, deps)
