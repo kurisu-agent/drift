@@ -70,7 +70,7 @@ On NixOS circuits, import the module instead of wiring lakitu into your host con
 }
 ```
 
-That one import installs lakitu + devpod + mosh, registers the `lakitu-kart@` user-service template for `drift enable`, and sets `DEVPOD_HOME` via `pam_env` so `drift connect`'s sshd-spawned `devpod ssh` can reach the workspace. No usernames in config — `DEVPOD_HOME` uses pam_env's `@{HOME}` placeholder. Package pins are overridable through `services.lakitu.{package,devpodPackage,moshPackage}` for dev-VM live-tree builds or air-gapped mirrors.
+That one import installs lakitu + devpod + mosh, registers the `lakitu-kart@` user-service template for `drift enable`, and sets `DEVPOD_HOME="${HOME}/.drift/devpod"` via `pam_env` + `/etc/set-environment` so `drift connect`'s sshd-spawned `devpod ssh` can reach the workspace. No usernames in config — `${HOME}` expands at session time. Package pins are overridable through `services.lakitu.{package,devpodPackage,moshPackage}` for dev-VM live-tree builds or air-gapped mirrors.
 
 ## Quickstart
 
