@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/huh"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
@@ -13,6 +14,7 @@ import (
 	"github.com/kurisu-agent/drift/internal/connect"
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/wire"
+	"golang.org/x/term"
 )
 
 // skillCmd: `drift skill [name] [prompt]`. With no args on a TTY,
@@ -212,11 +214,16 @@ func pickAndFillSkill(ctx context.Context, io IO, circuit string, deps deps, nam
 // pickSkillFromList renders a filterable huh.Select. Labels pair name
 // and description for readability, matching pickRunEntry's shape.
 func pickSkillFromList(skills []wire.Skill) (*wire.Skill, bool, error) {
+	// Skill descriptions are written for the Claude SKILL.md harness and
+	// run multi-paragraph; left raw, every option wraps to 4-6 lines and
+	// the picker becomes unscannable. Truncate to the visible width so
+	// each option stays a single row.
+	descBudget := skillDescBudget()
 	opts := make([]huh.Option[string], 0, len(skills))
 	for _, s := range skills {
 		label := s.Name
 		if s.Description != "" {
-			label = fmt.Sprintf("%-20s — %s", s.Name, s.Description)
+			label = fmt.Sprintf("%-20s — %s", s.Name, truncateRunes(s.Description, descBudget))
 		}
 		opts = append(opts, huh.NewOption(label, s.Name))
 	}
@@ -240,6 +247,38 @@ func pickSkillFromList(skills []wire.Skill) (*wire.Skill, bool, error) {
 		}
 	}
 	return nil, true, nil
+}
+
+// skillDescBudget returns how many runes of description fit on one row
+// of the picker, accounting for the huh selector prefix ("> "), the
+// 20-char name padding, and the " — " separator. Falls back to 80 cols
+// when stdout's width is unknown (pipe, non-TTY).
+func skillDescBudget() int {
+	width := 80
+	if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 0 { //nolint:gosec // G115: posix file descriptors always fit in int
+		width = w
+	}
+	// "> " (2) + name pad (20) + " — " (3) + small slack for huh's frame.
+	const overhead = 30
+	budget := width - overhead
+	if budget < 20 {
+		budget = 20
+	}
+	return budget
+}
+
+// truncateRunes shortens s to at most n runes, appending an ellipsis
+// when it had to cut. Rune-aware so the em-dash and other multi-byte
+// glyphs in skill descriptions don't get sliced mid-codepoint.
+func truncateRunes(s string, n int) string {
+	if n <= 0 || utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	if n == 1 {
+		return "…"
+	}
+	runes := []rune(s)
+	return string(runes[:n-1]) + "…"
 }
 
 // promptForSkillInput collects the user's initial message. Multi-line
