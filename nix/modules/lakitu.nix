@@ -92,12 +92,23 @@ in
       [ cfg.package cfg.devpodPackage ]
       ++ lib.optional (cfg.moshPackage != null) cfg.moshPackage;
 
-    # DEVPOD_HOME reaches every sshd session via pam_env because NixOS's
-    # sshd PAM stack runs pam_env against /etc/pam/environment (which is
-    # what `environment.sessionVariables` writes to). `@{HOME}` is pam_env
-    # syntax for the logging-in user's home — keeps the module multi-user
-    # safe without having to parameterize on a username.
-    environment.sessionVariables.DEVPOD_HOME = "@{HOME}/.drift/devpod";
+    # DEVPOD_HOME has to land in BOTH /etc/pam/environment (for non-
+    # interactive sshd sessions — `drift connect`'s `ssh host devpod ssh`
+    # flow) AND /etc/set-environment (which /etc/zshenv sources, so any
+    # shell-wrapped command sees the expanded value). NixOS's
+    # environment.sessionVariables writes the literal string to both
+    # files, so we need a syntax both honor:
+    #
+    #   - pam_env treats `${VAR}` as a reference to an already-set env
+    #     var; by session time, HOME is set (from /etc/passwd via
+    #     pam_unix / systemd-logind), so `${HOME}` expands.
+    #   - shells expand `${HOME}` natively.
+    #
+    # `@{HOME}` works in pam_env but NOT in shells (it's not shell syntax),
+    # which silently breaks the shell-wrapped path — we hit exactly that
+    # on 2026-04-22 when zsh's /etc/zshenv sourced /etc/set-environment
+    # and left DEVPOD_HOME="@{HOME}/..." literal in the final env.
+    environment.sessionVariables.DEVPOD_HOME = "\${HOME}/.drift/devpod";
 
     # User-level template: `systemctl --user start lakitu-kart@<name>` is
     # what `drift enable <name>` wires up. Runs once per boot per kart (it

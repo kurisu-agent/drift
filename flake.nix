@@ -164,7 +164,7 @@
               (p: (p.pname or p.name or "") == name || pkgs.lib.hasInfix name (p.name or ""))
               cfg.environment.systemPackages;
           in
-            assert sysEnv.DEVPOD_HOME == "@{HOME}/.drift/devpod";
+            assert sysEnv.DEVPOD_HOME == "\${HOME}/.drift/devpod";
             assert kart.description   == "drift kart %i (autostart via lakitu)";
             assert hasPkg "lakitu";
             assert hasPkg "devpod";
