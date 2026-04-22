@@ -7,13 +7,6 @@
 #
 #   - `lakitu`, `devpod`, and `mosh` on the system PATH (so sshd-spawned
 #     sessions and systemd units can exec them without PATH surgery).
-#   - `DEVPOD_HOME=@{HOME}/.drift/devpod` in /etc/pam/environment, which
-#     every login AND non-login sshd session inherits via pam_env.
-#     `@{HOME}` is pam_env's portable expansion — resolves to whichever
-#     user is logging in, so the module does not need to know the user's
-#     name. (Without this, `drift connect` → `ssh host devpod ssh <kart>`
-#     runs devpod against ~/.devpod/ and can't find the workspace lakitu
-#     created under ~/.drift/devpod/.)
 #   - A user-level `lakitu-kart@<name>.service` systemd template so
 #     `drift enable <name>` has something to hand off to on each login.
 #     Linger is deliberately NOT enabled here — which user(s) should have
@@ -92,23 +85,17 @@ in
       [ cfg.package cfg.devpodPackage ]
       ++ lib.optional (cfg.moshPackage != null) cfg.moshPackage;
 
-    # DEVPOD_HOME has to land in BOTH /etc/pam/environment (for non-
-    # interactive sshd sessions — `drift connect`'s `ssh host devpod ssh`
-    # flow) AND /etc/set-environment (which /etc/zshenv sources, so any
-    # shell-wrapped command sees the expanded value). NixOS's
-    # environment.sessionVariables writes the literal string to both
-    # files, so we need a syntax both honor:
-    #
-    #   - pam_env treats `${VAR}` as a reference to an already-set env
-    #     var; by session time, HOME is set (from /etc/passwd via
-    #     pam_unix / systemd-logind), so `${HOME}` expands.
-    #   - shells expand `${HOME}` natively.
-    #
-    # `@{HOME}` works in pam_env but NOT in shells (it's not shell syntax),
-    # which silently breaks the shell-wrapped path — we hit exactly that
-    # on 2026-04-22 when zsh's /etc/zshenv sourced /etc/set-environment
-    # and left DEVPOD_HOME="@{HOME}/..." literal in the final env.
-    environment.sessionVariables.DEVPOD_HOME = "\${HOME}/.drift/devpod";
+    # NOTE: this module deliberately does NOT set DEVPOD_HOME in pam_env
+    # or /etc/set-environment. An earlier iteration did, to make `drift
+    # connect`'s `ssh host devpod ssh <kart>` see the drift-managed devpod
+    # state, but that forced a global override onto every invocation of
+    # `devpod` — including plain user-facing ones — which broke their
+    # personal devpod workspaces. Since lakitu v0.6, `kart.connect` returns
+    # the fully-resolved remote argv (`env DEVPOD_HOME=... /abs/devpod
+    # ssh <kart> --set-env ...`) so the DEVPOD_HOME scope lives on the
+    # single remote command line and nothing else is affected. See
+    # internal/server/kart_connect.go for the server handler and
+    # internal/connect/connect.go for the client's fetchConnectArgv.
 
     # User-level template: `systemctl --user start lakitu-kart@<name>` is
     # what `drift enable <name>` wires up. Runs once per boot per kart (it

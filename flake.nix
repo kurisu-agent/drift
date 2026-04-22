@@ -133,14 +133,16 @@
           formatter = pkgs.nixpkgs-fmt;
 
           # `nix flake check` runs this: build a minimal NixOS eval that
-          # imports the lakitu module and assert the three invariants that
-          # were hand-debugged into existence on 2026-04-21:
-          #   - DEVPOD_HOME lands in sessionVariables with the @{HOME}
-          #     placeholder (no hard-coded username).
-          #   - lakitu/devpod end up on environment.systemPackages.
-          #   - the lakitu-kart@ user-unit template is registered.
-          # A regression in any of those would silently break `drift
-          # connect`, so they're cheap to guard.
+          # imports the lakitu module and assert:
+          #   - lakitu/devpod end up on environment.systemPackages,
+          #   - the lakitu-kart@ user-unit template is registered, and
+          #   - DEVPOD_HOME is NOT set as a session variable — scoping
+          #     it globally leaks into every user's plain `devpod`
+          #     invocations (https://github.com/kurisu-agent/drift/pull/9
+          #     landed the first version of this module with that env
+          #     var, and we ripped it out once `kart.connect` replaced
+          #     the need for it). The negative assertion guards against
+          #     a well-meaning future edit putting it back.
           checks.lakitu-module = let
             eval = nixpkgs.lib.nixosSystem {
               inherit system;
@@ -164,8 +166,8 @@
               (p: (p.pname or p.name or "") == name || pkgs.lib.hasInfix name (p.name or ""))
               cfg.environment.systemPackages;
           in
-            assert sysEnv.DEVPOD_HOME == "\${HOME}/.drift/devpod";
-            assert kart.description   == "drift kart %i (autostart via lakitu)";
+            assert !(sysEnv ? DEVPOD_HOME);
+            assert kart.description == "drift kart %i (autostart via lakitu)";
             assert hasPkg "lakitu";
             assert hasPkg "devpod";
             pkgs.runCommand "drift-lakitu-module-check" { } ''

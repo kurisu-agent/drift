@@ -12,10 +12,17 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
+// serverArgv is what a modern lakitu returns from kart.connect: the
+// actual remote-command token stream including a DEVPOD_HOME env prefix
+// and an absolute devpod path. The client splices this into the ssh/mosh
+// argv verbatim, so the test fixtures assert on the exact sequence.
+var serverArgv = []string{"env", "DEVPOD_HOME=/h/.drift/devpod", "/bin/devpod", "ssh", "k"}
+
 type fakeServer struct {
-	statuses []string // queued responses for successive kart.info calls
-	starts   int
-	lastArgs map[string]string
+	statuses    []string // queued responses for successive kart.info calls
+	starts      int
+	lastArgs    map[string]string
+	connectFail bool // when true, kart.connect returns method_not_found
 }
 
 func (f *fakeServer) call(ctx context.Context, circuit, method string, params, result any) error {
@@ -29,10 +36,9 @@ func (f *fakeServer) call(ctx context.Context, circuit, method string, params, r
 		status := f.statuses[0]
 		f.statuses = f.statuses[1:]
 		buf, _ := json.Marshal(map[string]string{"name": p["name"], "status": status})
-		// result is *json.RawMessage — hand back via JSON round-trip.
 		raw, ok := result.(*json.RawMessage)
 		if !ok {
-			return errors.New("fakeServer: unexpected result type")
+			return errors.New("fakeServer: unexpected result type for kart.info")
 		}
 		*raw = append((*raw)[:0], buf...)
 		return nil
@@ -43,10 +49,21 @@ func (f *fakeServer) call(ctx context.Context, circuit, method string, params, r
 			*m = map[string]any{"name": p["name"], "status": "running"}
 		}
 		return nil
+	case wire.MethodKartConnect:
+		if f.connectFail {
+			return rpcerr.New(rpcerr.CodeUserError, "method_not_found",
+				"method %q not implemented", method)
+		}
+		res, ok := result.(*struct {
+			Argv []string `json:"argv"`
+		})
+		if !ok {
+			return errors.New("fakeServer: unexpected result type for kart.connect")
+		}
+		res.Argv = append(res.Argv[:0], serverArgv...)
+		return nil
 	case wire.MethodKartSessionEnv:
-		// No tune env configured in these tests — leave result's Env
-		// field at its zero value (empty slice). fetchSessionEnv reads
-		// .Env off an anonymous struct, so nothing else to do.
+		// Only reached by the legacy fallback path. Leave env empty.
 		return nil
 	}
 	return errors.New("unknown method " + method)
@@ -80,7 +97,8 @@ func TestRunRunningKartSkipsStart(t *testing.T) {
 	if rec.bin != "ssh" {
 		t.Errorf("bin = %q, want ssh (no mosh)", rec.bin)
 	}
-	wantArgv := []string{"-t", "drift.c", "devpod", "ssh", "k"}
+	// Server-resolved argv lives between `drift.c` and end of slice.
+	wantArgv := append([]string{"-t", "drift.c"}, serverArgv...)
 	if !equal(rec.argv, wantArgv) {
 		t.Errorf("argv = %v, want %v", rec.argv, wantArgv)
 	}
@@ -109,7 +127,7 @@ func TestRunStoppedKartTriggersStart(t *testing.T) {
 	if rec.bin != "mosh" {
 		t.Errorf("bin = %q, want mosh", rec.bin)
 	}
-	wantArgv := []string{"drift.c", "--", "devpod", "ssh", "k"}
+	wantArgv := append([]string{"drift.c", "--"}, serverArgv...)
 	if !equal(rec.argv, wantArgv) {
 		t.Errorf("argv = %v, want %v", rec.argv, wantArgv)
 	}
@@ -137,9 +155,41 @@ func TestRunForwardAgentAddsDashA(t *testing.T) {
 	if rec.bin != "ssh" {
 		t.Errorf("bin = %q, want ssh (ForceSSH)", rec.bin)
 	}
-	wantArgv := []string{"-t", "-A", "drift.c", "devpod", "ssh", "k"}
+	wantArgv := append([]string{"-t", "-A", "drift.c"}, serverArgv...)
 	if !equal(rec.argv, wantArgv) {
 		t.Errorf("argv = %v, want %v", rec.argv, wantArgv)
+	}
+}
+
+// TestRunFallsBackWhenKartConnectMissing covers the cross-version case:
+// newer drift client talking to a lakitu that predates kart.connect. The
+// RPC returns method_not_found and the client synthesizes the historic
+// `[devpod, ssh, <kart>]` argv locally (no env prefix, no devpod abs
+// path — that's a post-upgrade affordance only). The user can still
+// connect, just without the server-managed isolation.
+func TestRunFallsBackWhenKartConnectMissing(t *testing.T) {
+	f := &fakeServer{
+		statuses:    []string{"running"},
+		connectFail: true,
+	}
+	rec := recordedExec{}
+	d := connect.Deps{
+		LookPath: func(s string) (string, error) { return "", errors.New("no mosh") },
+		Call:     f.call,
+		Exec: func(ctx context.Context, bin string, argv []string, stdio connect.Stdio) error {
+			rec.bin, rec.argv = bin, argv
+			return nil
+		},
+		Now:   time.Now,
+		Sleep: func(time.Duration) {},
+	}
+	err := connect.Run(context.Background(), d, connect.Options{Circuit: "c", Kart: "k"}, connect.Stdio{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	wantArgv := []string{"-t", "drift.c", "devpod", "ssh", "k"}
+	if !equal(rec.argv, wantArgv) {
+		t.Errorf("fallback argv = %v, want %v", rec.argv, wantArgv)
 	}
 }
 
