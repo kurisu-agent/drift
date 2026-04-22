@@ -125,6 +125,12 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		_ = os.Setenv("DRIFT_DEBUG", "1")
 	}
 
+	// Pre-dispatch hooks: advisory banners (update available, future
+	// deprecation notices) + fire-and-forget background checks. Must
+	// stay non-blocking — anything network-bound hands off to a
+	// goroutine and writes state.json for the next invocation to read.
+	runPreDispatch(io, &cli, kctx.Command())
+
 	switch kctx.Command() {
 	case "help":
 		return runHelp(io, parser, cli.Help)

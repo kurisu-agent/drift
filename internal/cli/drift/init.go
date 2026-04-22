@@ -95,7 +95,9 @@ func isTTY(fd any) bool {
 // path in runRunExec without a real terminal.
 var isTTYFn = isTTY
 
-// stdinIsTTY / stdoutIsTTY are thin aliases kept for call-site clarity.
-// They route through isTTYFn so unit tests can flip the behavior.
+// stdinIsTTY / stdoutIsTTY / stderrIsTTY are thin aliases kept for
+// call-site clarity. They route through isTTYFn so unit tests can flip
+// the behavior.
 func stdinIsTTY(r any) bool  { return isTTYFn(r) }
 func stdoutIsTTY(w any) bool { return isTTYFn(w) }
+func stderrIsTTY(w any) bool { return isTTYFn(w) }
