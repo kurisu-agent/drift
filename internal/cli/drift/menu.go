@@ -22,11 +22,14 @@ var menuEntries = []menuEntry{
 	{key: "setup › update  — check GitHub for a newer drift release", argv: []string{"update"}},
 	{key: "setup › help    — LLM-friendly command + protocol reference", argv: []string{"help"}},
 
+	{key: "connect          — pick a circuit or kart (merged picker)", argv: []string{"connect"}},
+
 	{key: "circuit › list", argv: []string{"circuit", "list"}},
 	{key: "circuit › add           — register a new circuit (user@host)", needs: "user@host", prefix: []string{"circuit", "add"}},
 	{key: "circuit › rm            — remove a circuit by name", needs: "circuit name", prefix: []string{"circuit", "rm"}},
 	{key: "circuit › set default   — make a circuit the default", needs: "circuit name", prefix: []string{"circuit", "set", "default"}},
 	{key: "circuit › set name      — rename the active circuit", needs: "new circuit name", prefix: []string{"circuit", "set", "name"}},
+	{key: "circuit › connect       — interactive shell on a circuit's host", argv: []string{"circuit", "connect"}},
 
 	{key: "kart › list      — list karts on the target circuit", argv: []string{"connect", "-l"}},
 	{key: "kart › new       — create a new kart", needs: "kart name", prefix: []string{"new"}},
@@ -38,7 +41,7 @@ var menuEntries = []menuEntry{
 	{key: "kart › enable    — autostart on reboot", needs: "kart name", prefix: []string{"enable"}},
 	{key: "kart › disable", needs: "kart name", prefix: []string{"disable"}},
 	{key: "kart › logs", needs: "kart name", prefix: []string{"logs"}},
-	{key: "kart › connect   — mosh/ssh into a kart", argv: []string{"connect"}},
+	{key: "kart › connect   — mosh/ssh into a kart", argv: []string{"kart", "connect"}},
 
 	{key: "ai              — launch claude on the circuit", argv: []string{"ai"}},
 	{key: "skill           — list + invoke a Claude skill on the circuit", argv: []string{"skill"}},

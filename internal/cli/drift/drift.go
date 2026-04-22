@@ -39,7 +39,8 @@ type CLI struct {
 	Logs    logsCmd    `cmd:"" help:"Fetch a chunk of kart logs."`
 	Enable  enableCmd  `cmd:"" help:"Enable kart autostart on circuit reboot (idempotent)."`
 	Disable disableCmd `cmd:"" help:"Disable kart autostart (idempotent)."`
-	Connect connectCmd `cmd:"" aliases:"into,attach" help:"Connect to a kart via mosh (ssh fallback); -l lists karts cross-circuit."`
+	Connect connectCmd `cmd:"" aliases:"into,attach" help:"Pick a circuit or kart and connect (merged picker); -l lists karts cross-circuit."`
+	Kart    kartCmd    `cmd:"" name:"kart" help:"Kart-scoped commands (kart connect)."`
 
 	Run runCmd `cmd:"" name:"run" help:"Execute a user-script shorthand from runs.yaml; -l lists entries."`
 
@@ -144,6 +145,10 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runCircuitSetName(ctx, io, &cli, cli.Circuit_.Set.Name, deps)
 	case "circuit set default", "circuit set default <name>":
 		return runCircuitSetDefault(io, &cli, cli.Circuit_.Set.Default, deps)
+	case "circuit connect", "circuit connect <name>":
+		return runCircuitConnect(ctx, io, &cli, cli.Circuit_.Connect, deps)
+	case "kart connect", "kart connect <name>":
+		return runKartConnect(ctx, io, &cli, cli.Kart.Connect, deps)
 	case "new <name>":
 		return runNew(ctx, io, &cli, cli.New, deps)
 	case "info <name>":
