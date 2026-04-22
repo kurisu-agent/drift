@@ -18,10 +18,20 @@ import (
 )
 
 type circuitCmd struct {
-	Add  circuitAddCmd  `cmd:"" help:"Register a circuit (probes for name, updates client config + SSH config)."`
-	Rm   circuitRmCmd   `cmd:"" help:"Unregister a circuit."`
-	List circuitListCmd `cmd:"" default:"withargs" help:"List configured circuits (default when no subcommand is given)."`
-	Set  circuitSetCmd  `cmd:"" help:"Set a config field on the target circuit (e.g. name)."`
+	Add     circuitAddCmd     `cmd:"" help:"Register a circuit (probes for name, updates client config + SSH config)."`
+	Rm      circuitRmCmd      `cmd:"" help:"Unregister a circuit."`
+	List    circuitListCmd    `cmd:"" default:"withargs" help:"List configured circuits (default when no subcommand is given)."`
+	Set     circuitSetCmd     `cmd:"" help:"Set a config field on the target circuit (e.g. name)."`
+	Connect circuitConnectCmd `cmd:"" help:"Open an interactive shell on the circuit's host (mosh/ssh)."`
+}
+
+// circuitConnectCmd: optional positional name; omit on a TTY for the
+// circuit picker. Mirrors the connect-flag surface of `drift connect` so
+// users who learned --ssh / --forward-agent there don't have to relearn.
+type circuitConnectCmd struct {
+	Name         string `arg:"" optional:"" help:"Circuit name; omit on a TTY to pick from a list."`
+	SSH          bool   `name:"ssh" help:"Force plain SSH (skip mosh)."`
+	ForwardAgent bool   `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
 }
 
 // circuitAddCmd: the positional arg is the raw SSH destination. The

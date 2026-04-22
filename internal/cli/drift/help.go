@@ -18,35 +18,22 @@ type helpCmd struct {
 	Full bool `help:"Print the full Kong-derived catalog, including RPC methods."`
 }
 
-// driftHelpSections is hand-curated, not derived from Kong, so it can group
-// related kart/circuit verbs onto single lines and stay short. Keep it in
-// sync when adding or renaming commands; --full is the auto-derived
-// fallback that cannot drift.
-var driftHelpSections = []struct {
-	title string
-	rows  [][2]string
-}{
-	{"CIRCUITS", [][2]string{
-		{"circuit [-l|--list]", "List configured circuits"},
-		{"circuit add|rm", "Register or unregister a circuit"},
-		{"circuit set default|name", "Set a circuit config field"},
-		{"init", "Interactive first-time setup wizard"},
-		{"status", "Show circuits + lakitu health + per-circuit karts"},
-		{"update", "Check GitHub for a newer drift and self-install"},
-	}},
-	{"KARTS", [][2]string{
-		{"new <name>", "Create a kart (from starter or existing repo)"},
-		{"connect [-l|--list] [<name>]", "Cross-circuit picker, or -l to list karts; mosh (ssh fallback) when connecting"},
-		{"info <name>", "Show one kart's state"},
-		{"start|stop|restart|delete <name>", "Kart lifecycle (idempotent; delete is not)"},
-		{"enable|disable <name>", "Toggle kart autostart on circuit reboot"},
-		{"logs <name>", "Fetch a chunk of kart logs"},
-		{"migrate", "Adopt an existing devpod workspace as a drift kart (interactive)"},
-	}},
-	{"AI", [][2]string{
-		{"ai", "Launch Claude Code on the circuit"},
-		{"skill [<name> [prompt]]", "List or invoke a Claude skill on the circuit"},
-	}},
+// driftHelpRows is a hand-curated flat top-N, ordered along the new-user
+// path (init → status → connect) before the rest. Keep in sync when adding
+// or renaming commands; --full is the auto-derived fallback that cannot
+// drift and surfaces every leaf command, including ones omitted here
+// (circuit *, info, migrate, restart, delete, enable, disable).
+var driftHelpRows = [][2]string{
+	{"init", "Interactive first-time setup wizard (circuits + characters)"},
+	{"status", "Circuits + lakitu health + per-circuit karts"},
+	{"connect [<name>]", "Mosh into a kart (-l lists across circuits; ssh fallback)"},
+	{"new <name>", "Create a kart (from starter or existing repo)"},
+	{"ai", "Launch Claude Code on the circuit"},
+	{"skill [<name> [prompt]]", "List / invoke a Claude skill on the circuit"},
+	{"run [<name>]", "Execute a user-script shorthand from runs.yaml"},
+	{"logs <name>", "Fetch a chunk of kart logs"},
+	{"start|stop <name>", "Kart lifecycle (also restart / delete / enable / disable)"},
+	{"update", "Check GitHub for a newer drift and self-install"},
 }
 
 const driftHelpFullIntro = `drift is the stateless workstation client. Every non-local call shells out
@@ -56,14 +43,12 @@ on the circuit under ~/.drift/garage/.`
 // writeDriftHelp renders the curated catalog through the supplied palette so
 // callers can emit ANSI on a TTY and plain text everywhere else (tests,
 // pipes, NO_COLOR). Column widths are computed from the curated rows so the
-// description column lines up across both sections.
+// description column lines up.
 func writeDriftHelp(w io.Writer, p *style.Palette) {
 	cmdWidth := 0
-	for _, sec := range driftHelpSections {
-		for _, row := range sec.rows {
-			if len(row[0]) > cmdWidth {
-				cmdWidth = len(row[0])
-			}
+	for _, row := range driftHelpRows {
+		if len(row[0]) > cmdWidth {
+			cmdWidth = len(row[0])
 		}
 	}
 	cmdWidth += 2 // gutter before description
@@ -71,17 +56,22 @@ func writeDriftHelp(w io.Writer, p *style.Palette) {
 	fmt.Fprintf(w, "%s — %s\n", p.Bold(p.Accent("drift")), p.Bold("Devpod for drifters"))
 	fmt.Fprintln(w, p.Dim("Remote devcontainers tuned for life on the move — persistent, agentic, phone-friendly"))
 
-	for _, sec := range driftHelpSections {
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, p.Bold(p.Accent(sec.title)))
-		for _, row := range sec.rows {
-			pad := strings.Repeat(" ", cmdWidth-len(row[0]))
-			fmt.Fprintf(w, "  %s%s%s\n", p.Accent(row[0]), pad, row[1])
-		}
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "%s  %s  %s\n",
+		p.Bold(p.Accent("▶")),
+		p.Bold("Full catalog:"),
+		p.Bold(p.Accent("drift help --full")),
+	)
+
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, p.Bold(p.Accent("COMMANDS")))
+	for _, row := range driftHelpRows {
+		pad := strings.Repeat(" ", cmdWidth-len(row[0]))
+		fmt.Fprintf(w, "  %s%s%s\n", p.Accent(row[0]), pad, row[1])
 	}
 
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, p.Dim("Run `drift <cmd> --help` for flags · `drift help --full` for the full catalog"))
+	fmt.Fprintln(w, p.Dim("Run `drift <cmd> --help` for per-command flags"))
 }
 
 func runHelp(io IO, parser *kong.Kong, cmd helpCmd) int {

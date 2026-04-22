@@ -21,7 +21,7 @@ import (
 
 type connectCmd struct {
 	List         bool   `name:"list" short:"l" help:"List karts across all circuits instead of connecting."`
-	Name         string `arg:"" optional:"" help:"Kart name; omit on a TTY to pick from a list."`
+	Name         string `arg:"" optional:"" help:"Kart name; omit on a TTY to pick from a merged circuits + karts list."`
 	SSH          bool   `name:"ssh" help:"Force plain SSH (skip mosh)."`
 	ForwardAgent bool   `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
 }
@@ -33,14 +33,27 @@ type circuitKart struct {
 	Entry   listEntry
 }
 
+// connectChoice encodes a row of the merged picker. Kart=="" is a
+// circuit-only entry (drop the user into a shell on the host); Kart!="" is
+// a regular cross-circuit kart connect.
+type connectChoice struct {
+	Circuit string
+	Kart    string
+}
+
+// runConnect is the merged front door. With a positional name, it
+// preserves the historical `drift connect <kart>` shape and forwards to
+// the kart connect path. With no name on a TTY, it shows the merged
+// circuits-plus-karts picker so users can ssh straight into a host or
+// pick a kart in one place.
 func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps) int {
 	if cmd.List {
 		return runKartListForCircuit(ctx, io, root, deps)
 	}
 
 	// With a name, operate against the target circuit directly (matches
-	// the flag-driven `-c <circuit>` override). Without a name, fan out
-	// across every configured circuit for the picker.
+	// the flag-driven `-c <circuit>` override). The name path is identical
+	// to `drift kart connect <name>`.
 	if cmd.Name != "" {
 		_, circuit, err := resolveCircuit(root, deps)
 		if err != nil {
@@ -53,6 +66,34 @@ func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps
 		return errfmt.Emit(io.Stderr,
 			errors.New("drift connect requires a kart name (non-interactive)"))
 	}
+	choice, ok, pErr := pickConnectTarget(ctx, io, deps)
+	if pErr != nil {
+		return errfmt.Emit(io.Stderr, pErr)
+	}
+	if !ok {
+		return 0
+	}
+	if choice.Kart == "" {
+		return doCircuitConnect(ctx, io, root, choice.Circuit, cmd.SSH, cmd.ForwardAgent)
+	}
+	return doConnect(ctx, io, root, deps, choice.Circuit, choice.Kart, cmd.SSH, cmd.ForwardAgent)
+}
+
+// runKartConnect is the entry point for `drift kart connect [name]`. It
+// is the kart-only variant of the picker — no circuit-only rows — so
+// users who want a kart always get a kart.
+func runKartConnect(ctx context.Context, io IO, root *CLI, cmd kartConnectCmd, deps deps) int {
+	if cmd.Name != "" {
+		_, circuit, err := resolveCircuit(root, deps)
+		if err != nil {
+			return errfmt.Emit(io.Stderr, err)
+		}
+		return doConnect(ctx, io, root, deps, circuit, cmd.Name, cmd.SSH, cmd.ForwardAgent)
+	}
+	if !stdinIsTTY(io.Stdin) || !stdoutIsTTY(io.Stdout) || root.Output == "json" {
+		return errfmt.Emit(io.Stderr,
+			errors.New("drift kart connect requires a kart name (non-interactive)"))
+	}
 	pickedCircuit, pickedKart, ok, pErr := pickConnectKart(ctx, io, deps)
 	if pErr != nil {
 		return errfmt.Emit(io.Stderr, pErr)
@@ -61,6 +102,38 @@ func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps
 		return 0
 	}
 	return doConnect(ctx, io, root, deps, pickedCircuit, pickedKart, cmd.SSH, cmd.ForwardAgent)
+}
+
+// runCircuitConnect is the entry point for `drift circuit connect [name]`
+// — drops the user into an interactive shell on the circuit's host with
+// no kart in between.
+func runCircuitConnect(ctx context.Context, io IO, root *CLI, cmd circuitConnectCmd, deps deps) int {
+	if cmd.Name != "" {
+		cfgPath, err := deps.clientConfigPath()
+		if err != nil {
+			return errfmt.Emit(io.Stderr, err)
+		}
+		cfg, err := config.LoadClient(cfgPath)
+		if err != nil {
+			return errfmt.Emit(io.Stderr, err)
+		}
+		if _, ok := cfg.Circuits[cmd.Name]; !ok {
+			return errfmt.Emit(io.Stderr, fmt.Errorf("circuit %q not configured", cmd.Name))
+		}
+		return doCircuitConnect(ctx, io, root, cmd.Name, cmd.SSH, cmd.ForwardAgent)
+	}
+	if !stdinIsTTY(io.Stdin) || !stdoutIsTTY(io.Stdout) || root.Output == "json" {
+		return errfmt.Emit(io.Stderr,
+			errors.New("drift circuit connect requires a circuit name (non-interactive)"))
+	}
+	picked, ok, pErr := pickConnectCircuit(io, deps)
+	if pErr != nil {
+		return errfmt.Emit(io.Stderr, pErr)
+	}
+	if !ok {
+		return 0
+	}
+	return doCircuitConnect(ctx, io, root, picked, cmd.SSH, cmd.ForwardAgent)
 }
 
 // pickConnectKart fetches kart.list from every configured circuit in
@@ -248,6 +321,183 @@ func humanizeLastUsed(ts string) string {
 	default:
 		return t.Format("2006-01-02")
 	}
+}
+
+// pickConnectTarget renders the merged picker used by bare `drift
+// connect`: configured circuits at the top (each row is "ssh straight in
+// to the host") followed by the cross-circuit kart roster sorted by
+// last-used. Returns (choice, true, nil) on selection, (_, false, nil) on
+// abort or empty config (the empty path prints its own notice).
+func pickConnectTarget(ctx context.Context, io IO, deps deps) (connectChoice, bool, error) {
+	cfgPath, err := deps.clientConfigPath()
+	if err != nil {
+		return connectChoice{}, false, err
+	}
+	cfg, err := config.LoadClient(cfgPath)
+	if err != nil {
+		return connectChoice{}, false, err
+	}
+	if len(cfg.Circuits) == 0 {
+		fmt.Fprintln(io.Stderr, "no circuits configured (try `drift circuit add user@host`)")
+		return connectChoice{}, false, nil
+	}
+
+	karts, probeErrs := collectCircuitKarts(ctx, cfg, deps)
+	for circuit, perr := range probeErrs {
+		fmt.Fprintf(io.Stderr, "warning: %s: %v\n", circuit, perr)
+	}
+	sortByLastUsedDesc(karts)
+
+	circuits := sortedCircuitNames(cfg)
+
+	// Flat choice slice + parallel options slice — huh.NewSelect works
+	// on string values, so we use the slice index as the value and look
+	// the choice back up after the form returns.
+	choices := make([]connectChoice, 0, len(circuits)+len(karts))
+	opts := make([]huh.Option[string], 0, len(circuits)+len(karts))
+	for _, n := range circuits {
+		choices = append(choices, connectChoice{Circuit: n})
+		opts = append(opts, huh.NewOption(formatCircuitOption(n, cfg.Circuits[n].Host, cfg.DefaultCircuit), fmt.Sprintf("%d", len(choices)-1)))
+	}
+	for _, k := range karts {
+		choices = append(choices, connectChoice{Circuit: k.Circuit, Kart: k.Entry.Name})
+		opts = append(opts, huh.NewOption(formatCircuitKartOption(k, cfg.DefaultCircuit), fmt.Sprintf("%d", len(choices)-1)))
+	}
+
+	var pick string
+	sel := huh.NewSelect[string]().
+		Title("drift connect — pick a circuit or kart").
+		Description("type to filter · enter to connect · esc to cancel").
+		Options(opts...).
+		Filtering(true).
+		Height(18).
+		Value(&pick)
+	if err := huh.NewForm(huh.NewGroup(sel)).Run(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return connectChoice{}, false, nil
+		}
+		return connectChoice{}, false, err
+	}
+	var idx int
+	if _, err := fmt.Sscanf(pick, "%d", &idx); err != nil || idx < 0 || idx >= len(choices) {
+		return connectChoice{}, false, nil
+	}
+	return choices[idx], true, nil
+}
+
+// pickConnectCircuit renders the circuit-only picker for `drift circuit
+// connect` — no kart probes, so it returns instantly even when one
+// circuit is offline.
+func pickConnectCircuit(io IO, deps deps) (string, bool, error) {
+	cfgPath, err := deps.clientConfigPath()
+	if err != nil {
+		return "", false, err
+	}
+	cfg, err := config.LoadClient(cfgPath)
+	if err != nil {
+		return "", false, err
+	}
+	if len(cfg.Circuits) == 0 {
+		fmt.Fprintln(io.Stderr, "no circuits configured (try `drift circuit add user@host`)")
+		return "", false, nil
+	}
+	circuits := sortedCircuitNames(cfg)
+	opts := make([]huh.Option[string], 0, len(circuits))
+	for _, n := range circuits {
+		opts = append(opts, huh.NewOption(formatCircuitOption(n, cfg.Circuits[n].Host, cfg.DefaultCircuit), n))
+	}
+	pick := cfg.DefaultCircuit
+	sel := huh.NewSelect[string]().
+		Title("drift circuit connect — pick a circuit").
+		Description("type to filter · enter to connect · esc to cancel").
+		Options(opts...).
+		Filtering(true).
+		Height(12).
+		Value(&pick)
+	if err := huh.NewForm(huh.NewGroup(sel)).Run(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return pick, true, nil
+}
+
+// sortedCircuitNames returns the configured circuit names with the
+// default circuit first (so it lines up with the `→` marker the picker
+// prints), then the rest in alphabetical order.
+func sortedCircuitNames(cfg *config.Client) []string {
+	names := make([]string, 0, len(cfg.Circuits))
+	for n := range cfg.Circuits {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	if cfg.DefaultCircuit == "" {
+		return names
+	}
+	out := make([]string, 0, len(names))
+	out = append(out, cfg.DefaultCircuit)
+	for _, n := range names {
+		if n != cfg.DefaultCircuit {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// formatCircuitOption renders one circuit-only row of the merged /
+// circuit-only picker. Mirrors formatCircuitKartOption's column widths
+// where possible so the two row types align in the same select.
+func formatCircuitOption(circuit, host, defaultCircuit string) string {
+	marker := "  "
+	if circuit == defaultCircuit {
+		marker = "→ "
+	}
+	return fmt.Sprintf("%s%-14s  %-20s  %-18s  %-12s  %s",
+		marker,
+		circuit,
+		"(circuit shell)",
+		"",
+		"",
+		host,
+	)
+}
+
+// doCircuitConnect spawns an interactive shell on the circuit's host via
+// the SSH alias `drift.<circuit>` (mosh-preferred). No remote command is
+// passed, so the user lands in their login shell on the circuit. Mirrors
+// doConnect's transport logic.
+func doCircuitConnect(ctx context.Context, io IO, root *CLI, circuit string, forceSSH, forwardAgent bool) int {
+	transport := connect.Transport(osexec.LookPath, forceSSH)
+	target := "drift." + circuit
+
+	bin := "ssh"
+	var argv []string
+	if transport == "mosh" {
+		bin = "mosh"
+		argv = []string{target}
+	} else {
+		argv = []string{"-t"}
+		if forwardAgent {
+			argv = append(argv, "-A")
+		}
+		argv = append(argv, target)
+	}
+
+	p := style.For(io.Stderr, root.Output == "json")
+	if p.Enabled {
+		fmt.Fprintln(io.Stderr, p.Dim(fmt.Sprintf("→ circuit %s (shell, via %s)", circuit, transport)))
+	}
+
+	err := driftexec.Interactive(ctx, bin, argv, os.Stdin, os.Stdout, os.Stderr)
+	if err == nil {
+		return 0
+	}
+	var ee *driftexec.Error
+	if errors.As(err, &ee) && ee.ExitCode != 0 {
+		return ee.ExitCode
+	}
+	return errfmt.Emit(io.Stderr, err)
 }
 
 // doConnect is the shared body behind `drift connect` and the post-create

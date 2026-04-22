@@ -59,6 +59,10 @@ func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 		return errfmt.Emit(io.Stderr, err)
 	}
 
+	// Confirm only on the first pass: a name-collision retry loops back
+	// here with cmd.Name already updated by promptNewKartName, and asking
+	// "create?" right after the user just typed the new name is noise.
+	confirmedOnce := false
 	var result kart.Result
 	for {
 		params := buildNewParams(cmd)
@@ -68,6 +72,17 @@ func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 		// the server is about to do. Real per-phase events need a
 		// streaming RPC; tracked separately.
 		writeNewPreflight(io.Stderr, root.Output == "json", circuit, cmd)
+		if !confirmedOnce && stdinIsTTY(io.Stdin) && root.Output != "json" {
+			ok, cErr := confirmNewKart(cmd.Name)
+			if cErr != nil {
+				return errfmt.Emit(io.Stderr, cErr)
+			}
+			if !ok {
+				fmt.Fprintln(io.Stderr, "aborted")
+				return 1
+			}
+			confirmedOnce = true
+		}
 		// Spinner + transport hint on stderr so `drift new ... | jq` still
 		// captures a clean JSON payload on stdout. Suppressed under
 		// --debug so the spinner redraw doesn't fight the live devpod
@@ -277,6 +292,26 @@ func writeNewPreflight(w interface{ Write(p []byte) (int, error) }, jsonMode boo
 	for _, m := range cmd.Mount {
 		fmt.Fprintln(w, p.Dim(fmt.Sprintf("  mount:        %s", m)))
 	}
+}
+
+// confirmNewKart pauses for a y/N confirmation right after the
+// preflight, so the user can bail before the server-side
+// clone+up+dotfiles flow (which can take minutes) actually starts.
+// Defaults to "create" — Enter accepts the summary as printed.
+func confirmNewKart(name string) (bool, error) {
+	val := true
+	prompt := huh.NewConfirm().
+		Title(fmt.Sprintf("create kart %q?", name)).
+		Affirmative("create").
+		Negative("cancel").
+		Value(&val)
+	if err := huh.NewForm(huh.NewGroup(prompt)).Run(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return false, nil
+		}
+		return false, err
+	}
+	return val, nil
 }
 
 // promptNewKartName asks for a replacement name after a name_collision

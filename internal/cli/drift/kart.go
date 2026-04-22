@@ -31,6 +31,24 @@ func resolveCircuit(root *CLI, deps deps) (*config.Client, string, error) {
 	return cfg, cfg.DefaultCircuit, nil
 }
 
+// kartCmd is the `drift kart …` namespace. Today it only exposes
+// `connect`, the kart-only twin of `drift circuit connect`. Other kart
+// verbs (start, stop, info, …) stay top-level for now — they'll move
+// in here when the deprecation has been signalled.
+type kartCmd struct {
+	Connect kartConnectCmd `cmd:"" help:"Connect to a kart via mosh (ssh fallback)."`
+}
+
+// kartConnectCmd has the same flag surface as `drift connect` so the two
+// stay interchangeable for users with the kart name in hand. The merged
+// picker on bare `drift connect` is what makes this command worth its
+// own verb: this one always lands on a kart.
+type kartConnectCmd struct {
+	Name         string `arg:"" optional:"" help:"Kart name; omit on a TTY to pick from a cross-circuit kart list."`
+	SSH          bool   `name:"ssh" help:"Force plain SSH (skip mosh)."`
+	ForwardAgent bool   `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
+}
+
 // emitKartResult: terse text so stdout stays scriptable; JSON passes
 // through verbatim.
 func emitKartResult(io IO, root *CLI, verb string, raw json.RawMessage) int {
