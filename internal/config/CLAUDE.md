@@ -26,9 +26,20 @@ runs:
     mode: interactive | output
     post: ""                        # optional; connect-last-scaffold is the
                                     # only hook currently known to the client
+    args:                           # optional; the client prompts for these
+      - name: host                  # when the user runs `drift run <name>`
+        prompt: "Host to ping"      # with no positional args. CLI args still
+        type: input                 # bypass prompting.
+        default: "1.1.1.1"
     command: |
       <shell snippet, expanded server-side>
 ```
+
+Arg types: `input` (single-line, the default), `text` (multi-line), `select`
+(requires a non-empty `options:` list — the `default:` must match one of the
+options when both are set). Empty arg values render as `""`; guard with
+`{{ if .Arg 0 }}…{{ end }}` when a bare empty positional would break your
+command.
 
 Names match `^[a-z][a-z0-9_-]{0,62}$`. Picking the mode:
 

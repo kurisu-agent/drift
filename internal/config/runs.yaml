@@ -12,8 +12,18 @@
 #                                       # output       → plain ssh, pretty-printed
 #       post: ""                        # (optional) named client post-hook:
 #                                       #   connect-last-scaffold
+#       args:                           # (optional) positional slots; `drift
+#         - name: host                  # run <name>` with no args prompts
+#           prompt: "Host to ping"      # interactively for each. CLI args
+#           type: input                 # still bypass the prompt.
+#           default: "1.1.1.1"
 #       command: |                      # go text/template, server-rendered
 #         ...shell snippet...
+#
+# Arg types:
+#   input   single-line (default)
+#   text    multi-line
+#   select  pick from `options:` list (required for this type)
 #
 # Template data:
 #   {{ .Arg N }}   Nth positional arg ("" if missing)
@@ -29,15 +39,25 @@ runs:
     description: "AI-scaffold a new project + kart, then drop into it"
     mode: interactive
     post: connect-last-scaffold
+    args:
+      - name: prompt
+        prompt: "What should Claude scaffold?"
+        type: text
     command: |
       cd "$HOME/.drift" && \
       rm -f last-scaffold && \
       exec claude --dangerously-skip-permissions \
-        --append-system-prompt "$(cat recipes/scaffolder.md)"
+        --append-system-prompt "$(cat recipes/scaffolder.md)" \
+        {{ if .Arg 0 }}{{ .Arg 0 | shq }}{{ end }}
 
   ping:
     description: "Ping a host (drift run ping <host>)"
     mode: output
+    args:
+      - name: host
+        prompt: "Host to ping"
+        type: input
+        default: "1.1.1.1"
     command: 'ping -c 4 {{ .Arg 0 | shq }}'
 
   speedtest:
