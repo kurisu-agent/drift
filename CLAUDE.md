@@ -1,3 +1,36 @@
+# STOP — before your first code edit
+
+Planning, reading, grepping, and running read-only commands in the main checkout is fine. You only need a feature worktree once you're about to make an edit that affects the codebase — anything CI runs (Go source, tests, `integration/`, `flake.nix`, `Makefile`, `.github/workflows/`, `packaging/nix/`).
+
+Doc-only edits stay on main: `*.md` files (`CLAUDE.md`, `README`, `plans/**`), `.gitignore`, `TODO.md`, comments in `docs/`. If the edit can't change a build, test, or integration outcome, commit it directly.
+
+**When you are about to Edit or Write a code file, first check where you are:**
+
+```
+git rev-parse --show-toplevel
+```
+
+If that prints the repo root (the main checkout), stop and set up a worktree before the edit. From the repo root:
+
+```
+git worktree add .claude/worktrees/<feature> -b feat/<feature> main
+cd .claude/worktrees/<feature>
+```
+
+The path printed by `git rev-parse --show-toplevel` should now end in `.claude/worktrees/<feature>`.
+
+## If you realize you're on main mid-edit
+
+Don't `git restore` to discard your work. Move the diff instead. From the main checkout:
+
+```
+git stash push -m "<feature>" -- <paths you touched>
+git worktree add .claude/worktrees/<feature> -b feat/<feature> main
+cd .claude/worktrees/<feature> && git stash pop
+```
+
+Continue from there.
+
 # Feature workflow
 
 Direct pushes to `main` are reserved for trivial changes (typos, plan-doc tweaks, `.gitignore`, README edits — things that can't plausibly affect integration). Anything else goes through a feature branch and a pull request.
