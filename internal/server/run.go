@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 
+	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/run"
@@ -80,6 +81,13 @@ func (d *Deps) loadRunRegistry() (*run.Registry, error) {
 	reg, err := run.Load(filepath.Join(home, "runs.yaml"))
 	if err != nil {
 		return nil, rpcerr.Internal("run: load registry: %v", err).Wrap(err)
+	}
+	// Back-fill args: declarations onto built-in entries that were seeded
+	// by an older lakitu (pre-v0.5.2) and so lack the prompt metadata the
+	// client needs. Only untouched-command entries get the merge — any
+	// user customization opts the entry out.
+	if defaults, derr := run.Parse(config.DefaultRunsYAML()); derr == nil {
+		run.MergeBuiltinDefaults(reg, defaults)
 	}
 	return reg, nil
 }
