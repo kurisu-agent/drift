@@ -97,6 +97,203 @@ func TestRunRunExec_JSONNoNameReturnsJSON(t *testing.T) {
 	}
 }
 
+// stdinTTYStub is a zero-read stand-in for os.Stdin in tests that flip
+// isTTYFn to report true — the prompt path then routes through the
+// stubbed pickRunEntryFn / promptOneArgFn rather than touching stdin.
+type stdinTTYStub struct{}
+
+func (stdinTTYStub) Read([]byte) (int, error) { return 0, nil }
+
+// stubPromptFns installs stand-ins for pickRunEntryFn and promptOneArgFn
+// and also flips isTTYFn to true for the duration of the test. Returns a
+// restore func callers should defer-call.
+func stubPromptFns(t *testing.T, pick func([]wire.RunEntry) (*wire.RunEntry, bool, error), prompt func(wire.RunArgSpec) (string, bool, error)) func() {
+	t.Helper()
+	prevPick := pickRunEntryFn
+	prevPrompt := promptOneArgFn
+	prevTTY := isTTYFn
+	pickRunEntryFn = pick
+	promptOneArgFn = prompt
+	isTTYFn = func(any) bool { return true }
+	return func() {
+		pickRunEntryFn = prevPick
+		promptOneArgFn = prevPrompt
+		isTTYFn = prevTTY
+	}
+}
+
+// errStopBeforeExec is the "stop before driftexec.Interactive" escape
+// hatch used by the prompt-path tests: the resolve stub returns this so
+// runRunExec surfaces an error and returns instead of trying to fork ssh.
+var errStopBeforeExec = errors.New("stop before exec")
+
+// TestRunRunExec_PromptFillsMissingArgs pins the user-visible regression
+// this change fixes: `drift run ping` on a TTY, with the server returning
+// a ping entry that declares a host arg, must route through
+// promptOneArgFn and forward the typed value verbatim to run.resolve.
+func TestRunRunExec_PromptFillsMissingArgs(t *testing.T) {
+	restore := stubPromptFns(t,
+		func(_ []wire.RunEntry) (*wire.RunEntry, bool, error) {
+			t.Fatal("pickRunEntryFn should not fire when name is supplied")
+			return nil, false, nil
+		},
+		func(spec wire.RunArgSpec) (string, bool, error) {
+			if spec.Name != "host" {
+				t.Errorf("prompted for %q, want host", spec.Name)
+			}
+			return "1.2.3.4", false, nil
+		},
+	)
+	defer restore()
+
+	var gotArgs []string
+	d, _ := newKartDeps(t, func(_ context.Context, _, method string, params, out any) error {
+		switch method {
+		case wire.MethodRunList:
+			*(out.(*wire.RunListResult)) = wire.RunListResult{Entries: []wire.RunEntry{{
+				Name: "ping", Mode: wire.RunModeOutput,
+				Args: []wire.RunArgSpec{{Name: "host", Type: wire.RunArgTypeInput, Default: "1.1.1.1"}},
+			}}}
+			return nil
+		case wire.MethodRunResolve:
+			gotArgs = params.(wire.RunResolveParams).Args
+			return errStopBeforeExec
+		}
+		t.Fatalf("unexpected method %q", method)
+		return nil
+	})
+
+	var stdout, stderr bytes.Buffer
+	io := IO{Stdin: stdinTTYStub{}, Stdout: &stdout, Stderr: &stderr}
+
+	runRunExec(context.Background(), io, &CLI{Output: "text"}, runCmd{Name: "ping"}, d)
+
+	if len(gotArgs) != 1 || gotArgs[0] != "1.2.3.4" {
+		t.Errorf("resolve called with args=%v, want [\"1.2.3.4\"]", gotArgs)
+	}
+}
+
+// TestRunRunExec_CLIArgsBypassPrompt: a scripted `drift run ping <host>`
+// must skip the interactive prompt entirely. Regression guard against a
+// future refactor treating CLI args as a partial fill that still prompts
+// for the rest.
+func TestRunRunExec_CLIArgsBypassPrompt(t *testing.T) {
+	restore := stubPromptFns(t,
+		func(_ []wire.RunEntry) (*wire.RunEntry, bool, error) {
+			t.Fatal("pickRunEntryFn should not fire when CLI args are present")
+			return nil, false, nil
+		},
+		func(wire.RunArgSpec) (string, bool, error) {
+			t.Fatal("promptOneArgFn should not fire when CLI args are present")
+			return "", false, nil
+		},
+	)
+	defer restore()
+
+	var gotArgs []string
+	d, _ := newKartDeps(t, func(_ context.Context, _, method string, params, out any) error {
+		if method == wire.MethodRunResolve {
+			gotArgs = params.(wire.RunResolveParams).Args
+			return errStopBeforeExec
+		}
+		return nil
+	})
+
+	io := IO{Stdin: stdinTTYStub{}, Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
+	runRunExec(context.Background(), io, &CLI{Output: "text"},
+		runCmd{Name: "ping", Args: []string{"2.2.2.2"}}, d)
+
+	if len(gotArgs) != 1 || gotArgs[0] != "2.2.2.2" {
+		t.Errorf("resolve args = %v, want [\"2.2.2.2\"]", gotArgs)
+	}
+}
+
+// TestRunRunExec_PromptPicksAndFills drives the no-name variant:
+// `drift run` on a TTY picks an entry via pickRunEntryFn, then walks
+// its declared args via promptOneArgFn. Both seams must fire in order.
+func TestRunRunExec_PromptPicksAndFills(t *testing.T) {
+	promptCalls := 0
+	restore := stubPromptFns(t,
+		func(entries []wire.RunEntry) (*wire.RunEntry, bool, error) {
+			for i := range entries {
+				if entries[i].Name == "ping" {
+					return &entries[i], false, nil
+				}
+			}
+			t.Fatalf("picker didn't see ping in %+v", entries)
+			return nil, false, nil
+		},
+		func(spec wire.RunArgSpec) (string, bool, error) {
+			promptCalls++
+			return "picked-" + spec.Name, false, nil
+		},
+	)
+	defer restore()
+
+	var gotName string
+	var gotArgs []string
+	d, _ := newKartDeps(t, func(_ context.Context, _, method string, params, out any) error {
+		switch method {
+		case wire.MethodRunList:
+			*(out.(*wire.RunListResult)) = wire.RunListResult{Entries: []wire.RunEntry{{
+				Name: "ping", Mode: wire.RunModeOutput,
+				Args: []wire.RunArgSpec{{Name: "host", Type: wire.RunArgTypeInput}},
+			}}}
+			return nil
+		case wire.MethodRunResolve:
+			p := params.(wire.RunResolveParams)
+			gotName = p.Name
+			gotArgs = p.Args
+			return errStopBeforeExec
+		}
+		return nil
+	})
+
+	io := IO{Stdin: stdinTTYStub{}, Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
+	runRunExec(context.Background(), io, &CLI{Output: "text"}, runCmd{}, d)
+
+	if gotName != "ping" {
+		t.Errorf("resolve name=%q, want ping", gotName)
+	}
+	if len(gotArgs) != 1 || gotArgs[0] != "picked-host" {
+		t.Errorf("resolve args=%v, want [picked-host]", gotArgs)
+	}
+	if promptCalls != 1 {
+		t.Errorf("promptOneArgFn fired %d times, want 1", promptCalls)
+	}
+}
+
+// TestRunRunExec_PromptAbortsCleanly: an ErrUserAborted at the arg
+// prompt should return 0 and never reach resolve — the user pressed
+// ctrl+c and doesn't want the command to run.
+func TestRunRunExec_PromptAbortsCleanly(t *testing.T) {
+	restore := stubPromptFns(t,
+		func([]wire.RunEntry) (*wire.RunEntry, bool, error) { return nil, false, nil },
+		func(wire.RunArgSpec) (string, bool, error) { return "", true, nil }, // aborted
+	)
+	defer restore()
+
+	d, _ := newKartDeps(t, func(_ context.Context, _, method string, _, out any) error {
+		if method == wire.MethodRunList {
+			*(out.(*wire.RunListResult)) = wire.RunListResult{Entries: []wire.RunEntry{{
+				Name: "ping", Mode: wire.RunModeOutput,
+				Args: []wire.RunArgSpec{{Name: "host"}},
+			}}}
+			return nil
+		}
+		if method == wire.MethodRunResolve {
+			t.Fatal("resolve must not fire after abort")
+		}
+		return nil
+	})
+
+	io := IO{Stdin: stdinTTYStub{}, Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
+	rc := runRunExec(context.Background(), io, &CLI{Output: "text"}, runCmd{Name: "ping"}, d)
+	if rc != 0 {
+		t.Errorf("rc=%d, want 0 on abort", rc)
+	}
+}
+
 // TestCompatWrap_MethodNotFoundEnrichedWithServerVersion proves the compat
 // shim converts lakitu's terse `method_not_found` into an actionable
 // message that names the remote lakitu version and this drift's version —

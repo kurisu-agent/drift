@@ -10,6 +10,14 @@ import (
 //go:embed runs.yaml
 var embeddedRunsYAML []byte
 
+// DefaultRunsYAML returns the embedded default registry bytes. The server
+// parses these alongside the user's runs.yaml so schema additions (new
+// arg prompts, etc.) can be back-filled onto built-in entries that were
+// seeded before the feature shipped — see run.MergeBuiltinDefaults.
+func DefaultRunsYAML() []byte {
+	return embeddedRunsYAML
+}
+
 // RunsYAMLPath is the canonical server-side path for the run registry.
 func RunsYAMLPath() (string, error) {
 	home, err := DriftHomeDir()
