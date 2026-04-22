@@ -778,6 +778,33 @@ func (c *Circuit) DriftBinDir() string {
 	return filepath.Dir(bin)
 }
 
+// DriftBin returns the path to the test-built drift binary. Exposed for
+// callers that need to spawn drift under a PTY rather than through the
+// captured-stdio helper (see Drift).
+func DriftBin(t *testing.T) string {
+	t.Helper()
+	return driftBinary(t)
+}
+
+// DriftEnv returns the env overlay Drift() uses (HOME pinned to the
+// per-test drift home, PATH prefixed with the ssh shim + drift bin dir,
+// XDG_CONFIG_HOME mirrored). Callers assembling their own *exec.Cmd —
+// e.g. PTY-driven interactive tests — should reuse this so drift lands
+// on the same config/ssh wiring as the scripted Drift helper.
+func DriftEnv(c *Circuit) []string {
+	c.t.Helper()
+	return overlayEnv(map[string]string{
+		"HOME":            c.driftHome,
+		"XDG_CONFIG_HOME": filepath.Join(c.driftHome, ".config"),
+		"PATH": c.shimDir + string(os.PathListSeparator) +
+			c.DriftBinDir() + string(os.PathListSeparator) +
+			os.Getenv("PATH"),
+		// A real terminal emulator would set TERM; xterm is widely understood
+		// by the bubbletea renderer the huh prompts use.
+		"TERM": "xterm-256color",
+	})
+}
+
 // SSH runs host ssh(1) against the circuit with the per-test HOME and a
 // PATH that includes the compiled drift binary (so ProxyCommand forks of
 // `drift ssh-proxy` resolve).

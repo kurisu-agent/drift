@@ -96,6 +96,39 @@ func TestRunResolve_requiresName(t *testing.T) {
 	}
 }
 
+// TestRunList_backfillsBuiltinArgs pins the stale-runs.yaml upgrade path:
+// a circuit seeded by a pre-v0.5.2 lakitu has `ping` with no args: block,
+// but the command is still the untouched built-in. The server must fill
+// in the args from the embedded defaults so the client prompts for a
+// host instead of invoking `ping ”`.
+func TestRunList_backfillsBuiltinArgs(t *testing.T) {
+	d := setupDeps(t, `
+runs:
+  ping:
+    description: "Ping a host (drift run ping <host>)"
+    mode: output
+    command: 'ping -c 4 {{ .Arg 0 | shq }}'
+`)
+	res, err := d.RunListHandler(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("RunListHandler: %v", err)
+	}
+	lr := res.(wire.RunListResult)
+	var ping *wire.RunEntry
+	for i := range lr.Entries {
+		if lr.Entries[i].Name == "ping" {
+			ping = &lr.Entries[i]
+			break
+		}
+	}
+	if ping == nil {
+		t.Fatalf("ping entry missing: %+v", lr.Entries)
+	}
+	if len(ping.Args) != 1 || ping.Args[0].Name != "host" {
+		t.Errorf("back-fill skipped: args = %+v", ping.Args)
+	}
+}
+
 // TestRunList_passesArgs: the handler must surface each entry's declared
 // arg spec so the client-side interactive picker has something to prompt
 // for. Without this the prompt UX would degrade to bare name selection.

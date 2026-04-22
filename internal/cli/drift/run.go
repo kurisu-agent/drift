@@ -233,6 +233,14 @@ type pickedRun struct {
 	args []string
 }
 
+// Prompter indirection: the huh-backed default is wired up in
+// run_huh.go. Tests swap these package-level vars with fakes so
+// runRunExec can be exercised without a real TTY.
+var (
+	pickRunEntryFn = pickRunEntry
+	promptOneArgFn = promptOneArg
+)
+
 // pickAndFillRun drives the interactive picker.
 //
 // When nameHint is empty, the user selects an entry from a huh.Select
@@ -254,7 +262,7 @@ func pickAndFillRun(ctx context.Context, io IO, circuit string, deps deps, nameH
 
 	var entry *wire.RunEntry
 	if nameHint == "" {
-		picked, aborted, err := pickRunEntry(list.Entries)
+		picked, aborted, err := pickRunEntryFn(list.Entries)
 		if err != nil || aborted {
 			return nil, aborted, err
 		}
@@ -322,7 +330,7 @@ func promptEntryArgs(entry *wire.RunEntry) ([]string, bool, error) {
 	}
 	args := make([]string, len(entry.Args))
 	for i, spec := range entry.Args {
-		val, aborted, err := promptOneArg(spec)
+		val, aborted, err := promptOneArgFn(spec)
 		if err != nil || aborted {
 			return nil, aborted, err
 		}
