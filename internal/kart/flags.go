@@ -64,6 +64,9 @@ type Flags struct {
 	Dotfiles     string
 	Character    string
 	Autostart    bool
+	// Mounts carries --mount specs from `drift new`. Appended on top of
+	// tune.MountDirs (flag-wins-on-target during the resolver merge).
+	Mounts []model.Mount
 	// MigratedFrom, when non-zero, is persisted on the kart config so
 	// `drift migrate` can filter out already-adopted devpod workspaces on
 	// subsequent runs. Never set by `drift new` — only by the migrate
@@ -88,6 +91,11 @@ type Resolved struct {
 	// chest:<name> references for persistence and `kart info` rendering.
 	Env     ResolvedTuneEnv
 	EnvRefs TuneEnv
+	// Mounts is tune.MountDirs + flag mounts, deduped by target with
+	// flag-wins precedence. Bind sources have `~/` rewritten to
+	// `${localEnv:HOME}/` so devpod resolves against the circuit's env,
+	// not whatever happened to be in lakitu's $HOME at resolve time.
+	Mounts []model.Mount
 	// MigratedFrom threads through from Flags unchanged; the resolver has
 	// nothing to decide about it.
 	MigratedFrom model.MigratedFrom
@@ -237,6 +245,11 @@ func (r *Resolver) Resolve(f Flags) (*Resolved, error) {
 		}
 	}
 
+	mounts, err := mergeMounts(tuneMounts(tune), f.Mounts)
+	if err != nil {
+		return nil, err
+	}
+
 	resolved := &Resolved{
 		Name:          f.Name,
 		SourceMode:    sourceMode,
@@ -251,6 +264,7 @@ func (r *Resolver) Resolve(f Flags) (*Resolved, error) {
 		Autostart:     f.Autostart,
 		Env:           resolvedEnv,
 		EnvRefs:       envRefs,
+		Mounts:        mounts,
 		MigratedFrom:  f.MigratedFrom,
 	}
 	r.logResolved(resolved)
@@ -308,6 +322,62 @@ func tuneFeatures(t *Tune) string {
 		return ""
 	}
 	return t.Features
+}
+
+func tuneMounts(t *Tune) []model.Mount {
+	if t == nil {
+		return nil
+	}
+	return t.MountDirs
+}
+
+// mergeMounts concatenates tune + flag mounts and rewrites `~/` in bind
+// sources to `${localEnv:HOME}/` so devpod's own substitution resolves
+// against the circuit's env. Flag mounts win on a matching target: a
+// second entry with the same target overrides the first. Targets are
+// required (mount without a target is nonsensical on docker's side).
+func mergeMounts(fromTune, fromFlag []model.Mount) ([]model.Mount, error) {
+	if len(fromTune) == 0 && len(fromFlag) == 0 {
+		return nil, nil
+	}
+	combined := make([]model.Mount, 0, len(fromTune)+len(fromFlag))
+	combined = append(combined, fromTune...)
+	combined = append(combined, fromFlag...)
+
+	byTarget := make(map[string]int, len(combined))
+	out := make([]model.Mount, 0, len(combined))
+	for _, m := range combined {
+		if strings.TrimSpace(m.Target) == "" {
+			return nil, rpcerr.UserError(rpcerr.TypeInvalidFlag,
+				"kart.new: mount is missing a target (source=%q)", m.Source)
+		}
+		m.Source = expandHomeTilde(m.Source)
+		if idx, ok := byTarget[m.Target]; ok {
+			out[idx] = m
+			continue
+		}
+		byTarget[m.Target] = len(out)
+		out = append(out, m)
+	}
+	return out, nil
+}
+
+// expandHomeTilde rewrites a leading `~/` (or bare `~`) to
+// `${localEnv:HOME}/` so devpod's devcontainer template substitution
+// resolves it on the circuit at up-time. A literal on-disk expansion via
+// os.UserHomeDir would bake lakitu's runtime home into garage/karts/
+// configs, which breaks as soon as a kart is adopted from a migrate or
+// the process runs under a different user than the persisted config was
+// written under.
+func expandHomeTilde(source string) string {
+	switch {
+	case source == "~":
+		return "${localEnv:HOME}"
+	case strings.HasPrefix(source, "~/"):
+		return "${localEnv:HOME}/" + source[2:]
+	default:
+		return source
+	}
 }
 
 // mergeFeatures composes tune + user features JSON, user-wins-on-overlap.

@@ -13,6 +13,7 @@ import (
 	"github.com/kurisu-agent/drift/internal/cli/progress"
 	"github.com/kurisu-agent/drift/internal/cli/style"
 	"github.com/kurisu-agent/drift/internal/kart"
+	"github.com/kurisu-agent/drift/internal/model"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
@@ -28,6 +29,14 @@ type newCmd struct {
 	Dotfiles     string `name:"dotfiles" help:"Layer-2 dotfiles repo URL (overrides tune's dotfiles_repo)."`
 	Character    string `name:"character" help:"Git/GitHub identity to inject."`
 	Autostart    bool   `name:"autostart" help:"Enable auto-start on server reboot."`
+	// Mount is repeatable; format mirrors `docker run --mount`:
+	//   --mount type=bind,source=~/.claude,target=/home/dev/.claude
+	// A leading `~/` in source is rewritten to `${localEnv:HOME}/` server-
+	// side so devpod resolves it against the circuit's env.
+	// sep="none" turns off kong's default comma-splitting — mount specs
+	// carry commas between their k=v pairs and would otherwise shatter
+	// into `type=bind`, `source=X`, `target=Y` as separate entries.
+	Mount []string `name:"mount" sep:"none" help:"Extra host-bind or volume mount (repeatable). type=bind,source=X,target=Y"`
 	// Connect drops the user into the new kart after a successful create.
 	// Default-on for interactive callers; --no-connect preserves the old
 	// behavior for scripts that chain `drift new` with their own commands.
@@ -39,6 +48,9 @@ type newCmd struct {
 func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 	if cmd.Clone != "" && cmd.Starter != "" {
 		return errfmt.Emit(io.Stderr, errors.New("--clone and --starter are mutually exclusive"))
+	}
+	if _, err := parseMountFlags(cmd.Mount); err != nil {
+		return errfmt.Emit(io.Stderr, err)
 	}
 	expandOwnerRepoShorthand(&cmd)
 
@@ -155,7 +167,67 @@ func buildNewParams(cmd newCmd) map[string]any {
 	if cmd.Autostart {
 		params["autostart"] = true
 	}
+	if len(cmd.Mount) > 0 {
+		// Pre-validated in runNew; ignore error here.
+		if mounts, err := parseMountFlags(cmd.Mount); err == nil && len(mounts) > 0 {
+			params["mounts"] = mounts
+		}
+	}
 	return params
+}
+
+// parseMountFlags turns each `--mount` arg into a model.Mount. Syntax mirrors
+// docker's `--mount`: comma-separated k=v pairs, with `type`, `source`/`src`,
+// `target`/`dst`/`destination`, and `external` being the recognized keys.
+// Anything else is passed through verbatim as an entry in Mount.Other so we
+// don't have to chase every docker-side flag this fork might add next.
+func parseMountFlags(specs []string) ([]model.Mount, error) {
+	if len(specs) == 0 {
+		return nil, nil
+	}
+	out := make([]model.Mount, 0, len(specs))
+	for _, spec := range specs {
+		if strings.TrimSpace(spec) == "" {
+			continue
+		}
+		var m model.Mount
+		for _, kv := range strings.Split(spec, ",") {
+			kv = strings.TrimSpace(kv)
+			if kv == "" {
+				continue
+			}
+			key, val, ok := strings.Cut(kv, "=")
+			if !ok {
+				return nil, fmt.Errorf("--mount %q: expected key=value pairs, got %q", spec, kv)
+			}
+			key = strings.TrimSpace(key)
+			val = strings.TrimSpace(val)
+			switch key {
+			case "type":
+				m.Type = val
+			case "source", "src":
+				m.Source = val
+			case "target", "dst", "destination":
+				m.Target = val
+			case "external":
+				switch val {
+				case "true", "1":
+					m.External = true
+				case "false", "0", "":
+					m.External = false
+				default:
+					return nil, fmt.Errorf("--mount %q: external=%s must be true or false", spec, val)
+				}
+			default:
+				m.Other = append(m.Other, kv)
+			}
+		}
+		if m.Target == "" {
+			return nil, fmt.Errorf("--mount %q: target is required", spec)
+		}
+		out = append(out, m)
+	}
+	return out, nil
 }
 
 // writeNewPreflight dumps the resolved kart.new inputs to stderr. JSON
@@ -201,6 +273,9 @@ func writeNewPreflight(w interface{ Write(p []byte) (int, error) }, jsonMode boo
 	}
 	if cmd.Autostart {
 		fmt.Fprintln(w, p.Dim("  autostart:    enabled"))
+	}
+	for _, m := range cmd.Mount {
+		fmt.Fprintln(w, p.Dim(fmt.Sprintf("  mount:        %s", m)))
 	}
 }
 

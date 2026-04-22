@@ -2,7 +2,11 @@ package drift
 
 import (
 	"bytes"
+	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/kurisu-agent/drift/internal/model"
 )
 
 func TestExpandOwnerRepoShorthand(t *testing.T) {
@@ -115,5 +119,85 @@ func TestShouldAutoConnect(t *testing.T) {
 				t.Errorf("shouldAutoConnect = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestParseMountFlags(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		specs   []string
+		want    []model.Mount
+		errSubs string
+	}{
+		{
+			name:  "empty input returns nil",
+			specs: nil,
+			want:  nil,
+		},
+		{
+			name:  "bind short form",
+			specs: []string{"type=bind,src=~/.claude,dst=/home/dev/.claude"},
+			want: []model.Mount{
+				{Type: "bind", Source: "~/.claude", Target: "/home/dev/.claude"},
+			},
+		},
+		{
+			name:  "bind long form + unknown key passthrough",
+			specs: []string{"type=bind,source=/opt/data,target=/data,readonly=true"},
+			want: []model.Mount{
+				{Type: "bind", Source: "/opt/data", Target: "/data", Other: []string{"readonly=true"}},
+			},
+		},
+		{
+			name:  "external true",
+			specs: []string{"type=volume,source=named,target=/vol,external=true"},
+			want: []model.Mount{
+				{Type: "volume", Source: "named", Target: "/vol", External: true},
+			},
+		},
+		{
+			name:    "missing target rejected",
+			specs:   []string{"type=bind,source=/opt"},
+			errSubs: "target is required",
+		},
+		{
+			name:    "malformed kv rejected",
+			specs:   []string{"type=bind,just-a-word,target=/x"},
+			errSubs: "expected key=value pairs",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseMountFlags(tc.specs)
+			if tc.errSubs != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.errSubs) {
+					t.Fatalf("expected error containing %q, got %v", tc.errSubs, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBuildNewParamsMountsPropagate(t *testing.T) {
+	t.Parallel()
+	cmd := newCmd{
+		Name:  "k",
+		Mount: []string{"type=bind,source=~/.claude,target=/home/dev/.claude"},
+	}
+	params := buildNewParams(cmd)
+	mounts, ok := params["mounts"].([]model.Mount)
+	if !ok {
+		t.Fatalf("params[\"mounts\"] missing or wrong type: %#v", params["mounts"])
+	}
+	if len(mounts) != 1 || mounts[0].Target != "/home/dev/.claude" {
+		t.Fatalf("unexpected mounts: %+v", mounts)
 	}
 }

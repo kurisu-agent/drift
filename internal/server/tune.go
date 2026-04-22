@@ -38,6 +38,7 @@ type TuneSetParams struct {
 	DotfilesRepo string        `json:"dotfiles_repo,omitempty"`
 	Features     string        `json:"features,omitempty"`
 	Env          model.TuneEnv `json:"env,omitempty"`
+	MountDirs    []model.Mount `json:"mount_dirs,omitempty"`
 }
 
 type TuneNameOnly struct {
@@ -97,6 +98,7 @@ func (d *Deps) TuneSetHandler(_ context.Context, params json.RawMessage) (any, e
 		DotfilesRepo: p.DotfilesRepo,
 		Features:     p.Features,
 		Env:          p.Env,
+		MountDirs:    p.MountDirs,
 	}
 	buf, err := yaml.Marshal(&t)
 	if err != nil {

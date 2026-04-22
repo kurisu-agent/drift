@@ -125,8 +125,13 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 	if resolved.Devcontainer != "" {
 		d.phase("normalizing devcontainer %q", resolved.Devcontainer)
 	}
+	if len(resolved.Mounts) > 0 {
+		d.phase("splicing %d mount(s) into devcontainer overlay", len(resolved.Mounts))
+	}
 	dcDir := filepath.Join(scratch, "devcontainer")
-	dcPath, _, err := NormalizeDevcontainer(ctx, resolved.Devcontainer, dcDir, d.Fetcher)
+	dcPath, _, err := NormalizeDevcontainerWithMounts(
+		ctx, resolved.Devcontainer, dcDir, resolved.Mounts, d.Fetcher,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -278,6 +283,9 @@ func writeKartConfig(garageDir string, r *Resolved, now time.Time) error {
 	// key when every block is nil, so an empty EnvRefs round-trips cleanly.
 	if !r.EnvRefs.IsEmpty() {
 		cfg.Env = r.EnvRefs
+	}
+	if len(r.Mounts) > 0 {
+		cfg.MountDirs = append([]model.Mount(nil), r.Mounts...)
 	}
 	if !r.MigratedFrom.IsZero() {
 		mf := r.MigratedFrom
