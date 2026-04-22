@@ -158,8 +158,8 @@ func Registry() *rpc.Registry {
 // buildRegistry assembles a registry for dispatch. When withDevpod is
 // false the kart-lifecycle handlers are omitted entirely — no
 // resolvePinnedDevpod / EnsurePinned call runs, so non-devpod RPCs
-// (server.*, config.*, character.*, chest.*, tune.*, run.*) stay fast
-// and offline-safe. An error is returned when GarageDir() fails AND the
+// (server.*, config.*, character.*, chest.*, tune.*) stay fast and
+// offline-safe. An error is returned when GarageDir() fails AND the
 // caller asked for devpod handlers; non-devpod registration tolerates
 // a missing garage because server.version has to work on a fresh box.
 func buildRegistry(ctx context.Context, withDevpod, debug bool) (*rpc.Registry, error) {
@@ -179,9 +179,8 @@ func buildRegistry(ctx context.Context, withDevpod, debug bool) (*rpc.Registry, 
 // registerNonDevpod wires handlers that only touch the garage tree (or
 // don't touch anything at all). Zero subprocess cost — safe to run on
 // every lakitu invocation even when the caller will only dispatch one
-// method. server.init gets a custom handler here because it lives in
-// cmd/lakitu (needs DriftHomeDir + scaffolder recipe) and isn't part of
-// the generic server.Deps bundle.
+// method. server.init gets a custom handler here because it needs a
+// DriftHomeDir lookup that isn't part of the generic server.Deps bundle.
 func registerNonDevpod(reg *rpc.Registry) {
 	reg.Register(wire.MethodServerInit, serverInitHandler)
 	server.RegisterServer(reg, &server.Deps{})

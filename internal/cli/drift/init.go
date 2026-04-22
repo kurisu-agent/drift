@@ -92,10 +92,5 @@ func isTTY(fd any) bool {
 }
 
 // stdinIsTTY / stdoutIsTTY are thin aliases kept for call-site clarity.
-// The indirection via isTTYFn is a test seam — unit tests that need to
-// drive runRunExec through the prompt path without a real terminal can
-// swap this out to return true on demand.
-func stdinIsTTY(r any) bool  { return isTTYFn(r) }
-func stdoutIsTTY(w any) bool { return isTTYFn(w) }
-
-var isTTYFn = isTTY
+func stdinIsTTY(r any) bool  { return isTTY(r) }
+func stdoutIsTTY(w any) bool { return isTTY(w) }

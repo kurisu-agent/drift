@@ -97,8 +97,6 @@ The canonical list lives in `internal/wire/methods.go`. Every method constant th
   kart.session_env
   kart.start
   kart.stop
-  run.list
-  run.resolve
   server.info
   server.init
   server.verify

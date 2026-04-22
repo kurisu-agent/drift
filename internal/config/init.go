@@ -50,10 +50,9 @@ func InitGarage(root string) (*InitResult, error) {
 }
 
 // InitGarageFull runs the full `lakitu init` filesystem sequence: the
-// garage tree plus the two $DRIFT_HOME siblings (CLAUDE.md, runs.yaml).
-// The returned result reports every path touched — garage-relative
-// entries from InitGarage plus "../CLAUDE.md" / "../runs.yaml" when the
-// sibling files were created.
+// garage tree plus the $DRIFT_HOME sibling CLAUDE.md. The returned result
+// reports every path touched — garage-relative entries from InitGarage
+// plus "../CLAUDE.md" when that file was created.
 //
 // Separated from InitGarage so the server.init RPC and `lakitu init` CLI
 // share one code path; the CLI prints from Created, the RPC hands the
@@ -67,11 +66,6 @@ func InitGarageFull(root, driftHome string) (*InitResult, error) {
 		return nil, cerr
 	} else if created {
 		res.Created = append(res.Created, "../CLAUDE.md")
-	}
-	if created, rerr := EnsureRunsYAML(driftHome); rerr != nil {
-		return nil, rerr
-	} else if created {
-		res.Created = append(res.Created, "../runs.yaml")
 	}
 	return res, nil
 }

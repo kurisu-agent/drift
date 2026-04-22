@@ -62,18 +62,19 @@ lakitu's equivalent (`internal/cli/lakitu/help.go`) is purely auto-derived throu
 
 Three specific sections to check:
 
-**Commands** — should mirror `drift help` (the curated top-level, not the full Kong dump). If a new top-level subcommand appeared, add it here; if one was removed or renamed, update it. Keep the grouping (CIRCUITS / KARTS / RUNS) consistent with what `drift help` prints.
+**Commands** — should mirror `drift help` (the curated top-level, not the full Kong dump). If a new top-level subcommand appeared, add it here; if one was removed or renamed, update it. Keep the grouping (CIRCUITS / KARTS) consistent with what `drift help` prints.
 
 **Quickstart** — every command in this block must run without error on a fresh install. If `init` gained or lost a flag, or `new` changed shape, update the example. Don't invent flags that don't exist.
 
 **Shorthand / cheat sheet** — a compact block of the commands people type daily. Keep it tight (≤15 lines). Example shape:
 
 ```text
-drift list                   # karts + status
+drift connect                # cross-circuit picker (TTY only)
 drift connect <kart>         # mosh/ssh in, auto-starts
+drift connect -l             # list karts on the target circuit
 drift new <kart> --clone <url> --character <id>
-drift run ai                 # claude on the circuit, preloaded
-drift status                 # circuits + lakitu health
+drift status                 # circuits + lakitu health + per-circuit karts
+drift circuit                # list circuits (same as `drift circuit list`)
 ```
 
 It's a *cheat sheet*, not a manual — flags people won't remember anyway don't belong here. If the README already has a Commands block that doubles as shorthand, consolidate rather than duplicate.

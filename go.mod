@@ -10,7 +10,6 @@ require (
 	github.com/charmbracelet/huh v1.0.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be
-	github.com/creack/pty v1.1.24
 	github.com/google/go-cmp v0.7.0
 	github.com/mattn/go-isatty v0.0.21
 	github.com/rogpeppe/go-internal v1.14.1

@@ -40,9 +40,6 @@ const (
 	MethodConfigShow = "config.show"
 	MethodConfigSet  = "config.set"
 
-	MethodRunList    = "run.list"
-	MethodRunResolve = "run.resolve"
-
 	MethodSkillList    = "skill.list"
 	MethodSkillResolve = "skill.resolve"
 )
@@ -63,7 +60,6 @@ func Methods() []string {
 		MethodChestSet, MethodChestGet, MethodChestList, MethodChestRemove,
 		MethodTuneList, MethodTuneShow, MethodTuneSet, MethodTuneRemove,
 		MethodConfigShow, MethodConfigSet,
-		MethodRunList, MethodRunResolve,
 		MethodSkillList, MethodSkillResolve,
 	}
 }

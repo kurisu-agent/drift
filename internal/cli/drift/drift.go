@@ -28,10 +28,9 @@ type CLI struct {
 	Help     helpCmd    `cmd:"" help:"Print an LLM-friendly command + protocol reference."`
 	Circuit_ circuitCmd `cmd:"" name:"circuit" help:"Manage circuits (client-side config + SSH config)."`
 	Init     initCmd    `cmd:"" name:"init" help:"Interactive first-time setup wizard (circuits + characters)."`
-	Status   statusCmd  `cmd:"" name:"status" help:"Show configured circuits + their lakitu health and kart counts."`
+	Status   statusCmd  `cmd:"" name:"status" help:"Show configured circuits + their lakitu health and per-circuit karts."`
 	New      newCmd     `cmd:"" name:"new" help:"Create a new kart (from starter or existing repo)."`
 
-	List    listCmd    `cmd:"" help:"List karts on the target circuit."`
 	Info    infoCmd    `cmd:"" help:"Show a single kart's info."`
 	Start   startCmd   `cmd:"" help:"Start a kart (idempotent)."`
 	Stop    stopCmd    `cmd:"" help:"Stop a kart (idempotent)."`
@@ -40,10 +39,7 @@ type CLI struct {
 	Logs    logsCmd    `cmd:"" help:"Fetch a chunk of kart logs."`
 	Enable  enableCmd  `cmd:"" help:"Enable kart autostart on circuit reboot (idempotent)."`
 	Disable disableCmd `cmd:"" help:"Disable kart autostart (idempotent)."`
-	Connect connectCmd `cmd:"" aliases:"into,attach" help:"Connect to a kart via mosh (ssh fallback); auto-starts if stopped."`
-
-	Runs runsCmd `cmd:"" name:"runs" help:"List server-side shorthand commands (see drift run)."`
-	Run  runCmd  `cmd:"" name:"run" help:"Execute a server-side shorthand (e.g. drift run ping)."`
+	Connect connectCmd `cmd:"" aliases:"into,attach" help:"Connect to a kart via mosh (ssh fallback); -l lists karts cross-circuit."`
 
 	AI    aiCmd    `cmd:"" name:"ai" help:"Launch Claude Code on the circuit (interactive REPL)."`
 	Skill skillCmd `cmd:"" name:"skill" help:"List / invoke a Claude skill on the circuit."`
@@ -142,8 +138,6 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runCircuitSetDefault(io, &cli, cli.Circuit_.Set.Default, deps)
 	case "new <name>":
 		return runNew(ctx, io, &cli, cli.New, deps)
-	case "list":
-		return runKartList(ctx, io, &cli, cli.List, deps)
 	case "info <name>":
 		return runKartInfo(ctx, io, &cli, cli.Info, deps)
 	case "init":
@@ -166,10 +160,6 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runKartDisable(ctx, io, &cli, cli.Disable, deps)
 	case "connect", "connect <name>":
 		return runConnect(ctx, io, &cli, cli.Connect, deps)
-	case "runs":
-		return runRunsList(ctx, io, &cli, cli.Runs, deps)
-	case "run", "run <name>", "run <name> <args>":
-		return runRunExec(ctx, io, &cli, cli.Run, deps)
 	case "ai":
 		return runAIExec(ctx, io, &cli, cli.AI, deps)
 	case "skill", "skill <name>", "skill <name> <prompt>":

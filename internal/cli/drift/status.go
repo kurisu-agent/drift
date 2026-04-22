@@ -2,7 +2,6 @@ package drift
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 
@@ -10,7 +9,6 @@ import (
 	"github.com/kurisu-agent/drift/internal/cli/style"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/version"
-	"github.com/kurisu-agent/drift/internal/wire"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -19,18 +17,29 @@ type statusCmd struct {
 }
 
 // statusCircuit is the per-circuit payload in both text and JSON modes.
-// Probe and kart-count fields are zero/empty when --no-probe or the probe
-// failed; ProbeError carries the error string so JSON consumers can branch.
+// Probe fields are zero/empty when --no-probe or the probe failed;
+// ProbeError carries the error string so JSON consumers can branch.
 type statusCircuit struct {
-	Name       string `json:"name"`
-	Host       string `json:"host"`
-	Default    bool   `json:"default"`
-	Lakitu     string `json:"lakitu_version,omitempty"`
-	API        int    `json:"api,omitempty"`
-	LatencyMS  int64  `json:"latency_ms,omitempty"`
-	Karts      int    `json:"karts,omitempty"`
-	Running    int    `json:"running,omitempty"`
-	ProbeError string `json:"probe_error,omitempty"`
+	Name       string      `json:"name"`
+	Host       string      `json:"host"`
+	Default    bool        `json:"default"`
+	Lakitu     string      `json:"lakitu_version,omitempty"`
+	API        int         `json:"api,omitempty"`
+	LatencyMS  int64       `json:"latency_ms,omitempty"`
+	Karts      []listEntry `json:"karts,omitempty"`
+	ProbeError string      `json:"probe_error,omitempty"`
+}
+
+// runningCount counts karts in the running state. Extracted because
+// both text rendering and consumers asking "how many live karts" want it.
+func (sc statusCircuit) runningCount() int {
+	n := 0
+	for _, k := range sc.Karts {
+		if k.Status == "running" {
+			n++
+		}
+	}
+	return n
 }
 
 type statusResult struct {
@@ -108,9 +117,9 @@ func runStatus(ctx context.Context, io IO, root *CLI, cmd statusCmd, deps deps) 
 	}
 	fmt.Fprintln(io.Stdout)
 
-	// Prefix the default row with a chevron so the eye finds it even
-	// when the table has scrolled off the top of the terminal. The
-	// DEFAULT column is gone — one visual indicator is enough.
+	// Circuit overview table. The DEFAULT column is gone in favor of a
+	// chevron marker so the eye finds it even when the table has scrolled
+	// off the top of the terminal.
 	headers := []string{"", "CIRCUIT", "HOST", "LAKITU", "API", "LATENCY", "KARTS"}
 	rows := make([][]string, 0, len(res.Circuits))
 	probeFailed := make([]bool, 0, len(res.Circuits))
@@ -133,7 +142,7 @@ func runStatus(ctx context.Context, io IO, root *CLI, cmd statusCmd, deps deps) 
 		default:
 			api = fmt.Sprintf("%d", sc.API)
 			latency = fmt.Sprintf("%dms", sc.LatencyMS)
-			karts = fmt.Sprintf("%d/%d", sc.Running, sc.Karts)
+			karts = fmt.Sprintf("%d/%d", sc.runningCount(), len(sc.Karts))
 		}
 		marker := " "
 		if sc.Default {
@@ -159,7 +168,24 @@ func runStatus(ctx context.Context, io IO, root *CLI, cmd statusCmd, deps deps) 
 		return tableCell{}
 	}))
 
-	// Emit any probe errors as dim hints below the table so they don't
+	// Per-circuit kart blocks. Only shown when the probe produced karts
+	// (skipped entirely under --no-probe or when a probe failed). Each
+	// block starts with a circuit header so multiple circuits stay
+	// visually separated.
+	for _, sc := range res.Circuits {
+		if sc.ProbeError != "" || len(sc.Karts) == 0 {
+			continue
+		}
+		fmt.Fprintln(io.Stdout)
+		marker := "  "
+		if sc.Default {
+			marker = "→ "
+		}
+		fmt.Fprintf(io.Stdout, "%s%s\n", marker, p.Bold(p.Accent(sc.Name)))
+		writeKartListTable(io.Stdout, p, sc.Karts)
+	}
+
+	// Emit any probe errors as dim hints below the tables so they don't
 	// crowd the row layout but still give the user a "why."
 	for _, sc := range res.Circuits {
 		if sc.ProbeError == "" {
@@ -170,9 +196,9 @@ func runStatus(ctx context.Context, io IO, root *CLI, cmd statusCmd, deps deps) 
 	return 0
 }
 
-// fillProbe populates sc.Lakitu / API / LatencyMS, plus Karts / Running
-// when the kart.list round-trip succeeds. Any failure lands in
-// ProbeError — status is a read-only overview, never aborts.
+// fillProbe populates sc.Lakitu / API / LatencyMS, plus Karts when the
+// kart.list round-trip succeeds. Any failure lands in ProbeError —
+// status is a read-only overview, never aborts.
 func fillProbe(ctx context.Context, deps deps, circuit string, sc *statusCircuit) {
 	if deps.probe == nil {
 		sc.ProbeError = "probe not configured"
@@ -187,24 +213,10 @@ func fillProbe(ctx context.Context, deps deps, circuit string, sc *statusCircuit
 	sc.API = pr.API
 	sc.LatencyMS = pr.LatencyMS
 
-	var raw json.RawMessage
-	if err := deps.call(ctx, circuit, wire.MethodKartList, struct{}{}, &raw); err != nil {
+	entries, _, err := fetchKartList(ctx, deps, circuit)
+	if err != nil {
 		sc.ProbeError = fmt.Sprintf("kart.list: %v", err)
 		return
 	}
-	var lr struct {
-		Karts []struct {
-			Status string `json:"status"`
-		} `json:"karts"`
-	}
-	if err := json.Unmarshal(raw, &lr); err != nil {
-		sc.ProbeError = fmt.Sprintf("parse kart.list: %v", err)
-		return
-	}
-	sc.Karts = len(lr.Karts)
-	for _, k := range lr.Karts {
-		if k.Status == "running" {
-			sc.Running++
-		}
-	}
+	sc.Karts = entries
 }
