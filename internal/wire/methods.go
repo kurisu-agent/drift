@@ -20,6 +20,7 @@ const (
 	MethodKartLogs        = "kart.logs"
 	MethodKartSessionEnv  = "kart.session_env"
 	MethodKartMigrateList = "kart.migrate_list"
+	MethodKartConnect     = "kart.connect"
 
 	MethodCharacterAdd    = "character.add"
 	MethodCharacterList   = "character.list"
@@ -54,6 +55,7 @@ func Methods() []string {
 		MethodKartEnable, MethodKartDisable, MethodKartLogs,
 		MethodKartSessionEnv,
 		MethodKartMigrateList,
+		MethodKartConnect,
 		MethodCharacterAdd, MethodCharacterList, MethodCharacterShow, MethodCharacterRemove,
 		MethodChestSet, MethodChestGet, MethodChestList, MethodChestRemove,
 		MethodTuneList, MethodTuneShow, MethodTuneSet, MethodTuneRemove,
