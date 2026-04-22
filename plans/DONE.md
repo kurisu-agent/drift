@@ -179,6 +179,7 @@ Order matters: trivial handlers first to validate the dispatch path end-to-end b
 - [x] Build matrix: drift {linux,darwin}×{amd64,arm64}; lakitu linux×{amd64,arm64}
 - [x] `flake.nix` — devShell + manual binary install path documented
 - [x] `.github/workflows/ci.yml` — vet, test-race, lint, vuln, govulncheck weekly cron on `main`
+- [x] `nixosModules.lakitu` — one-import NixOS module for circuits: systemPackages, pam_env `DEVPOD_HOME="${HOME}/.drift/devpod"` (no hard-coded usernames), `lakitu-kart@` user systemd template; overrides via `services.lakitu.{package,devpodPackage,moshPackage}`. Validated end-to-end on the dev-proxmox box.
 
 ---
 
