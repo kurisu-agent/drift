@@ -67,6 +67,11 @@ func InitGarageFull(root, driftHome string) (*InitResult, error) {
 	} else if created {
 		res.Created = append(res.Created, "../CLAUDE.md")
 	}
+	if created, rerr := EnsureRunsYAML(driftHome); rerr != nil {
+		return nil, rerr
+	} else if created {
+		res.Created = append(res.Created, "../runs.yaml")
+	}
 	return res, nil
 }
 

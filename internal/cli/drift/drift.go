@@ -41,6 +41,8 @@ type CLI struct {
 	Disable disableCmd `cmd:"" help:"Disable kart autostart (idempotent)."`
 	Connect connectCmd `cmd:"" aliases:"into,attach" help:"Connect to a kart via mosh (ssh fallback); -l lists karts cross-circuit."`
 
+	Run runCmd `cmd:"" name:"run" help:"Execute a user-script shorthand from runs.yaml; -l lists entries."`
+
 	AI    aiCmd    `cmd:"" name:"ai" help:"Launch Claude Code on the circuit (interactive REPL)."`
 	Skill skillCmd `cmd:"" name:"skill" help:"List / invoke a Claude skill on the circuit."`
 
@@ -160,6 +162,8 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runKartDisable(ctx, io, &cli, cli.Disable, deps)
 	case "connect", "connect <name>":
 		return runConnect(ctx, io, &cli, cli.Connect, deps)
+	case "run", "run <name>", "run <name> <args>":
+		return runRunExec(ctx, io, &cli, cli.Run, deps)
 	case "ai":
 		return runAIExec(ctx, io, &cli, cli.AI, deps)
 	case "skill", "skill <name>", "skill <name> <prompt>":

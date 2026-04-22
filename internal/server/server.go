@@ -21,6 +21,10 @@ type Deps struct {
 	// walk. Tests set this to a fixture tree. Empty falls back to the
 	// real user home.
 	SkillsDir string
+	// DriftHome overrides the $HOME/.drift path the run.* RPCs read
+	// (runs.yaml lives there). Tests set this to a tempdir. Empty falls
+	// back to config.DriftHomeDir().
+	DriftHome string
 	// Devpod is the wired devpod.Client — used by VerifyHandler so the
 	// pinned binary lakitu set up is probed rather than whatever $PATH
 	// happens to turn up. nil falls back to a default-configured client
@@ -59,6 +63,9 @@ func RegisterServer(reg *rpc.Registry, d *Deps) {
 
 	reg.Register(wire.MethodSkillList, d.SkillListHandler)
 	reg.Register(wire.MethodSkillResolve, d.SkillResolveHandler)
+
+	reg.Register(wire.MethodRunList, d.RunListHandler)
+	reg.Register(wire.MethodRunResolve, d.RunResolveHandler)
 }
 
 func (d *Deps) garageDir() (string, error) {
@@ -66,6 +73,15 @@ func (d *Deps) garageDir() (string, error) {
 		return d.GarageDir, nil
 	}
 	return config.GarageDir()
+}
+
+// driftHome resolves the on-disk $HOME/.drift path. Override via
+// Deps.DriftHome for tests; otherwise defers to config.DriftHomeDir.
+func (d *Deps) driftHome() (string, error) {
+	if d.DriftHome != "" {
+		return d.DriftHome, nil
+	}
+	return config.DriftHomeDir()
 }
 
 // OpenChestForLifecycle is the exported adapter kart-lifecycle handlers

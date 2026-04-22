@@ -104,6 +104,8 @@ drift circuit add|rm|set            # manage circuits (client config + SSH alias
 drift ai                            # Claude on the circuit, preloaded with drift's CLI
 drift skill                         # list Claude skills on the circuit
 drift skill <name> [prompt]         # invoke a specific skill with an optional prompt
+
+drift run [-l|--list] [<name>] …    # run a shorthand from ~/.drift/runs.yaml; -l lists entries
 ```
 
 Global flags: `-c/--circuit <name>`, `-o/--output text|json`, `--no-debug`, `--no-color`. Full per-flag reference: [docs/drift-cli.md](docs/drift-cli.md).
