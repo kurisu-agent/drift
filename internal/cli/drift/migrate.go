@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/cli/style"
+	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/kart"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/wire"
@@ -76,14 +77,20 @@ func runMigrate(ctx context.Context, io IO, root *CLI, _ migrateCmd, deps deps) 
 		return errfmt.Emit(io.Stderr, err)
 	}
 
-	tune, ok, err := pickOneOf("tune", tuneNames, list.DefaultTune)
+	tune, ok, err := pickOneOf(
+		"drift migrate — select a tune",
+		"Tune = build/workspace/session config (env vars, dotfiles). type to filter · enter to pick · esc to cancel",
+		tuneNames, list.DefaultTune)
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
 	if !ok {
 		return 0
 	}
-	character, ok, err := pickOneOf("character", characterNames, list.DefaultCharacter)
+	character, ok, err := pickOneOf(
+		"drift migrate — select a character",
+		"Character = identity (git user + PAT) the kart commits and pushes as. type to filter · enter to pick · esc to cancel",
+		characterNames, list.DefaultCharacter)
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
@@ -121,7 +128,11 @@ func runMigrate(ctx context.Context, io IO, root *CLI, _ migrateCmd, deps deps) 
 func pickMigrateCandidate(candidates []migrateCandidate) (migrateCandidate, bool, error) {
 	opts := make([]huh.Option[int], 0, len(candidates))
 	for i, c := range candidates {
-		label := fmt.Sprintf("%s/%s    %s", c.Context, c.Name, c.Repo)
+		// Strip credentials embedded in clone URLs (e.g. https://<pat>@host/…)
+		// before rendering — the picker is visible to anyone looking over
+		// the user's shoulder. The raw value is preserved in `candidates`
+		// and passed verbatim to kart.new.
+		label := fmt.Sprintf("%s/%s    %s", c.Context, c.Name, driftexec.RedactSecrets(c.Repo))
 		opts = append(opts, huh.NewOption(label, i))
 	}
 	var idx int
@@ -171,7 +182,11 @@ func fetchTunesAndCharacters(ctx context.Context, deps deps, circuit string) (tu
 // pre-selected default. An empty options slice returns ("", true, nil)
 // so callers skip the picker altogether and pass empty to kart.new (the
 // server then decides based on its own defaults / fallbacks).
-func pickOneOf(label string, options []string, def string) (string, bool, error) {
+//
+// title + desc are the huh Select title/description; callers pass both so
+// the picker is self-describing (seeing just "default" in the list is
+// ambiguous without a clear header saying what's being chosen).
+func pickOneOf(title, desc string, options []string, def string) (string, bool, error) {
 	if len(options) == 0 {
 		return "", true, nil
 	}
@@ -184,7 +199,8 @@ func pickOneOf(label string, options []string, def string) (string, bool, error)
 		pick = options[0]
 	}
 	sel := huh.NewSelect[string]().
-		Title(fmt.Sprintf("drift migrate — pick %s", label)).
+		Title(title).
+		Description(desc).
 		Options(huhOpts...).
 		Filtering(true).
 		Height(10).
@@ -205,7 +221,7 @@ func confirmMigration(c migrateCandidate, tune, character string) (bool, error) 
 	var confirmed bool
 	title := fmt.Sprintf("Create drift kart from %s/%s?", c.Context, c.Name)
 	desc := fmt.Sprintf("source: %s\ntune: %s\ncharacter: %s",
-		c.Repo, cmp.Or(tune, "(none)"), cmp.Or(character, "(none)"))
+		driftexec.RedactSecrets(c.Repo), cmp.Or(tune, "(none)"), cmp.Or(character, "(none)"))
 	prompt := huh.NewConfirm().
 		Title(title).
 		Description(desc).
