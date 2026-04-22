@@ -60,17 +60,56 @@ func Run(ctx context.Context, d Deps, opts Options, stdio Stdio) error {
 		return err
 	}
 
-	sessionEnv, err := fetchSessionEnv(ctx, d, opts)
+	remote, err := fetchConnectArgv(ctx, d, opts)
 	if err != nil {
 		return err
 	}
 
 	useMosh := Transport(d.LookPath, opts.ForceSSH) == "mosh"
-	bin, argv := buildConnectArgv(useMosh, opts, sessionEnv)
+	bin, argv := buildConnectArgv(useMosh, opts, remote)
 	if d.OnReady != nil {
 		d.OnReady()
 	}
 	return d.Exec(ctx, bin, argv, stdio)
+}
+
+// fetchConnectArgv asks lakitu for the exact remote-command argv. On a
+// circuit where kart.connect is registered the server returns a fully-
+// baked stanza (`env DEVPOD_HOME=... /abs/devpod ssh <kart> --set-env
+// KEY=VALUE ...`), so the client doesn't have to know the devpod binary
+// path, the DEVPOD_HOME layout, or how to resolve session-env secrets.
+//
+// Older lakitu (pre-kart.connect) replies `method_not_found`; we fall
+// back to the historic hand-built shape — `[devpod, ssh, kart]` plus a
+// separate kart.session_env probe — so a drift client that's newer than
+// its circuit still connects (just without the server-managed devpod
+// path / DEVPOD_HOME injection). The stale-lakitu hint from
+// internal/cli/drift/compat.go doesn't apply here because `drift
+// connect`'s RPC is issued before the transport spawn; we handle the
+// compat downshift locally instead.
+func fetchConnectArgv(ctx context.Context, d Deps, opts Options) ([]string, error) {
+	var res struct {
+		Argv []string `json:"argv"`
+	}
+	err := d.Call(ctx, opts.Circuit, wire.MethodKartConnect,
+		map[string]string{"name": opts.Kart}, &res)
+	if err == nil {
+		return res.Argv, nil
+	}
+	var rpcErr *rpcerr.Error
+	if !errors.As(err, &rpcErr) || rpcErr.Type != "method_not_found" {
+		return nil, err
+	}
+	// Legacy path: build the classic argv locally and re-ask for session env.
+	sessionEnv, envErr := fetchSessionEnv(ctx, d, opts)
+	if envErr != nil {
+		return nil, envErr
+	}
+	remote := []string{"devpod", "ssh", opts.Kart}
+	for _, kv := range sessionEnv {
+		remote = append(remote, "--set-env", kv)
+	}
+	return remote, nil
 }
 
 // fetchSessionEnv pulls resolved env.session KEY=VALUE pairs for the kart.
@@ -128,16 +167,12 @@ func Transport(lookPath func(string) (string, error), forceSSH bool) string {
 	return "ssh"
 }
 
-func buildConnectArgv(useMosh bool, opts Options, sessionEnv []string) (string, []string) {
+func buildConnectArgv(useMosh bool, opts Options, remote []string) (string, []string) {
 	target := "drift." + opts.Circuit
-	remote := []string{"devpod", "ssh", opts.Kart}
-	// --set-env flags go on the remote devpod ssh invocation so the env
-	// lives inside the ssh channel and dies with the session. Literal
-	// values appear on the remote argv briefly; on the client they only
-	// traverse the encrypted ssh transport.
-	for _, kv := range sessionEnv {
-		remote = append(remote, "--set-env", kv)
-	}
+	// `remote` is whatever fetchConnectArgv produced — either the
+	// server-resolved stanza (kart.connect, includes DEVPOD_HOME prefix
+	// + --set-env pairs) or the legacy hand-built one. Either way we
+	// only have to splice it into the transport argv here.
 	if useMosh {
 		argv := append([]string{target, "--"}, remote...)
 		return "mosh", argv
