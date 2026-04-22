@@ -42,6 +42,7 @@ type KartNewParams struct {
 	Dotfiles     string              `json:"dotfiles,omitempty"`
 	Character    string              `json:"character,omitempty"`
 	Autostart    bool                `json:"autostart,omitempty"`
+	Mounts       []model.Mount       `json:"mounts,omitempty"`
 	MigratedFrom *model.MigratedFrom `json:"migrated_from,omitempty"`
 }
 
@@ -118,6 +119,7 @@ func (kd KartNewDeps) kartNewHandler(ctx context.Context, params json.RawMessage
 		Dotfiles:     p.Dotfiles,
 		Character:    p.Character,
 		Autostart:    p.Autostart,
+		Mounts:       p.Mounts,
 	}
 	if p.MigratedFrom != nil {
 		f.MigratedFrom = *p.MigratedFrom

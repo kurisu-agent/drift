@@ -133,6 +133,104 @@ func TestTuneDevcontainer(t *testing.T) {
 	}
 }
 
+// TestTuneMountDirs: a tune with `mount_dirs` produces an
+// --extra-devcontainer-path overlay whose JSON carries a `mounts` array
+// with the full devcontainer spec. Covers the "no base devcontainer" case
+// where drift synthesizes a standalone overlay.
+func TestTuneMountDirs(t *testing.T) {
+	ctx := integration.TestCtx(t, 5*time.Minute)
+
+	c, rec := integration.StartReadyCircuit(ctx, t, true)
+
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]any{
+		"name": "mnttune",
+		"mount_dirs": []map[string]any{
+			{"type": "bind", "source": "${localEnv:HOME}/.claude", "target": "/home/dev/.claude"},
+		},
+	}); err != nil {
+		t.Fatalf("tune.set: %v", err)
+	}
+
+	kart := c.KartName("mnt")
+	if _, stderr, code := c.Drift(ctx, "new", kart, "--tune", "mnttune"); code != 0 {
+		t.Fatalf("drift new: code=%d stderr=%q", code, stderr)
+	}
+
+	up := rec.FindUp(ctx)
+	if up == nil {
+		t.Fatalf("no devpod up invocation recorded")
+	}
+	if got := integration.ArgvValue(up.Argv, "--extra-devcontainer-path"); got == "" {
+		t.Fatalf("--extra-devcontainer-path not passed; argv=%v", up.Argv)
+	}
+
+	body := c.ReadArtifact(ctx, up, "extra-devcontainer.json")
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("overlay not JSON: %v\n%s", err, body)
+	}
+	mounts, _ := got["mounts"].([]any)
+	if len(mounts) != 1 {
+		t.Fatalf("expected 1 mount in overlay, got %d: %s", len(mounts), body)
+	}
+	m, _ := mounts[0].(map[string]any)
+	if m["target"] != "/home/dev/.claude" || m["type"] != "bind" {
+		t.Fatalf("unexpected mount: %v", m)
+	}
+	if src, _ := m["source"].(string); !strings.Contains(src, "${localEnv:HOME}") {
+		t.Fatalf("source lost localEnv substitution marker: %q", src)
+	}
+}
+
+// TestMountFlagAppendsToTune: `--mount` on `drift new` appends to the
+// tune's mount_dirs; flag-wins on target collisions via the resolver's
+// last-write dedup.
+func TestMountFlagAppendsToTune(t *testing.T) {
+	ctx := integration.TestCtx(t, 5*time.Minute)
+
+	c, rec := integration.StartReadyCircuit(ctx, t, true)
+
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]any{
+		"name": "flagmnttune",
+		"mount_dirs": []map[string]any{
+			{"type": "bind", "source": "/circuit/tune", "target": "/tune-only"},
+		},
+	}); err != nil {
+		t.Fatalf("tune.set: %v", err)
+	}
+
+	kart := c.KartName("mntflag")
+	if _, stderr, code := c.Drift(ctx, "new", kart,
+		"--tune", "flagmnttune",
+		"--mount", "type=bind,source=/circuit/flag,target=/flag-only",
+	); code != 0 {
+		t.Fatalf("drift new: code=%d stderr=%q", code, stderr)
+	}
+
+	up := rec.FindUp(ctx)
+	if up == nil {
+		t.Fatalf("no devpod up invocation recorded")
+	}
+	body := c.ReadArtifact(ctx, up, "extra-devcontainer.json")
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("overlay not JSON: %v\n%s", err, body)
+	}
+	mounts, _ := got["mounts"].([]any)
+	if len(mounts) != 2 {
+		t.Fatalf("expected 2 mounts in overlay, got %d: %s", len(mounts), body)
+	}
+	targets := make([]string, len(mounts))
+	for i, raw := range mounts {
+		m := raw.(map[string]any)
+		targets[i] = m["target"].(string)
+	}
+	// Tune's mount first, flag's appended after.
+	if targets[0] != "/tune-only" || targets[1] != "/flag-only" {
+		t.Fatalf("unexpected target order: %v", targets)
+	}
+}
+
 // TestTuneDotfilesRepo: the tune's dotfiles_repo lands as `--dotfiles` on
 // devpod up (layer-2 dotfiles — layer-1 is handled separately via
 // install-dotfiles after up).

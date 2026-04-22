@@ -314,3 +314,85 @@ func TestResolverNilVerboseStaysQuiet(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestResolveMountsMerge confirms tune + flag mounts get concatenated in
+// that order, and that a flag mount with a target already in the tune wins
+// via last-write dedup.
+func TestResolveMountsMerge(t *testing.T) {
+	tune := &Tune{
+		MountDirs: []model.Mount{
+			{Type: "bind", Source: "/tune/src", Target: "/collide"},
+			{Type: "bind", Source: "/tune/alone", Target: "/tune-only"},
+		},
+	}
+	r := &Resolver{LoadTune: func(string) (*Tune, error) { return tune, nil }}
+	got, err := r.Resolve(Flags{
+		Name: "k",
+		Tune: "t",
+		Mounts: []model.Mount{
+			{Type: "bind", Source: "/flag/src", Target: "/collide"},
+			{Type: "bind", Source: "/flag/alone", Target: "/flag-only"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Mounts) != 3 {
+		t.Fatalf("expected 3 mounts, got %d: %+v", len(got.Mounts), got.Mounts)
+	}
+	// Order: tune's /collide kept in slot 0 but replaced in-place by
+	// flag's (same target); tune-only at slot 1; flag-only appended.
+	if got.Mounts[0].Source != "/flag/src" {
+		t.Fatalf("flag mount should override tune on target match, got %q", got.Mounts[0].Source)
+	}
+	if got.Mounts[1].Target != "/tune-only" {
+		t.Fatalf("tune-only mount out of place: %+v", got.Mounts[1])
+	}
+	if got.Mounts[2].Target != "/flag-only" {
+		t.Fatalf("flag-only mount out of place: %+v", got.Mounts[2])
+	}
+}
+
+// TestResolveMountsTildeRewrite confirms a leading `~/` in a bind source
+// is rewritten to ${localEnv:HOME}/ so devpod resolves against the
+// circuit's env rather than being baked via lakitu's runtime home.
+func TestResolveMountsTildeRewrite(t *testing.T) {
+	r := &Resolver{}
+	got, err := r.Resolve(Flags{
+		Name: "k",
+		Mounts: []model.Mount{
+			{Type: "bind", Source: "~/.claude", Target: "/home/dev/.claude"},
+			{Type: "bind", Source: "~", Target: "/home/dev/home"},
+			{Type: "bind", Source: "/etc/passwd", Target: "/etc/passwd"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Mounts[0].Source != "${localEnv:HOME}/.claude" {
+		t.Fatalf("`~/.claude` not rewritten: %q", got.Mounts[0].Source)
+	}
+	if got.Mounts[1].Source != "${localEnv:HOME}" {
+		t.Fatalf("bare `~` not rewritten: %q", got.Mounts[1].Source)
+	}
+	if got.Mounts[2].Source != "/etc/passwd" {
+		t.Fatalf("absolute path mutated: %q", got.Mounts[2].Source)
+	}
+}
+
+// TestResolveMountsRequiresTarget — a mount without a target is a docker
+// hard error downstream; reject it at resolve time so the user sees a
+// clean InvalidFlag rather than a devpod stacktrace.
+func TestResolveMountsRequiresTarget(t *testing.T) {
+	r := &Resolver{}
+	_, err := r.Resolve(Flags{
+		Name: "k",
+		Mounts: []model.Mount{
+			{Type: "bind", Source: "/opt"},
+		},
+	})
+	var re *rpcerr.Error
+	if !errors.As(err, &re) || re.Type != rpcerr.TypeInvalidFlag {
+		t.Fatalf("expected invalid_flag, got %v", err)
+	}
+}

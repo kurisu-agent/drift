@@ -11,6 +11,22 @@ type Tune struct {
 	DotfilesRepo string  `yaml:"dotfiles_repo,omitempty" json:"dotfiles_repo,omitempty"`
 	Features     string  `yaml:"features,omitempty" json:"features,omitempty"`
 	Env          TuneEnv `yaml:"env,omitempty" json:"env,omitempty"`
+	// MountDirs becomes a `mounts` overlay on the devcontainer.json
+	// delivered via --extra-devcontainer-path. devpod's merge unions
+	// these with the project's mounts, deduped by target, so the
+	// project repo never needs to be edited to add host binds.
+	MountDirs []Mount `yaml:"mount_dirs,omitempty" json:"mount_dirs,omitempty"`
+}
+
+// Mount mirrors the devcontainer.json mount shape (and the skevetter/devpod
+// fork's pkg/devcontainer/config.Mount). Kept in model/ so server, kart, and
+// CLI packages can share one definition without dep cycles.
+type Mount struct {
+	Type     string   `yaml:"type,omitempty" json:"type,omitempty"`
+	Source   string   `yaml:"source,omitempty" json:"source,omitempty"`
+	Target   string   `yaml:"target,omitempty" json:"target,omitempty"`
+	External bool     `yaml:"external,omitempty" json:"external,omitempty"`
+	Other    []string `yaml:"other,omitempty" json:"other,omitempty"`
 }
 
 // TuneEnv groups chest-backed env vars by the injection site that
@@ -92,6 +108,7 @@ type KartConfig struct {
 	CreatedAt    string        `yaml:"created_at,omitempty" json:"created_at,omitempty"`
 	Autostart    bool          `yaml:"autostart,omitempty" json:"autostart,omitempty"`
 	Env          TuneEnv       `yaml:"env,omitempty" json:"env,omitempty"`
+	MountDirs    []Mount       `yaml:"mount_dirs,omitempty" json:"mount_dirs,omitempty"`
 	MigratedFrom *MigratedFrom `yaml:"migrated_from,omitempty" json:"migrated_from,omitempty"`
 }
 
