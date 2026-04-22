@@ -2,6 +2,7 @@ package drift
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -199,11 +200,20 @@ func downloadAndReplace(ctx context.Context, url, dst string, progress io.Writer
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download %s: %s", url, resp.Status)
 	}
+	// Buffer the whole download before extracting. Wrapping the raw
+	// response in gzip/tar readers directly would cause progressReader
+	// to keep ticking during extraction — those ticks race the
+	// "→ extracting" and "→ writing" lines and render as a second
+	// progress line glued onto them.
 	body := io.Reader(resp.Body)
 	if progress != nil {
 		body = newProgressReader(resp.Body, resp.ContentLength, progress)
 	}
-	gz, err := gzip.NewReader(body)
+	buf, err := io.ReadAll(body)
+	if err != nil {
+		return fmt.Errorf("download: %w", err)
+	}
+	gz, err := gzip.NewReader(bytes.NewReader(buf))
 	if err != nil {
 		return fmt.Errorf("gzip: %w", err)
 	}
