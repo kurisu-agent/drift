@@ -56,6 +56,22 @@ nix profile install github:kurisu-agent/drift            # client
 nix profile install github:kurisu-agent/drift#circuit    # server bundle (includes mosh)
 ```
 
+On NixOS circuits, import the module instead of wiring lakitu into your host config by hand:
+
+```nix
+# flake.nix
+{
+  inputs.drift.url = "github:kurisu-agent/drift";
+  outputs = { self, nixpkgs, drift, ... }: {
+    nixosConfigurations.<your-host> = nixpkgs.lib.nixosSystem {
+      modules = [ drift.nixosModules.lakitu ./configuration.nix ];
+    };
+  };
+}
+```
+
+That one import installs lakitu + devpod + mosh, registers the `lakitu-kart@` user-service template for `drift enable`, and sets `DEVPOD_HOME` via `pam_env` so `drift connect`'s sshd-spawned `devpod ssh` can reach the workspace. No usernames in config — `DEVPOD_HOME` uses pam_env's `@{HOME}` placeholder. Package pins are overridable through `services.lakitu.{package,devpodPackage,moshPackage}` for dev-VM live-tree builds or air-gapped mirrors.
+
 ## Quickstart
 
 ```bash
