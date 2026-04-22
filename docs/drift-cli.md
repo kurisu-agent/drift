@@ -76,14 +76,20 @@ Commands:
   disable <name> [flags]
     Disable kart autostart (idempotent).
 
-  connect (into,attach) <name> [flags]
+  connect (into,attach) [<name>] [flags]
     Connect to a kart via mosh (ssh fallback); auto-starts if stopped.
 
   runs [flags]
     List server-side shorthand commands (see drift run).
 
-  run <name> [<args> ...] [flags]
-    Execute a server-side shorthand (e.g. drift run ai).
+  run [<name> [<args> ...]] [flags]
+    Execute a server-side shorthand (e.g. drift run ping).
+
+  ai [flags]
+    Launch Claude Code on the circuit (interactive REPL).
+
+  skill [<name> [<prompt> ...]] [flags]
+    List / invoke a Claude skill on the circuit.
 
   migrate [flags]
     Adopt an existing devpod workspace as a drift kart (interactive).
@@ -107,6 +113,7 @@ to ssh and invokes lakitu on a circuit via JSON-RPC 2.0. Server state lives
 on the circuit under ~/.drift/garage/.
 
 COMMANDS (run `drift <cmd> --help` for flags)
+  ai — Launch Claude Code on the circuit (interactive REPL).
   circuit add — Register a circuit (probes for name, updates client config + SSH config).
   circuit list — List configured circuits.
   circuit rm — Unregister a circuit.
@@ -124,8 +131,9 @@ COMMANDS (run `drift <cmd> --help` for flags)
   migrate — Adopt an existing devpod workspace as a drift kart (interactive).
   new — Create a new kart (from starter or existing repo).
   restart — Restart a kart.
-  run — Execute a server-side shorthand (e.g. drift run ai).
+  run — Execute a server-side shorthand (e.g. drift run ping).
   runs — List server-side shorthand commands (see drift run).
+  skill — List / invoke a Claude skill on the circuit.
   start — Start a kart (idempotent).
   status — Show configured circuits + their lakitu health and kart counts.
   stop — Stop a kart (idempotent).
@@ -142,6 +150,7 @@ RPC METHODS
   chest.set
   config.set
   config.show
+  kart.connect
   kart.delete
   kart.disable
   kart.enable
@@ -160,6 +169,8 @@ RPC METHODS
   server.init
   server.verify
   server.version
+  skill.list
+  skill.resolve
   tune.list
   tune.remove
   tune.set
@@ -171,6 +182,30 @@ EXIT CODES
 ```
 
 ## Subcommands
+
+### `drift ai --help`
+
+```text
+Usage: drift ai [flags]
+
+Launch Claude Code on the circuit (interactive REPL).
+
+Flags:
+  -h, --help              Show context-sensitive help.
+      --[no-]debug        Verbose output (default on; --no-debug to silence)
+                          ($DRIFT_DEBUG).
+      --no-color          Disable ANSI colors in text output ($NO_COLOR).
+  -c, --circuit=STRING    Target circuit (overrides default).
+  -o, --output="text"     Output format for structured commands.
+  -v, --version           Print drift version and exit.
+
+      --ssh               Force plain SSH (skip mosh).
+      --forward-agent     Enable SSH agent forwarding (-A).
+
+
+tcgetattr: Inappropriate ioctl for device
+exit status 1
+```
 
 ### `drift circuit add --help`
 
@@ -258,11 +293,9 @@ Flags:
   -c, --circuit=STRING    Target circuit (overrides default).
   -o, --output="text"     Output format for structured commands.
   -v, --version           Print drift version and exit.
-circuits:
-     NAME   HOST                
-[1]  alpha  circuit@10.233.1.2  (current default)
-pick (number, empty to cancel): aborted
-exit status 1
+error: circuit set default: name arg required on non-interactive stdin
+  type: invalid_flag
+exit status 2
 ```
 
 ### `drift circuit set name --help`
@@ -290,12 +323,12 @@ exit status 2
 ### `drift connect --help`
 
 ```text
-Usage: drift connect (into,attach) <name> [flags]
+Usage: drift connect (into,attach) [<name>] [flags]
 
 Connect to a kart via mosh (ssh fallback); auto-starts if stopped.
 
 Arguments:
-  <name>    Kart name.
+  [<name>]    Kart name; omit on a TTY to pick from a list.
 
 Flags:
   -h, --help              Show context-sensitive help.
@@ -308,8 +341,8 @@ Flags:
 
       --ssh               Force plain SSH (skip mosh).
       --forward-agent     Enable SSH agent forwarding (-A).
-drift: expected "<name>"
-exit status 2
+error: drift connect requires a kart name (non-interactive)
+exit status 1
 ```
 
 ### `drift delete --help`
@@ -419,7 +452,11 @@ KARTS
 
 RUNS
   runs                              List server-side shorthand commands
-  run <name> [args...]              Execute a shorthand (e.g. run ai, run scaffolder)
+  run <name> [args...]              Execute a shorthand (e.g. run ping)
+
+AI
+  ai                                Launch Claude Code on the circuit
+  skill [<name> [prompt]]           List or invoke a Claude skill on the circuit
 
 Run `drift <cmd> --help` for flags · `drift help --full` for the full catalog
 ```
@@ -465,12 +502,8 @@ Flags:
       --skip-circuits      Skip the circuit phase (assume already configured).
       --skip-characters    Skip the character phase.
       --no-probe           Skip the server.version probe (offline setup).
-
-== Circuits ==
-already configured:
-  - alpha → circuit@10.233.1.2 (default)
-Add a circuit? [y/N]: error: EOF
-exit status 1
+error: drift init requires a TTY on stdin (scripted equivalents: drift circuit add, drift character add, drift chest set)
+exit status 2
 ```
 
 ### `drift list --help`
@@ -488,10 +521,9 @@ Flags:
   -c, --circuit=STRING    Target circuit (overrides default).
   -o, --output="text"     Output format for structured commands.
   -v, --version           Print drift version and exit.
-→ devpod list --output json
-→ devpod status test2 --output json
-NAME   STATUS   SOURCE                                             TUNE  AUTOSTART
-test2  stopped  clone https://github.com/kurisu-agent/tzone-buddy  -     
+→ /home/circuit/.drift/bin/devpod list --output json
+NAME   STATUS         SOURCE                                             TUNE  AUTOSTART
+test2  error (stale)  clone https://github.com/kurisu-agent/tzone-buddy  -     
 ```
 
 ### `drift logs --help`
@@ -573,6 +605,8 @@ Flags:
                                dotfiles_repo).
       --character=STRING       Git/GitHub identity to inject.
       --autostart              Enable auto-start on server reboot.
+      --[no-]connect           Connect to the kart after a successful create
+                               (disable with --no-connect).
 drift: expected "<name>"
 exit status 2
 ```
@@ -602,12 +636,12 @@ exit status 2
 ### `drift run --help`
 
 ```text
-Usage: drift run <name> [<args> ...] [flags]
+Usage: drift run [<name> [<args> ...]] [flags]
 
-Execute a server-side shorthand (e.g. drift run ai).
+Execute a server-side shorthand (e.g. drift run ping).
 
 Arguments:
-  <name>          Shorthand name (see drift runs).
+  [<name>]        Shorthand name (see drift runs); omit to list.
   [<args> ...]    Positional args forwarded to the remote command.
 
 Flags:
@@ -621,8 +655,8 @@ Flags:
 
       --ssh               Force plain SSH (skip mosh) for interactive entries.
       --forward-agent     Enable SSH agent forwarding (-A).
-drift: expected "<name>"
-exit status 2
+no runs configured on this circuit
+  edit ~/.drift/runs.yaml on the circuit to add entries
 ```
 
 ### `drift runs --help`
@@ -640,9 +674,39 @@ Flags:
   -c, --circuit=STRING    Target circuit (overrides default).
   -o, --output="text"     Output format for structured commands.
   -v, --version           Print drift version and exit.
-error: method "run.list" not implemented
+no runs configured on this circuit
+  edit ~/.drift/runs.yaml on the circuit to add entries
+```
+
+### `drift skill --help`
+
+```text
+Usage: drift skill [<name> [<prompt> ...]] [flags]
+
+List / invoke a Claude skill on the circuit.
+
+Arguments:
+  [<name>]          Skill name (see drift skill); omit to list.
+  [<prompt> ...]    Initial prompt forwarded to the skill.
+
+Flags:
+  -h, --help              Show context-sensitive help.
+      --[no-]debug        Verbose output (default on; --no-debug to silence)
+                          ($DRIFT_DEBUG).
+      --no-color          Disable ANSI colors in text output ($NO_COLOR).
+  -c, --circuit=STRING    Target circuit (overrides default).
+  -o, --output="text"     Output format for structured commands.
+  -v, --version           Print drift version and exit.
+
+      --ssh               Force plain SSH (skip mosh).
+      --forward-agent     Enable SSH agent forwarding (-A).
+error: circuit's lakitu is too old (version=dev api=1, missing skill.list); this drift is devel api=1. update lakitu on the circuit and retry
   type: method_not_found
-  method: run.list
+  client_api: 1
+  client_version: devel
+  method: skill.list
+  server_api: 1
+  server_version: dev
 exit status 2
 ```
 
@@ -686,13 +750,12 @@ Flags:
 
       --no-probe          Skip the server.version + kart.list round-trips (show
                           client state only).
-→ devpod list --output json
-→ devpod status test2 --output json
+→ /home/circuit/.drift/bin/devpod list --output json
 drift devel
 default: alpha
 
    CIRCUIT  HOST                LAKITU  API  LATENCY  KARTS
-→  alpha    circuit@10.233.1.2  dev     1    15ms     0/1
+→  alpha    circuit@10.233.1.2  dev     1    11ms     0/1
 ```
 
 ### `drift stop --help`
@@ -736,7 +799,7 @@ Flags:
       --check             Check for an update without downloading.
 → checking latest release
 current: devel
-latest:  0.4.1
+latest:  0.5.2
 error: refusing to self-update a development build; rebuild from source or install a tagged release
 exit status 1
 ```

@@ -43,7 +43,10 @@ type CLI struct {
 	Connect connectCmd `cmd:"" aliases:"into,attach" help:"Connect to a kart via mosh (ssh fallback); auto-starts if stopped."`
 
 	Runs runsCmd `cmd:"" name:"runs" help:"List server-side shorthand commands (see drift run)."`
-	Run  runCmd  `cmd:"" name:"run" help:"Execute a server-side shorthand (e.g. drift run ai)."`
+	Run  runCmd  `cmd:"" name:"run" help:"Execute a server-side shorthand (e.g. drift run ping)."`
+
+	AI    aiCmd    `cmd:"" name:"ai" help:"Launch Claude Code on the circuit (interactive REPL)."`
+	Skill skillCmd `cmd:"" name:"skill" help:"List / invoke a Claude skill on the circuit."`
 
 	Migrate migrateCmd `cmd:"" name:"migrate" help:"Adopt an existing devpod workspace as a drift kart (interactive)."`
 
@@ -167,6 +170,10 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runRunsList(ctx, io, &cli, cli.Runs, deps)
 	case "run", "run <name>", "run <name> <args>":
 		return runRunExec(ctx, io, &cli, cli.Run, deps)
+	case "ai":
+		return runAIExec(ctx, io, &cli, cli.AI, deps)
+	case "skill", "skill <name>", "skill <name> <prompt>":
+		return runSkillExec(ctx, io, &cli, cli.Skill, deps)
 	case "migrate":
 		return runMigrate(ctx, io, &cli, cli.Migrate, deps)
 	case "update":

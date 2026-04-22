@@ -26,21 +26,19 @@ func TestEnsureRunsYAML_seedsParsesToKnownEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("embedded runs.yaml failed to parse: %v", err)
 	}
-	// Spot-check built-ins the scaffolder feature depends on.
-	for _, name := range []string{"ai", "scaffolder", "ping", "uptime"} {
+	// Spot-check built-ins. `ai` and `scaffolder` have moved to the
+	// dedicated `drift ai` / `drift skill` commands, so the embedded
+	// seed only carries the generic utilities now.
+	for _, name := range []string{"ping", "uptime", "speedtest"} {
 		if _, ok := reg.Get(name); !ok {
 			t.Errorf("built-in %q missing from embedded runs.yaml", name)
 		}
 	}
-	scaf, _ := reg.Get("scaffolder")
-	if scaf.Post != run.PostConnectLastScaffold {
-		t.Errorf("scaffolder.post = %q, want connect-last-scaffold", scaf.Post)
+	if _, ok := reg.Get("ai"); ok {
+		t.Errorf("built-in `ai` should have been removed (use drift ai instead)")
 	}
-	// The scaffolder gained a multi-line `prompt` arg that the client
-	// forwards to claude as the initial user message. Lock that shape in
-	// so a refactor of the embedded yaml doesn't silently regress it.
-	if len(scaf.Args) != 1 || scaf.Args[0].Name != "prompt" || scaf.Args[0].Type != run.ArgTypeText {
-		t.Errorf("scaffolder.args = %+v, want one text prompt", scaf.Args)
+	if _, ok := reg.Get("scaffolder"); ok {
+		t.Errorf("built-in `scaffolder` should have been removed (use drift skill scaffolder)")
 	}
 	ping, _ := reg.Get("ping")
 	if len(ping.Args) != 1 || ping.Args[0].Default != "1.1.1.1" {
@@ -64,19 +62,5 @@ func TestEnsureRunsYAML_preservesUserEdits(t *testing.T) {
 	got, _ := os.ReadFile(path)
 	if string(got) != "runs: {}\n" {
 		t.Errorf("user file was overwritten: %q", got)
-	}
-}
-
-func TestEnsureScaffolderRecipe_seedsInRecipesDir(t *testing.T) {
-	home := t.TempDir()
-	created, err := config.EnsureScaffolderRecipe(home)
-	if err != nil {
-		t.Fatalf("EnsureScaffolderRecipe: %v", err)
-	}
-	if !created {
-		t.Fatal("expected seed on fresh dir")
-	}
-	if _, err := os.Stat(filepath.Join(home, "recipes", "scaffolder.md")); err != nil {
-		t.Errorf("recipes/scaffolder.md not created: %v", err)
 	}
 }

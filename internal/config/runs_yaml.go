@@ -10,9 +10,6 @@ import (
 //go:embed runs.yaml
 var embeddedRunsYAML []byte
 
-//go:embed CLAUDE-scaffolder.md
-var embeddedScaffolderRecipe []byte
-
 // RunsYAMLPath is the canonical server-side path for the run registry.
 func RunsYAMLPath() (string, error) {
 	home, err := DriftHomeDir()
@@ -31,18 +28,6 @@ func EnsureRunsYAML(driftHome string) (bool, error) {
 		filepath.Join(driftHome, "runs.yaml"),
 		driftHome,
 		embeddedRunsYAML,
-	)
-}
-
-// EnsureScaffolderRecipe seeds the system-prompt file the scaffolder run
-// entry appends to claude. Lives under $DRIFT_HOME/recipes/ so future
-// recipes (different run entries) slot in next to it.
-func EnsureScaffolderRecipe(driftHome string) (bool, error) {
-	recipesDir := filepath.Join(driftHome, "recipes")
-	return ensureEmbedded(
-		filepath.Join(recipesDir, "scaffolder.md"),
-		recipesDir,
-		embeddedScaffolderRecipe,
 	)
 }
 

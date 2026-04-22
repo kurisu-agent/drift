@@ -180,12 +180,12 @@ func runPostHook(ctx context.Context, io IO, root *CLI, deps deps, circuit strin
 func connectLastScaffold(ctx context.Context, io IO, root *CLI, deps deps, circuit string) error {
 	name, err := readLastScaffold(ctx, circuit)
 	if err != nil {
-		return fmt.Errorf("drift run scaffolder: read handoff sentinel: %w", err)
+		return fmt.Errorf("connect-last-scaffold: read handoff sentinel: %w", err)
 	}
 	if name == "" {
 		p := style.For(io.Stderr, root.Output == "json")
 		if p.Enabled {
-			fmt.Fprintln(io.Stderr, p.Dim("scaffolder exited without writing ~/.drift/last-scaffold — skipping connect"))
+			fmt.Fprintln(io.Stderr, p.Dim("session exited without writing ~/.drift/last-scaffold — skipping connect"))
 		}
 		return nil
 	}
@@ -195,7 +195,7 @@ func connectLastScaffold(ctx context.Context, io IO, root *CLI, deps deps, circu
 	}
 	rc := runConnect(ctx, io, root, connectCmd{Name: name}, deps)
 	if rc != 0 {
-		return fmt.Errorf("drift run scaffolder: auto-connect to %q failed (exit %d)", name, rc)
+		return fmt.Errorf("connect-last-scaffold: auto-connect to %q failed (exit %d)", name, rc)
 	}
 	return nil
 }

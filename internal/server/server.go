@@ -21,6 +21,10 @@ type Deps struct {
 	// run-registry handlers read a fixture runs.yaml instead of the real
 	// user home. Empty falls back to config.DriftHomeDir().
 	DriftHome string
+	// SkillsDir overrides the $HOME/.claude/skills path the skill.* RPCs
+	// walk. Tests set this to a fixture tree. Empty falls back to the
+	// real user home.
+	SkillsDir string
 	// Devpod is the wired devpod.Client — used by VerifyHandler so the
 	// pinned binary lakitu set up is probed rather than whatever $PATH
 	// happens to turn up. nil falls back to a default-configured client
@@ -59,6 +63,9 @@ func RegisterServer(reg *rpc.Registry, d *Deps) {
 
 	reg.Register(wire.MethodRunList, d.RunListHandler)
 	reg.Register(wire.MethodRunResolve, d.RunResolveHandler)
+
+	reg.Register(wire.MethodSkillList, d.SkillListHandler)
+	reg.Register(wire.MethodSkillResolve, d.SkillResolveHandler)
 }
 
 func (d *Deps) driftHome() (string, error) {

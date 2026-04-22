@@ -84,6 +84,7 @@ The canonical list lives in `internal/wire/methods.go`. Every method constant th
   chest.set
   config.set
   config.show
+  kart.connect
   kart.delete
   kart.disable
   kart.enable
@@ -102,6 +103,8 @@ The canonical list lives in `internal/wire/methods.go`. Every method constant th
   server.init
   server.verify
   server.version
+  skill.list
+  skill.resolve
   tune.list
   tune.remove
   tune.set
@@ -128,6 +131,7 @@ Clients should branch on `data.type` rather than `code` — the type is a stable
   invalid_flag                 TypeInvalidFlag
   mutually_exclusive_flags     TypeMutuallyExclusive
   kart_not_found               TypeKartNotFound
+  circuit_not_found            TypeCircuitNotFound
   character_not_found          TypeCharacterNotFound
   chest_entry_not_found        TypeChestEntryNotFound
   name_collision               TypeNameCollision
