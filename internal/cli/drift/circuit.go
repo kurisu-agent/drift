@@ -20,7 +20,7 @@ import (
 type circuitCmd struct {
 	Add  circuitAddCmd  `cmd:"" help:"Register a circuit (probes for name, updates client config + SSH config)."`
 	Rm   circuitRmCmd   `cmd:"" help:"Unregister a circuit."`
-	List circuitListCmd `cmd:"" help:"List configured circuits."`
+	List circuitListCmd `cmd:"" default:"withargs" help:"List configured circuits (default when no subcommand is given)."`
 	Set  circuitSetCmd  `cmd:"" help:"Set a config field on the target circuit (e.g. name)."`
 }
 
@@ -37,7 +37,12 @@ type circuitRmCmd struct {
 	Name string `arg:"" help:"Circuit name to remove."`
 }
 
-type circuitListCmd struct{}
+// circuitListCmd: `drift circuit list`. The `-l`/`--list` alias lets
+// users who learned the flag from `drift connect -l` type
+// `drift circuit -l` and get the same output — both forms route here.
+type circuitListCmd struct {
+	List bool `name:"list" short:"l" hidden:"" help:"Accepted for consistency with connect -l."`
+}
 
 // circuitSetCmd namespaces `drift circuit set <key> <value>` so we can
 // extend to more mutable fields later without growing new subcommands.

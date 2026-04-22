@@ -28,7 +28,7 @@ var menuEntries = []menuEntry{
 	{key: "circuit › set default   — make a circuit the default", needs: "circuit name", prefix: []string{"circuit", "set", "default"}},
 	{key: "circuit › set name      — rename the active circuit", needs: "new circuit name", prefix: []string{"circuit", "set", "name"}},
 
-	{key: "kart › list", argv: []string{"list"}},
+	{key: "kart › list      — list karts on the target circuit", argv: []string{"connect", "-l"}},
 	{key: "kart › new       — create a new kart", needs: "kart name", prefix: []string{"new"}},
 	{key: "kart › info      — show a kart's state", needs: "kart name", prefix: []string{"info"}},
 	{key: "kart › start", needs: "kart name", prefix: []string{"start"}},
@@ -39,8 +39,6 @@ var menuEntries = []menuEntry{
 	{key: "kart › disable", needs: "kart name", prefix: []string{"disable"}},
 	{key: "kart › logs", needs: "kart name", prefix: []string{"logs"}},
 	{key: "kart › connect   — mosh/ssh into a kart", argv: []string{"connect"}},
-
-	{key: "run › list       — server-side shorthand commands", argv: []string{"runs"}},
 
 	{key: "ai              — launch claude on the circuit", argv: []string{"ai"}},
 	{key: "skill           — list + invoke a Claude skill on the circuit", argv: []string{"skill"}},

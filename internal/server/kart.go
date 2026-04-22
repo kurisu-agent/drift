@@ -64,6 +64,7 @@ type KartInfo struct {
 	Name      string         `json:"name"`
 	Status    devpod.Status  `json:"status"`
 	CreatedAt string         `json:"created_at,omitempty"`
+	LastUsed  string         `json:"last_used,omitempty"`
 	Source    KartSource     `json:"source"`
 	Tune      string         `json:"tune,omitempty"`
 	Character string         `json:"character"`
@@ -225,6 +226,7 @@ func (d KartDeps) buildInfo(
 		if info.CreatedAt == "" && ws.Created != "" {
 			info.CreatedAt = ws.Created
 		}
+		info.LastUsed = ws.LastUsed
 		info.Status = d.statusFor(ctx, name)
 		if info.Status == devpod.StatusRunning {
 			info.Container = containerFromConfig(cfg)

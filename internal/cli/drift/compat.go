@@ -13,7 +13,7 @@ import (
 // follows up with a cheap server.version probe so the surfaced error
 // mentions the circuit's actual lakitu version and this drift's version
 // — concrete info the user can act on ("update lakitu from 0.4.1 to
-// ≥0.5.0") rather than the raw "method 'run.resolve' not implemented".
+// ≥0.5.0") rather than the raw "method 'kart.foo' not implemented".
 //
 // The extra probe only fires on the failure path — successful RPCs pay
 // no overhead. We deliberately do NOT pre-flight every call with a

@@ -2,85 +2,101 @@ package drift
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	osexec "os/exec"
+	"sort"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/cli/progress"
 	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/connect"
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
-	"github.com/kurisu-agent/drift/internal/wire"
+	"golang.org/x/sync/errgroup"
 )
 
 type connectCmd struct {
+	List         bool   `name:"list" short:"l" help:"List karts across all circuits instead of connecting."`
 	Name         string `arg:"" optional:"" help:"Kart name; omit on a TTY to pick from a list."`
 	SSH          bool   `name:"ssh" help:"Force plain SSH (skip mosh)."`
 	ForwardAgent bool   `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
 }
 
-func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps) int {
-	_, circuit, err := resolveCircuit(root, deps)
-	if err != nil {
-		return errfmt.Emit(io.Stderr, err)
-	}
-	name := cmd.Name
-	if name == "" {
-		// No name + interactive terminal + text output: let the user pick
-		// from kart.list. Scripted / JSON callers must pass a name
-		// explicitly — we error out rather than hang on a prompt they
-		// can't answer.
-		if !stdinIsTTY(io.Stdin) || !stdoutIsTTY(io.Stdout) || root.Output == "json" {
-			return errfmt.Emit(io.Stderr,
-				errors.New("drift connect requires a kart name (non-interactive)"))
-		}
-		picked, ok, pErr := pickConnectKart(ctx, io, deps, circuit)
-		if pErr != nil {
-			return errfmt.Emit(io.Stderr, pErr)
-		}
-		if !ok {
-			return 0
-		}
-		name = picked
-	}
-	return doConnect(ctx, io, root, deps, circuit, name, cmd.SSH, cmd.ForwardAgent)
+// circuitKart pairs a listEntry with the circuit it was fetched from, so
+// cross-circuit pickers can render and dispatch against both.
+type circuitKart struct {
+	Circuit string
+	Entry   listEntry
 }
 
-// pickConnectKart fetches kart.list and renders a huh.Select over the
-// result. Returns (name, true, nil) on selection, (_, false, nil) on
-// abort / empty list (the latter prints its own notice), err on fatal
-// RPC or picker failure.
-func pickConnectKart(ctx context.Context, io IO, deps deps, circuit string) (string, bool, error) {
-	var raw json.RawMessage
-	if err := deps.call(ctx, circuit, wire.MethodKartList, struct{}{}, &raw); err != nil {
-		return "", false, err
+func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps) int {
+	if cmd.List {
+		return runKartListForCircuit(ctx, io, root, deps)
 	}
-	var res listResult
-	if err := json.Unmarshal(raw, &res); err != nil {
-		return "", false, err
-	}
-	if len(res.Karts) == 0 {
-		fmt.Fprintln(io.Stderr, "no karts on this circuit")
-		return "", false, nil
-	}
-	opts := make([]huh.Option[string], 0, len(res.Karts))
-	for _, k := range res.Karts {
-		status := k.Status
-		if k.Stale {
-			status += " (stale)"
+
+	// With a name, operate against the target circuit directly (matches
+	// the flag-driven `-c <circuit>` override). Without a name, fan out
+	// across every configured circuit for the picker.
+	if cmd.Name != "" {
+		_, circuit, err := resolveCircuit(root, deps)
+		if err != nil {
+			return errfmt.Emit(io.Stderr, err)
 		}
-		src := k.Source.Mode
-		if k.Source.URL != "" {
-			// Redact embedded creds in case the kart was cloned from an
-			// https://<pat>@host URL — same reasoning as migrate.go.
-			src = k.Source.Mode + " " + driftexec.RedactSecrets(k.Source.URL)
-		}
-		label := fmt.Sprintf("%-24s  %-18s  %s", k.Name, "("+status+")", src)
-		opts = append(opts, huh.NewOption(label, k.Name))
+		return doConnect(ctx, io, root, deps, circuit, cmd.Name, cmd.SSH, cmd.ForwardAgent)
+	}
+
+	if !stdinIsTTY(io.Stdin) || !stdoutIsTTY(io.Stdout) || root.Output == "json" {
+		return errfmt.Emit(io.Stderr,
+			errors.New("drift connect requires a kart name (non-interactive)"))
+	}
+	pickedCircuit, pickedKart, ok, pErr := pickConnectKart(ctx, io, deps)
+	if pErr != nil {
+		return errfmt.Emit(io.Stderr, pErr)
+	}
+	if !ok {
+		return 0
+	}
+	return doConnect(ctx, io, root, deps, pickedCircuit, pickedKart, cmd.SSH, cmd.ForwardAgent)
+}
+
+// pickConnectKart fetches kart.list from every configured circuit in
+// parallel and renders a filterable huh.Select ordered by last-used
+// descending. Returns (circuit, kart, true, nil) on selection, (_, _,
+// false, nil) on abort / empty lists (the latter prints its own notice),
+// err on fatal failure.
+func pickConnectKart(ctx context.Context, io IO, deps deps) (string, string, bool, error) {
+	cfgPath, err := deps.clientConfigPath()
+	if err != nil {
+		return "", "", false, err
+	}
+	cfg, err := config.LoadClient(cfgPath)
+	if err != nil {
+		return "", "", false, err
+	}
+	if len(cfg.Circuits) == 0 {
+		fmt.Fprintln(io.Stderr, "no circuits configured (try `drift circuit add user@host`)")
+		return "", "", false, nil
+	}
+
+	karts, probeErrs := collectCircuitKarts(ctx, cfg, deps)
+	// Surface per-circuit probe failures on stderr so the picker can
+	// still launch on a partial set, but users see what's missing.
+	for circuit, perr := range probeErrs {
+		fmt.Fprintf(io.Stderr, "warning: %s: %v\n", circuit, perr)
+	}
+	if len(karts) == 0 {
+		fmt.Fprintln(io.Stderr, "no karts found on any configured circuit")
+		return "", "", false, nil
+	}
+
+	sortByLastUsedDesc(karts)
+	opts := make([]huh.Option[string], 0, len(karts))
+	for i, k := range karts {
+		opts = append(opts, huh.NewOption(formatCircuitKartOption(k, cfg.DefaultCircuit), fmt.Sprintf("%d", i)))
 	}
 	var pick string
 	sel := huh.NewSelect[string]().
@@ -92,11 +108,146 @@ func pickConnectKart(ctx context.Context, io IO, deps deps, circuit string) (str
 		Value(&pick)
 	if err := huh.NewForm(huh.NewGroup(sel)).Run(); err != nil {
 		if errors.Is(err, huh.ErrUserAborted) {
-			return "", false, nil
+			return "", "", false, nil
 		}
-		return "", false, err
+		return "", "", false, err
 	}
-	return pick, true, nil
+	var idx int
+	if _, err := fmt.Sscanf(pick, "%d", &idx); err != nil || idx < 0 || idx >= len(karts) {
+		return "", "", false, nil
+	}
+	return karts[idx].Circuit, karts[idx].Entry.Name, true, nil
+}
+
+// collectCircuitKarts fans out kart.list across every configured circuit
+// in parallel (same shape as status's probe fanout). Per-circuit errors
+// are returned in the second map rather than aborting — a single
+// unreachable circuit shouldn't break the picker.
+func collectCircuitKarts(ctx context.Context, cfg *config.Client, deps deps) ([]circuitKart, map[string]error) {
+	names := make([]string, 0, len(cfg.Circuits))
+	for n := range cfg.Circuits {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+
+	type result struct {
+		entries []listEntry
+		err     error
+	}
+	results := make([]result, len(names))
+	var g errgroup.Group
+	g.SetLimit(4)
+	for i, n := range names {
+		g.Go(func() error {
+			entries, _, err := fetchKartList(ctx, deps, n)
+			results[i] = result{entries: entries, err: err}
+			return nil
+		})
+	}
+	_ = g.Wait()
+
+	var all []circuitKart
+	errs := make(map[string]error)
+	for i, n := range names {
+		if results[i].err != nil {
+			errs[n] = results[i].err
+			continue
+		}
+		for _, e := range results[i].entries {
+			all = append(all, circuitKart{Circuit: n, Entry: e})
+		}
+	}
+	return all, errs
+}
+
+// sortByLastUsedDesc orders karts so the most recently-used one floats to
+// the top. Missing/unparseable timestamps sink to the bottom; ties break
+// alphabetically by circuit then kart name so the display is stable.
+func sortByLastUsedDesc(karts []circuitKart) {
+	parse := func(s string) (time.Time, bool) {
+		if s == "" {
+			return time.Time{}, false
+		}
+		for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+			if t, err := time.Parse(layout, s); err == nil {
+				return t, true
+			}
+		}
+		return time.Time{}, false
+	}
+	sort.SliceStable(karts, func(i, j int) bool {
+		ti, iOK := parse(karts[i].Entry.LastUsed)
+		tj, jOK := parse(karts[j].Entry.LastUsed)
+		if iOK && jOK {
+			if !ti.Equal(tj) {
+				return ti.After(tj)
+			}
+		} else if iOK != jOK {
+			return iOK
+		}
+		if karts[i].Circuit != karts[j].Circuit {
+			return karts[i].Circuit < karts[j].Circuit
+		}
+		return karts[i].Entry.Name < karts[j].Entry.Name
+	})
+}
+
+// formatCircuitKartOption builds one row of the cross-circuit picker.
+// Columns: circuit, kart name, status, last-used (humanized), source.
+// The default circuit gets a chevron prefix so the eye picks it out.
+func formatCircuitKartOption(k circuitKart, defaultCircuit string) string {
+	marker := "  "
+	if k.Circuit == defaultCircuit {
+		marker = "→ "
+	}
+	status := k.Entry.Status
+	if k.Entry.Stale {
+		status += " (stale)"
+	}
+	src := k.Entry.Source.Mode
+	if k.Entry.Source.URL != "" {
+		src = k.Entry.Source.Mode + " " + driftexec.RedactSecrets(k.Entry.Source.URL)
+	}
+	return fmt.Sprintf("%s%-14s  %-20s  %-18s  %-12s  %s",
+		marker,
+		k.Circuit,
+		k.Entry.Name,
+		"("+status+")",
+		humanizeLastUsed(k.Entry.LastUsed),
+		src,
+	)
+}
+
+// humanizeLastUsed renders a relative duration string ("2h ago", "3d ago",
+// "2026-01-05" for >30 days) from an RFC3339 timestamp. Empty input
+// becomes "never used" so picker rows line up visually.
+func humanizeLastUsed(ts string) string {
+	if ts == "" {
+		return "never used"
+	}
+	var t time.Time
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		if parsed, err := time.Parse(layout, ts); err == nil {
+			t = parsed
+			break
+		}
+	}
+	if t.IsZero() {
+		return ts
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	case d < 30*24*time.Hour:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	default:
+		return t.Format("2006-01-02")
+	}
 }
 
 // doConnect is the shared body behind `drift connect` and the post-create

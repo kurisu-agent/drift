@@ -4,13 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/cli/style"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
-
-type listCmd struct{}
 
 type infoCmd struct {
 	Name string `arg:"" help:"Kart name."`
@@ -19,11 +18,13 @@ type infoCmd struct {
 // listEntry renders only these fields; unknown fields pass through via
 // raw JSON on --output=json.
 type listEntry struct {
-	Name   string `json:"name"`
-	Status string `json:"status"`
-	Tune   string `json:"tune,omitempty"`
-	Stale  bool   `json:"stale,omitempty"`
-	Source struct {
+	Name      string `json:"name"`
+	Status    string `json:"status"`
+	Tune      string `json:"tune,omitempty"`
+	Stale     bool   `json:"stale,omitempty"`
+	CreatedAt string `json:"created_at,omitempty"`
+	LastUsed  string `json:"last_used,omitempty"`
+	Source    struct {
 		Mode string `json:"mode"`
 		URL  string `json:"url,omitempty"`
 	} `json:"source"`
@@ -34,31 +35,28 @@ type listResult struct {
 	Karts []listEntry `json:"karts"`
 }
 
-func runKartList(ctx context.Context, io IO, root *CLI, _ listCmd, deps deps) int {
-	_, circuit, err := resolveCircuit(root, deps)
-	if err != nil {
-		return errfmt.Emit(io.Stderr, err)
-	}
+// fetchKartList makes one kart.list RPC and returns both the typed
+// listEntry slice and the raw JSON. Callers that need to emit JSON
+// verbatim (preserving any fields this client doesn't know) keep the
+// raw form; text renderers use the typed slice.
+func fetchKartList(ctx context.Context, deps deps, circuit string) ([]listEntry, json.RawMessage, error) {
 	var raw json.RawMessage
 	if err := deps.call(ctx, circuit, wire.MethodKartList, struct{}{}, &raw); err != nil {
-		return errfmt.Emit(io.Stderr, err)
-	}
-	if root.Output == "json" {
-		fmt.Fprintln(io.Stdout, string(raw))
-		return 0
+		return nil, nil, err
 	}
 	var res listResult
 	if err := json.Unmarshal(raw, &res); err != nil {
-		return errfmt.Emit(io.Stderr, err)
+		return nil, raw, err
 	}
-	if len(res.Karts) == 0 {
-		fmt.Fprintln(io.Stdout, "no karts on this circuit")
-		return 0
-	}
-	p := style.For(io.Stdout, root.Output == "json")
-	rows := make([][]string, 0, len(res.Karts))
-	staleRows := make([]bool, 0, len(res.Karts))
-	for _, k := range res.Karts {
+	return res.Karts, raw, nil
+}
+
+// writeKartListTable renders a text-mode kart table. Shared between
+// `drift connect -l` and the per-circuit kart blocks in `drift status`.
+func writeKartListTable(w io.Writer, p *style.Palette, entries []listEntry) {
+	rows := make([][]string, 0, len(entries))
+	staleRows := make([]bool, 0, len(entries))
+	for _, k := range entries {
 		status := k.Status
 		if k.Stale {
 			status += " (stale)"
@@ -78,12 +76,12 @@ func runKartList(ctx context.Context, io IO, root *CLI, _ listCmd, deps deps) in
 		rows = append(rows, []string{k.Name, status, src, tune, autostart})
 		staleRows = append(staleRows, k.Stale)
 	}
-	writeTable(io.Stdout, p, []string{"NAME", "STATUS", "SOURCE", "TUNE", "AUTOSTART"}, rows,
+	writeTable(w, p, []string{"NAME", "STATUS", "SOURCE", "TUNE", "AUTOSTART"}, rows,
 		colorCellStyler(func(row, col int) tableCell {
 			switch col {
-			case 0: // NAME
+			case 0:
 				return tableCell{Color: tableCellAccent}
-			case 1: // STATUS
+			case 1:
 				if row >= 0 && row < len(staleRows) && staleRows[row] {
 					return tableCell{Color: tableCellWarn}
 				}
@@ -96,6 +94,30 @@ func runKartList(ctx context.Context, io IO, root *CLI, _ listCmd, deps deps) in
 			}
 			return tableCell{}
 		}))
+}
+
+// runKartListForCircuit renders the kart list for the target circuit.
+// Entry point for `drift connect -l` / `drift connect --list` and any
+// future list-style caller. JSON mode streams the raw kart.list payload
+// through verbatim so additive server fields survive.
+func runKartListForCircuit(ctx context.Context, io IO, root *CLI, deps deps) int {
+	_, circuit, err := resolveCircuit(root, deps)
+	if err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+	entries, raw, err := fetchKartList(ctx, deps, circuit)
+	if err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+	if root.Output == "json" {
+		fmt.Fprintln(io.Stdout, string(raw))
+		return 0
+	}
+	if len(entries) == 0 {
+		fmt.Fprintln(io.Stdout, "no karts on this circuit")
+		return 0
+	}
+	writeKartListTable(io.Stdout, style.For(io.Stdout, false), entries)
 	return 0
 }
 
@@ -133,6 +155,7 @@ func renderInfoText(io IO, raw json.RawMessage) int {
 		Name      string `json:"name"`
 		Status    string `json:"status"`
 		CreatedAt string `json:"created_at,omitempty"`
+		LastUsed  string `json:"last_used,omitempty"`
 		Source    struct {
 			Mode string `json:"mode"`
 			URL  string `json:"url,omitempty"`
@@ -173,6 +196,7 @@ func renderInfoText(io IO, raw json.RawMessage) int {
 	printIf("tune", info.Tune)
 	printIf("character", info.Character)
 	printIf("created", info.CreatedAt)
+	printIf("last used", info.LastUsed)
 	if info.Autostart {
 		printIf("autostart", "enabled")
 	}

@@ -27,24 +27,21 @@ var driftHelpSections = []struct {
 	rows  [][2]string
 }{
 	{"CIRCUITS", [][2]string{
-		{"circuit add|list|rm", "Manage circuits (SSH config + client state)"},
+		{"circuit [-l|--list]", "List configured circuits"},
+		{"circuit add|rm", "Register or unregister a circuit"},
 		{"circuit set default|name", "Set a circuit config field"},
 		{"init", "Interactive first-time setup wizard"},
-		{"status", "Show circuits + lakitu health + kart counts"},
+		{"status", "Show circuits + lakitu health + per-circuit karts"},
 		{"update", "Check GitHub for a newer drift and self-install"},
 	}},
 	{"KARTS", [][2]string{
 		{"new <name>", "Create a kart (from starter or existing repo)"},
-		{"list | info <name>", "List karts on the circuit or show one's state"},
+		{"connect [-l|--list] [<name>]", "Cross-circuit picker, or -l to list karts; mosh (ssh fallback) when connecting"},
+		{"info <name>", "Show one kart's state"},
 		{"start|stop|restart|delete <name>", "Kart lifecycle (idempotent; delete is not)"},
 		{"enable|disable <name>", "Toggle kart autostart on circuit reboot"},
 		{"logs <name>", "Fetch a chunk of kart logs"},
-		{"connect|into|attach <name>", "mosh (ssh fallback) into a kart; auto-starts"},
 		{"migrate", "Adopt an existing devpod workspace as a drift kart (interactive)"},
-	}},
-	{"RUNS", [][2]string{
-		{"runs", "List server-side shorthand commands"},
-		{"run <name> [args...]", "Execute a shorthand (e.g. run ping)"},
 	}},
 	{"AI", [][2]string{
 		{"ai", "Launch Claude Code on the circuit"},

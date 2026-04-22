@@ -25,7 +25,7 @@ drift powerslides past all these problems, letting you drift between devices, se
 
 ## Highlights
 
-- **Multiple circuits, one client.** Register more than one host and switch between them with `drift -c <name>`. Fly from Osaka to London and the box in your attic is suddenly 200ms away; spin up a kart on a nearer circuit and keep going. `drift status` shows every circuit you've registered side by side.
+- **Multiple circuits, one client.** Register more than one host and switch between them with `drift -c <name>`. Fly from Osaka to London and the box in your attic is suddenly 200ms away; spin up a kart on a nearer circuit and keep going. `drift status` shows every circuit you've registered side by side along with their karts.
 - **AI at the CLI.** `drift ai` drops you into Claude on the circuit with drift's command surface preloaded. `drift skill <name>` invokes one of the circuit's Claude skills directly. Long commands are painful to type on a phone, easy to dictate.
 - **Persistent shells by default.** `drift connect` uses mosh so sessions survive wifi drops and closing the lid. Falls back to ssh when mosh isn't available.
 - **One-flag workspaces.** Preset environments (`tunes`) bundle features, starter repos, and dotfiles, so `drift new myproj --tune <name>` produces a container with the comforts you expect.
@@ -90,19 +90,16 @@ drift status                        # circuits + lakitu health + kart counts
 drift update                        # self-install the newest release
 
 drift new <name> [--clone URL|--starter URL] [--tune T] [--character C]
-drift list                          # karts on the target circuit
+drift connect [-l|--list] [<name>]  # pick/list karts across all circuits; mosh (ssh fallback)
 drift info <name>                   # one kart's state
 drift start|stop|restart <name>     # lifecycle (idempotent)
 drift delete <name>                 # remove a kart
 drift enable|disable <name>         # autostart on circuit reboot
 drift logs <name>                   # fetch a chunk of kart logs
-drift connect <name>                # mosh (ssh fallback); aliases: into, attach
 drift migrate                       # adopt an existing devpod workspace
 
-drift circuit list|add|rm|set       # manage circuits (client config + SSH alias)
-
-drift runs                          # list server-side shorthand commands
-drift run <name> [args…]            # execute a shorthand (ping, uptime, …)
+drift circuit [-l|--list]           # list configured circuits
+drift circuit add|rm|set            # manage circuits (client config + SSH alias)
 
 drift ai                            # Claude on the circuit, preloaded with drift's CLI
 drift skill                         # list Claude skills on the circuit
