@@ -13,9 +13,10 @@ type kartCmd struct {
 	New kartNewCmd `cmd:"" help:"Create a new kart (same handler drift new uses)."`
 }
 
-// kartNewCmd mirrors drift's newCmd — same flag names, same RPC — so the
-// scaffolder recipe's claude can invoke `lakitu kart new …` identically
-// to how a user would invoke `drift new …` on the workstation.
+// kartNewCmd mirrors drift's newCmd — same flag names, same RPC — so an
+// agent launched via `drift ai` / `drift skill` can invoke `lakitu kart
+// new …` identically to how a user would invoke `drift new …` on the
+// workstation.
 type kartNewCmd struct {
 	Name         string `arg:"" help:"Kart name (matches ^[a-z][a-z0-9-]{0,62}$)."`
 	Clone        string `name:"clone" help:"Clone an existing repo (mutually exclusive with --starter)."`

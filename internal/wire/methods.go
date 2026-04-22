@@ -42,6 +42,9 @@ const (
 
 	MethodRunList    = "run.list"
 	MethodRunResolve = "run.resolve"
+
+	MethodSkillList    = "skill.list"
+	MethodSkillResolve = "skill.resolve"
 )
 
 // Methods returns the catalog in source order. Keep in sync with the
@@ -61,5 +64,6 @@ func Methods() []string {
 		MethodTuneList, MethodTuneShow, MethodTuneSet, MethodTuneRemove,
 		MethodConfigShow, MethodConfigSet,
 		MethodRunList, MethodRunResolve,
+		MethodSkillList, MethodSkillResolve,
 	}
 }

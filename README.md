@@ -26,7 +26,7 @@ drift powerslides past all these problems, letting you drift between devices, se
 ## Highlights
 
 - **Multiple circuits, one client.** Register more than one host and switch between them with `drift -c <name>`. Fly from Osaka to London and the box in your attic is suddenly 200ms away; spin up a kart on a nearer circuit and keep going. `drift status` shows every circuit you've registered side by side.
-- **AI at the CLI.** `drift run ai` drops you into Claude on the circuit with drift's command surface preloaded. Long commands are painful to type on a phone, easy to dictate.
+- **AI at the CLI.** `drift ai` drops you into Claude on the circuit with drift's command surface preloaded. `drift skill <name>` invokes one of the circuit's Claude skills directly. Long commands are painful to type on a phone, easy to dictate.
 - **Persistent shells by default.** `drift connect` uses mosh so sessions survive wifi drops and closing the lid. Falls back to ssh when mosh isn't available.
 - **One-flag workspaces.** Preset environments (`tunes`) bundle features, starter repos, and dotfiles, so `drift new myproj --tune <name>` produces a container with the comforts you expect.
 - **Secrets that stay on the server.** The `chest` on the circuit holds your SSH keys and PATs; karts read them at start. A borrowed phone never needs to carry them.
@@ -102,9 +102,11 @@ drift migrate                       # adopt an existing devpod workspace
 drift circuit list|add|rm|set       # manage circuits (client config + SSH alias)
 
 drift runs                          # list server-side shorthand commands
-drift run ai                        # Claude on the circuit, preloaded with drift's CLI
-drift run scaffolder                # Claude with a scaffold recipe; creates a kart on exit
-drift run <name> [args…]            # anything else lakitu exposes
+drift run <name> [args…]            # execute a shorthand (ping, uptime, …)
+
+drift ai                            # Claude on the circuit, preloaded with drift's CLI
+drift skill                         # list Claude skills on the circuit
+drift skill <name> [prompt]         # invoke a specific skill with an optional prompt
 ```
 
 Global flags: `-c/--circuit <name>`, `-o/--output text|json`, `--no-debug`, `--no-color`. Full per-flag reference: [docs/drift-cli.md](docs/drift-cli.md).

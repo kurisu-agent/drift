@@ -44,7 +44,11 @@ var driftHelpSections = []struct {
 	}},
 	{"RUNS", [][2]string{
 		{"runs", "List server-side shorthand commands"},
-		{"run <name> [args...]", "Execute a shorthand (e.g. run ai, run scaffolder)"},
+		{"run <name> [args...]", "Execute a shorthand (e.g. run ping)"},
+	}},
+	{"AI", [][2]string{
+		{"ai", "Launch Claude Code on the circuit"},
+		{"skill [<name> [prompt]]", "List or invoke a Claude skill on the circuit"},
 	}},
 }
 

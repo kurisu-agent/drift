@@ -41,8 +41,9 @@ var menuEntries = []menuEntry{
 	{key: "kart › connect   — mosh/ssh into a kart", argv: []string{"connect"}},
 
 	{key: "run › list       — server-side shorthand commands", argv: []string{"runs"}},
-	{key: "run › ai         — launch claude on the circuit", argv: []string{"run", "ai"}},
-	{key: "run › scaffolder — AI-scaffold a new project + kart", argv: []string{"run", "scaffolder"}},
+
+	{key: "ai              — launch claude on the circuit", argv: []string{"ai"}},
+	{key: "skill           — list + invoke a Claude skill on the circuit", argv: []string{"skill"}},
 }
 
 // runMenu presents the top-level picker. Returns the argv that should be
