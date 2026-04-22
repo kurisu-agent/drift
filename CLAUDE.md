@@ -45,6 +45,8 @@ Worktrees live under `.claude/worktrees/` (already gitignored). One feature per 
 
 **Enable the pre-commit hook once per clone** with `make install-hooks` (sets `core.hooksPath = .githooks`, so every worktree inherits it). The hook runs `gofmt -w` and the full `golangci-lint run --fix` on staged Go packages, re-stages anything it rewrites, and fails only when issues remain after auto-fix. Full lint parity with CI is deliberate — an earlier `--fast-only` variant was faster but let errorlint-class issues sail through to CI and cost a round trip per miss.
 
+**Run `make ci` before every push.** The pre-commit hook only runs gofmt + golangci-lint on staged packages; `make ci` expands to `tidy vet test-race lint vuln` — the full CI-parity suite in under a minute. It catches race-detector bugs, `govulncheck` flags, and `go mod tidy` churn that the hook can't see; each miss is a round trip to GitHub CI. `make ci` auto-reenters `nix develop` when called from a bare shell so the flake-pinned `golangci-lint` / `govulncheck` / `gcc` (for `-race`) are on PATH — no prefix required, one command from anywhere. Also run `make integration` when touching anything SSH/devpod/transport-shaped: ~2 min with docker, gated behind the `integration` build tag, so `make ci` deliberately skips it.
+
 Why worktrees instead of `git checkout` in a single tree:
 - `main` stays immediately reviewable at HEAD — no stashing dance when a hotfix interrupts the feature.
 - Parallel Claude Code sessions can work on independent features without fighting for the working tree.
