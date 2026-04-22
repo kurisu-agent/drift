@@ -91,6 +91,11 @@ func isTTY(fd any) bool {
 	return term.IsTerminal(int(f.Fd())) //nolint:gosec // G115: posix file descriptors always fit in int
 }
 
+// isTTYFn is the indirection point tests swap out to drive the prompt
+// path in runRunExec without a real terminal.
+var isTTYFn = isTTY
+
 // stdinIsTTY / stdoutIsTTY are thin aliases kept for call-site clarity.
-func stdinIsTTY(r any) bool  { return isTTY(r) }
-func stdoutIsTTY(w any) bool { return isTTY(w) }
+// They route through isTTYFn so unit tests can flip the behavior.
+func stdinIsTTY(r any) bool  { return isTTYFn(r) }
+func stdoutIsTTY(w any) bool { return isTTYFn(w) }

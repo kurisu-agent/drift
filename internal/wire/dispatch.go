@@ -2,11 +2,8 @@ package wire
 
 // RunMode is the dispatch kind for a remote command shape. The client
 // reads this to decide transport (mosh for interactive, plain ssh for
-// output) and how to render results.
-//
-// Name carries over from the retired `drift run` shorthand registry —
-// the shared dispatch machinery now backs `drift ai` and
-// `drift skill`, which reuse these types verbatim.
+// output) and how to render results. Shared across `drift run`,
+// `drift ai`, and `drift skill`.
 type RunMode string
 
 const (

@@ -76,6 +76,9 @@ Commands:
   connect (into,attach) [<name>] [flags]
     Connect to a kart via mosh (ssh fallback); -l lists karts cross-circuit.
 
+  run [<name> [<args> ...]] [flags]
+    Execute a user-script shorthand from runs.yaml; -l lists entries.
+
   ai [flags]
     Launch Claude Code on the circuit (interactive REPL).
 
@@ -121,6 +124,7 @@ COMMANDS (run `drift <cmd> --help` for flags)
   migrate — Adopt an existing devpod workspace as a drift kart (interactive).
   new — Create a new kart (from starter or existing repo).
   restart — Restart a kart.
+  run — Execute a user-script shorthand from runs.yaml; -l lists entries.
   skill — List / invoke a Claude skill on the circuit.
   start — Start a kart (idempotent).
   status — Show configured circuits + their lakitu health and per-circuit karts.
@@ -151,6 +155,8 @@ RPC METHODS
   kart.session_env
   kart.start
   kart.stop
+  run.list
+  run.resolve
   server.info
   server.init
   server.verify
@@ -597,6 +603,40 @@ drift: expected "<name>"
 exit status 2
 ```
 
+### `drift run --help`
+
+```text
+Usage: drift run [<name> [<args> ...]] [flags]
+
+Execute a user-script shorthand from runs.yaml; -l lists entries.
+
+Arguments:
+  [<name>]        Shorthand name (see drift run -l); omit to pick interactively.
+  [<args> ...]    Positional args forwarded to the remote command.
+
+Flags:
+  -h, --help              Show context-sensitive help.
+      --[no-]debug        Verbose output (default on; --no-debug to silence)
+                          ($DRIFT_DEBUG).
+      --no-color          Disable ANSI colors in text output ($NO_COLOR).
+  -c, --circuit=STRING    Target circuit (overrides default).
+  -o, --output="text"     Output format for structured commands.
+  -v, --version           Print drift version and exit.
+
+  -l, --list              List available runs on the target circuit instead of
+                          executing one.
+      --ssh               Force plain SSH (skip mosh) for interactive entries.
+      --forward-agent     Enable SSH agent forwarding (-A).
+error: circuit's lakitu is too old (version=dev api=1, missing run.list); this drift is devel api=1. update lakitu on the circuit and retry
+  type: method_not_found
+  client_api: 1
+  client_version: devel
+  method: run.list
+  server_api: 1
+  server_version: dev
+exit status 2
+```
+
 ### `drift skill --help`
 
 ```text
@@ -619,14 +659,8 @@ Flags:
 
       --ssh               Force plain SSH (skip mosh).
       --forward-agent     Enable SSH agent forwarding (-A).
-error: circuit's lakitu is too old (version=dev api=1, missing skill.list); this drift is devel api=1. update lakitu on the circuit and retry
-  type: method_not_found
-  client_api: 1
-  client_version: devel
-  method: skill.list
-  server_api: 1
-  server_version: dev
-exit status 2
+no skills on this circuit
+  drop SKILL.md files into ~/.claude/skills/<name>/ on the circuit
 ```
 
 ### `drift start --help`
@@ -674,7 +708,7 @@ drift devel
 default: alpha
 
    CIRCUIT  HOST                LAKITU  API  LATENCY  KARTS
-→  alpha    circuit@10.233.1.2  dev     1    12ms     0/1
+→  alpha    circuit@10.233.1.2  dev     1    13ms     0/1
 
 → alpha
 NAME   STATUS         SOURCE                                             TUNE  AUTOSTART
@@ -722,7 +756,7 @@ Flags:
       --check             Check for an update without downloading.
 → checking latest release
 current: devel
-latest:  0.5.2
+latest:  0.6.0
 error: refusing to self-update a development build; rebuild from source or install a tagged release
 exit status 1
 ```
