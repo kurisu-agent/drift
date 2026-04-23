@@ -20,7 +20,6 @@ import (
 )
 
 type connectCmd struct {
-	List         bool   `name:"list" short:"l" help:"List karts across all circuits instead of connecting."`
 	Name         string `arg:"" optional:"" help:"Kart name; omit on a TTY to pick from a merged circuits + karts list."`
 	SSH          bool   `name:"ssh" help:"Force plain SSH (skip mosh)."`
 	ForwardAgent bool   `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
@@ -45,12 +44,9 @@ type connectChoice struct {
 // preserves the historical `drift connect <kart>` shape and forwards to
 // the kart connect path. With no name on a TTY, it shows the merged
 // circuits-plus-karts picker so users can ssh straight into a host or
-// pick a kart in one place.
+// pick a kart in one place. Scripts wanting just the listing call
+// `drift karts` instead.
 func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps) int {
-	if cmd.List {
-		return runKartListForCircuit(ctx, io, root, deps)
-	}
-
 	// With a name, operate against the target circuit directly (matches
 	// the flag-driven `-c <circuit>` override). The name path is identical
 	// to `drift kart connect <name>`.

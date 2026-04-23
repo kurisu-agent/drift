@@ -84,12 +84,12 @@ func TestRealDevpodUpAndDelete(t *testing.T) {
 	// that drift new brought up, returning the population to baseline.
 	// `-y` is required on non-TTY stdin so the destructive prompt doesn't
 	// block the test harness.
-	_, stderr, code = c.Drift(ctx, "delete", "-y", kart)
+	_, stderr, code = c.Drift(ctx, "kart", "delete", "-y", kart)
 	if code != 0 {
-		t.Fatalf("drift delete: code=%d stderr=%q", code, stderr)
+		t.Fatalf("drift kart delete: code=%d stderr=%q", code, stderr)
 	}
 	afterDelete := integration.DevcontainerIDs(ctx, t)
 	if orphans := integration.SetDiff(afterDelete, baseline); len(orphans) > 0 {
-		t.Errorf("devcontainer orphans after drift delete: %v", orphans)
+		t.Errorf("devcontainer orphans after drift kart delete: %v", orphans)
 	}
 }

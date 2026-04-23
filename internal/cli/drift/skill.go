@@ -98,9 +98,9 @@ func runSkillExec(ctx context.Context, io IO, root *CLI, cmd skillCmd, deps deps
 	return 0
 }
 
-// runSkillList renders the skill catalog. On a TTY it's a one-stop
-// picker (list → pick → prompt → run); otherwise it behaves like
-// `drift runs` and prints a JSON or text table for scripting.
+// runSkillList is the bare `drift skill` path: render the catalog, then on
+// a TTY drop into the picker + prompt + run flow. Non-TTY callers get the
+// same output as `drift skills` (table or JSON) and exit cleanly.
 func runSkillList(ctx context.Context, io IO, root *CLI, deps deps) int {
 	_, circuit, err := resolveCircuit(root, deps)
 	if err != nil {
@@ -110,6 +110,22 @@ func runSkillList(ctx context.Context, io IO, root *CLI, deps deps) int {
 	if err := deps.call(ctx, circuit, wire.MethodSkillList, struct{}{}, &list); err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
+	if rc := renderSkillsOutput(io, root, list); rc != 0 {
+		return rc
+	}
+
+	// Non-TTY / JSON / empty-registry callers stop at the listing; TTY
+	// text callers fall through into the full pick-prompt-run flow below.
+	if root.Output == "json" || !stdinIsTTY(io.Stdin) || len(list.Skills) == 0 {
+		return 0
+	}
+	return skillInteractiveAfterList(ctx, io, root, deps, circuit, list)
+}
+
+// renderSkillsOutput prints the skill roster as a table (or JSON) and
+// returns. Shared between `drift skills` (plural, print-only) and bare
+// `drift skill` on a non-TTY so the two paths can't drift apart.
+func renderSkillsOutput(io IO, root *CLI, list wire.SkillListResult) int {
 	if root.Output == "json" {
 		buf, mErr := json.MarshalIndent(list, "", "  ")
 		if mErr != nil {
@@ -129,13 +145,7 @@ func runSkillList(ctx context.Context, io IO, root *CLI, deps deps) int {
 		rows = append(rows, []string{s.Name, s.Description})
 	}
 	writeTable(io.Stdout, p, []string{"NAME", "DESCRIPTION"}, rows, accentCellStyler(0))
-
-	// Non-TTY callers stop at the listing; TTY callers fall through
-	// into the full pick-prompt-run flow below.
-	if !stdinIsTTY(io.Stdin) {
-		return 0
-	}
-	return skillInteractiveAfterList(ctx, io, root, deps, circuit, list)
+	return 0
 }
 
 // skillInteractiveAfterList is the tail of the TTY listing path: pick

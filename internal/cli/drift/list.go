@@ -8,7 +8,18 @@ import (
 
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/wire"
+)
+
+// Plural list-verb commands — all empty structs; the scripting surface is
+// table output or `--output json`. Singular noun commands drop into pickers
+// (see `drift circuit`, `drift kart`); these are the explicit print paths.
+type (
+	circuitsCmd struct{}
+	kartsCmd    struct{}
+	runsCmd     struct{}
+	skillsCmd   struct{}
 )
 
 type infoCmd struct {
@@ -96,10 +107,145 @@ func writeKartListTable(w io.Writer, p *style.Palette, entries []listEntry) {
 		}))
 }
 
+// runCircuits is `drift circuits`. Thin wrapper over runCircuitList so the
+// printing path stays in circuit.go and this file owns the list verbs.
+func runCircuits(io IO, root *CLI, deps deps) int {
+	return runCircuitList(io, root, deps)
+}
+
+// runKarts is `drift karts`. Cross-circuit by default; `-c <name>` scopes
+// to a single circuit and omits the CIRCUIT column for the lighter look
+// users already know from `drift status`.
+func runKarts(ctx context.Context, io IO, root *CLI, deps deps) int {
+	if root.Circuit != "" {
+		return runKartListForCircuit(ctx, io, root, deps)
+	}
+	return runKartsCrossCircuit(ctx, io, root, deps)
+}
+
+// runRuns is `drift runs`. Wrapper kept alongside the other plural verbs
+// for symmetry; the heavy lifting lives in run.go.
+func runRuns(ctx context.Context, io IO, root *CLI, deps deps) int {
+	return runRunsList(ctx, io, root, deps)
+}
+
+// runSkills is `drift skills`. Wrapper over renderSkillsOutput — the plural
+// path never drops into the interactive tail, so it's safe to call from
+// scripts and --output json.
+func runSkills(ctx context.Context, io IO, root *CLI, deps deps) int {
+	_, circuit, err := resolveCircuit(root, deps)
+	if err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+	var list wire.SkillListResult
+	if err := deps.call(ctx, circuit, wire.MethodSkillList, struct{}{}, &list); err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+	return renderSkillsOutput(io, root, list)
+}
+
+// runKartsCrossCircuit fans kart.list out to every configured circuit in
+// parallel and renders one combined table sorted by last-used descending.
+// Mirrors the merged picker on `drift connect` so the data shape and
+// ordering stay consistent.
+func runKartsCrossCircuit(ctx context.Context, io IO, root *CLI, deps deps) int {
+	cfgPath, err := deps.clientConfigPath()
+	if err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+	cfg, err := config.LoadClient(cfgPath)
+	if err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+	if len(cfg.Circuits) == 0 {
+		if root.Output == "json" {
+			return emitJSON(io, struct {
+				Karts []circuitKartJSON `json:"karts"`
+			}{Karts: []circuitKartJSON{}})
+		}
+		fmt.Fprintln(io.Stdout, "no circuits configured (try `drift circuit add user@host`)")
+		return 0
+	}
+
+	karts, probeErrs := collectCircuitKarts(ctx, cfg, deps)
+	// Surface per-circuit probe failures on stderr so the listing still
+	// renders for the reachable circuits; users see exactly what broke.
+	for circuit, perr := range probeErrs {
+		fmt.Fprintf(io.Stderr, "warning: %s: %v\n", circuit, perr)
+	}
+	sortByLastUsedDesc(karts)
+
+	if root.Output == "json" {
+		entries := make([]circuitKartJSON, 0, len(karts))
+		for _, k := range karts {
+			entries = append(entries, circuitKartJSON(k))
+		}
+		return emitJSON(io, struct {
+			Karts []circuitKartJSON `json:"karts"`
+		}{Karts: entries})
+	}
+	if len(karts) == 0 {
+		fmt.Fprintln(io.Stdout, "no karts found on any configured circuit")
+		return 0
+	}
+	writeCrossCircuitKartTable(io.Stdout, style.For(io.Stdout, false), karts)
+	return 0
+}
+
+// circuitKartJSON is the per-row JSON shape for `drift karts --output json`.
+// Flat circuit+entry pair mirrors the table layout so jq one-liners can
+// group/filter on `.circuit` without digging into a nested object.
+type circuitKartJSON struct {
+	Circuit string    `json:"circuit"`
+	Entry   listEntry `json:"entry"`
+}
+
+// writeCrossCircuitKartTable renders the cross-circuit roster with a
+// CIRCUIT column prepended. Shares status colour rules with
+// writeKartListTable so the two views look consistent in `drift status`
+// right next to `drift karts`.
+func writeCrossCircuitKartTable(w io.Writer, p *style.Palette, karts []circuitKart) {
+	rows := make([][]string, 0, len(karts))
+	staleRows := make([]bool, 0, len(karts))
+	for _, ck := range karts {
+		k := ck.Entry
+		status := k.Status
+		if k.Stale {
+			status += " (stale)"
+		}
+		src := k.Source.Mode
+		if k.Source.URL != "" {
+			src = k.Source.Mode + " " + k.Source.URL
+		}
+		rows = append(rows, []string{ck.Circuit, k.Name, status, src})
+		staleRows = append(staleRows, k.Stale)
+	}
+	writeTable(w, p, []string{"CIRCUIT", "NAME", "STATUS", "SOURCE"}, rows,
+		colorCellStyler(func(row, col int) tableCell {
+			switch col {
+			case 0:
+				return tableCell{Color: tableCellDim}
+			case 1:
+				return tableCell{Color: tableCellAccent}
+			case 2:
+				if row >= 0 && row < len(staleRows) && staleRows[row] {
+					return tableCell{Color: tableCellWarn}
+				}
+				switch rows[row][2] {
+				case "running":
+					return tableCell{Color: tableCellSuccess}
+				case "stopped":
+					return tableCell{Color: tableCellDim}
+				}
+			}
+			return tableCell{}
+		}))
+}
+
 // runKartListForCircuit renders the kart list for the target circuit.
-// Entry point for `drift connect -l` / `drift connect --list` and any
-// future list-style caller. JSON mode streams the raw kart.list payload
-// through verbatim so additive server fields survive.
+// Entry point for `drift karts -c <name>` and the per-circuit blocks in
+// `drift status`. JSON mode streams the raw kart.list payload through
+// verbatim so additive server fields survive.
 func runKartListForCircuit(ctx context.Context, io IO, root *CLI, deps deps) int {
 	_, circuit, err := resolveCircuit(root, deps)
 	if err != nil {

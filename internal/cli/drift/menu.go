@@ -24,27 +24,29 @@ var menuEntries = []menuEntry{
 
 	{key: "connect          — pick a circuit or kart (merged picker)", argv: []string{"connect"}},
 
-	{key: "circuit › list", argv: []string{"circuit", "list"}},
+	{key: "circuits                — list configured circuits", argv: []string{"circuits"}},
 	{key: "circuit › add           — register a new circuit (user@host)", needs: "user@host", prefix: []string{"circuit", "add"}},
 	{key: "circuit › rm            — remove a circuit by name", needs: "circuit name", prefix: []string{"circuit", "rm"}},
 	{key: "circuit › set default   — make a circuit the default", needs: "circuit name", prefix: []string{"circuit", "set", "default"}},
 	{key: "circuit › set name      — rename the active circuit", needs: "new circuit name", prefix: []string{"circuit", "set", "name"}},
 	{key: "circuit › connect       — interactive shell on a circuit's host", argv: []string{"circuit", "connect"}},
 
-	{key: "kart › list      — list karts on the target circuit", argv: []string{"connect", "-l"}},
+	{key: "karts            — list karts across circuits", argv: []string{"karts"}},
 	{key: "kart › new       — create a new kart", needs: "kart name", prefix: []string{"new"}},
-	{key: "kart › info      — show a kart's state", needs: "kart name", prefix: []string{"info"}},
-	{key: "kart › start", needs: "kart name", prefix: []string{"start"}},
-	{key: "kart › stop", needs: "kart name", prefix: []string{"stop"}},
-	{key: "kart › restart", needs: "kart name", prefix: []string{"restart"}},
-	{key: "kart › delete", needs: "kart name", prefix: []string{"delete"}},
-	{key: "kart › enable    — autostart on reboot", needs: "kart name", prefix: []string{"enable"}},
-	{key: "kart › disable", needs: "kart name", prefix: []string{"disable"}},
-	{key: "kart › logs", needs: "kart name", prefix: []string{"logs"}},
+	{key: "kart › info      — show a kart's state", needs: "kart name", prefix: []string{"kart", "info"}},
+	{key: "kart › start", needs: "kart name", prefix: []string{"kart", "start"}},
+	{key: "kart › stop", needs: "kart name", prefix: []string{"kart", "stop"}},
+	{key: "kart › restart", needs: "kart name", prefix: []string{"kart", "restart"}},
+	{key: "kart › delete", needs: "kart name", prefix: []string{"kart", "delete"}},
+	{key: "kart › enable    — autostart on reboot", needs: "kart name", prefix: []string{"kart", "enable"}},
+	{key: "kart › disable", needs: "kart name", prefix: []string{"kart", "disable"}},
+	{key: "kart › logs", needs: "kart name", prefix: []string{"kart", "logs"}},
 	{key: "kart › connect   — mosh/ssh into a kart", argv: []string{"kart", "connect"}},
 
 	{key: "ai              — launch claude on the circuit", argv: []string{"ai"}},
-	{key: "skill           — list + invoke a Claude skill on the circuit", argv: []string{"skill"}},
+	{key: "skills          — list Claude skills on the circuit", argv: []string{"skills"}},
+	{key: "skill           — pick + invoke a Claude skill on the circuit", argv: []string{"skill"}},
+	{key: "runs            — list runs.yaml entries", argv: []string{"runs"}},
 }
 
 // runMenu presents the top-level picker. Returns the argv that should be
