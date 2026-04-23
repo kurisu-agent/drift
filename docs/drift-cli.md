@@ -24,14 +24,32 @@ Commands:
   help [flags]
     Print an LLM-friendly command + protocol reference.
 
+  init [flags]
+    Interactive first-time setup wizard (circuits + characters).
+
+  status [flags]
+    Show configured circuits + their lakitu health and per-circuit karts.
+
+  update [flags]
+    Check GitHub for a newer drift release and self-install.
+
+  circuits [flags]
+    List configured circuits (table).
+
+  karts [flags]
+    List karts (cross-circuit by default; scope with -c).
+
+  runs [flags]
+    List runs.yaml entries on the target circuit.
+
+  skills [flags]
+    List Claude skills on the target circuit.
+
   circuit add <user@host> [flags]
     Register a circuit (probes for name, updates client config + SSH config).
 
   circuit rm <name>
     Unregister a circuit.
-
-  circuit list [flags]
-    List configured circuits (default when no subcommand is given).
 
   circuit set name <new-name>
     Rename the target circuit (rewrites server config + local alias).
@@ -40,59 +58,56 @@ Commands:
     Choose which configured circuit is the default (interactive picker when no
     name given).
 
-  init [flags]
-    Interactive first-time setup wizard (circuits + characters).
+  circuit connect [<name>] [flags]
+    Open an interactive shell on the circuit's host (mosh/ssh).
 
-  status [flags]
-    Show configured circuits + their lakitu health and per-circuit karts.
+  kart connect [<name>] [flags]
+    Connect to a kart via mosh (ssh fallback).
+
+  kart info <name>
+    Show a single kart's info.
+
+  kart start <name>
+    Start a kart (idempotent).
+
+  kart stop <name>
+    Stop a kart (idempotent).
+
+  kart restart <name>
+    Restart a kart.
+
+  kart delete <name> [flags]
+    Delete a kart (errors if missing).
+
+  kart logs <name> [flags]
+    Fetch a chunk of kart logs.
+
+  kart enable <name>
+    Enable kart autostart on circuit reboot (idempotent).
+
+  kart disable <name>
+    Disable kart autostart (idempotent).
+
+  connect (into,attach) [<name>] [flags]
+    Pick a circuit or kart and connect (merged picker).
 
   new <name> [flags]
     Create a new kart (from starter or existing repo).
 
-  info <name> [flags]
-    Show a single kart's info.
-
-  start <name> [flags]
-    Start a kart (idempotent).
-
-  stop <name> [flags]
-    Stop a kart (idempotent).
-
-  restart <name> [flags]
-    Restart a kart.
-
-  delete <name> [flags]
-    Delete a kart (errors if missing).
-
-  logs <name> [flags]
-    Fetch a chunk of kart logs.
-
-  enable <name> [flags]
-    Enable kart autostart on circuit reboot (idempotent).
-
-  disable <name> [flags]
-    Disable kart autostart (idempotent).
-
-  connect (into,attach) [<name>] [flags]
-    Connect to a kart via mosh (ssh fallback); -l lists karts cross-circuit.
-
   run [<name> [<args> ...]] [flags]
-    Execute a user-script shorthand from runs.yaml; -l lists entries.
+    Execute a user-script shorthand from runs.yaml.
 
   ai [flags]
     Launch Claude Code on the circuit (interactive REPL).
 
   skill [<name> [<prompt> ...]] [flags]
-    List / invoke a Claude skill on the circuit.
+    Pick / invoke a Claude skill on the circuit.
 
   migrate [flags]
     Adopt an existing devpod workspace as a drift kart (interactive).
 
-  update [flags]
-    Check GitHub for a newer drift release and self-install.
-
 Run "drift <command> --help" for more information on a command.
-drift: expected one of "help", "circuit", "init", "status", "new", ...
+drift: expected one of "help", "init", "status", "update", "circuits", ...
 exit status 2
 ```
 
@@ -109,26 +124,31 @@ on the circuit under ~/.drift/garage/.
 COMMANDS (run `drift <cmd> --help` for flags)
   ai — Launch Claude Code on the circuit (interactive REPL).
   circuit add — Register a circuit (probes for name, updates client config + SSH config).
-  circuit list — List configured circuits (default when no subcommand is given).
+  circuit connect — Open an interactive shell on the circuit's host (mosh/ssh).
   circuit rm — Unregister a circuit.
   circuit set default — Choose which configured circuit is the default (interactive picker when no name given).
   circuit set name — Rename the target circuit (rewrites server config + local alias).
-  connect — Connect to a kart via mosh (ssh fallback); -l lists karts cross-circuit.
-  delete — Delete a kart (errors if missing).
-  disable — Disable kart autostart (idempotent).
-  enable — Enable kart autostart on circuit reboot (idempotent).
+  circuits — List configured circuits (table).
+  connect — Pick a circuit or kart and connect (merged picker).
   help — Print an LLM-friendly command + protocol reference.
-  info — Show a single kart's info.
   init — Interactive first-time setup wizard (circuits + characters).
-  logs — Fetch a chunk of kart logs.
+  kart connect — Connect to a kart via mosh (ssh fallback).
+  kart delete — Delete a kart (errors if missing).
+  kart disable — Disable kart autostart (idempotent).
+  kart enable — Enable kart autostart on circuit reboot (idempotent).
+  kart info — Show a single kart's info.
+  kart logs — Fetch a chunk of kart logs.
+  kart restart — Restart a kart.
+  kart start — Start a kart (idempotent).
+  kart stop — Stop a kart (idempotent).
+  karts — List karts (cross-circuit by default; scope with -c).
   migrate — Adopt an existing devpod workspace as a drift kart (interactive).
   new — Create a new kart (from starter or existing repo).
-  restart — Restart a kart.
-  run — Execute a user-script shorthand from runs.yaml; -l lists entries.
-  skill — List / invoke a Claude skill on the circuit.
-  start — Start a kart (idempotent).
+  run — Execute a user-script shorthand from runs.yaml.
+  runs — List runs.yaml entries on the target circuit.
+  skill — Pick / invoke a Claude skill on the circuit.
+  skills — List Claude skills on the target circuit.
   status — Show configured circuits + their lakitu health and per-circuit karts.
-  stop — Stop a kart (idempotent).
   update — Check GitHub for a newer drift release and self-install.
 
 RPC METHODS
@@ -225,12 +245,15 @@ drift: expected "<user@host>"
 exit status 2
 ```
 
-### `drift circuit list --help`
+### `drift circuit connect --help`
 
 ```text
-Usage: drift circuit list [flags]
+Usage: drift circuit connect [<name>] [flags]
 
-List configured circuits (default when no subcommand is given).
+Open an interactive shell on the circuit's host (mosh/ssh).
+
+Arguments:
+  [<name>]    Circuit name; omit on a TTY to pick from a list.
 
 Flags:
   -h, --help              Show context-sensitive help.
@@ -240,8 +263,11 @@ Flags:
   -c, --circuit=STRING    Target circuit (overrides default).
   -o, --output="text"     Output format for structured commands.
   -v, --version           Print drift version and exit.
-NAME   HOST                DEFAULT
-alpha  circuit@10.233.1.2  *
+
+      --ssh               Force plain SSH (skip mosh).
+      --forward-agent     Enable SSH agent forwarding (-A).
+error: drift circuit connect requires a circuit name (non-interactive)
+exit status 1
 ```
 
 ### `drift circuit rm --help`
@@ -264,6 +290,25 @@ Flags:
   -v, --version           Print drift version and exit.
 drift: expected "<name>"
 exit status 2
+```
+
+### `drift circuits --help`
+
+```text
+Usage: drift circuits [flags]
+
+List configured circuits (table).
+
+Flags:
+  -h, --help              Show context-sensitive help.
+      --[no-]debug        Verbose output (default on; --no-debug to silence)
+                          ($DRIFT_DEBUG).
+      --no-color          Disable ANSI colors in text output ($NO_COLOR).
+  -c, --circuit=STRING    Target circuit (overrides default).
+  -o, --output="text"     Output format for structured commands.
+  -v, --version           Print drift version and exit.
+NAME   HOST                DEFAULT
+alpha  circuit@10.233.1.2  *
 ```
 
 ### `drift circuit set default --help`
@@ -317,10 +362,11 @@ exit status 2
 ```text
 Usage: drift connect (into,attach) [<name>] [flags]
 
-Connect to a kart via mosh (ssh fallback); -l lists karts cross-circuit.
+Pick a circuit or kart and connect (merged picker).
 
 Arguments:
-  [<name>]    Kart name; omit on a TTY to pick from a list.
+  [<name>]    Kart name; omit on a TTY to pick from a merged circuits + karts
+              list.
 
 Flags:
   -h, --help              Show context-sensitive help.
@@ -331,79 +377,10 @@ Flags:
   -o, --output="text"     Output format for structured commands.
   -v, --version           Print drift version and exit.
 
-  -l, --list              List karts across all circuits instead of connecting.
       --ssh               Force plain SSH (skip mosh).
       --forward-agent     Enable SSH agent forwarding (-A).
 error: drift connect requires a kart name (non-interactive)
 exit status 1
-```
-
-### `drift delete --help`
-
-```text
-Usage: drift delete <name> [flags]
-
-Delete a kart (errors if missing).
-
-Arguments:
-  <name>    Kart name.
-
-Flags:
-  -h, --help              Show context-sensitive help.
-      --[no-]debug        Verbose output (default on; --no-debug to silence)
-                          ($DRIFT_DEBUG).
-      --no-color          Disable ANSI colors in text output ($NO_COLOR).
-  -c, --circuit=STRING    Target circuit (overrides default).
-  -o, --output="text"     Output format for structured commands.
-  -v, --version           Print drift version and exit.
-
-  -y, --yes               Skip the interactive confirmation prompt.
-drift: expected "<name>"
-exit status 2
-```
-
-### `drift disable --help`
-
-```text
-Usage: drift disable <name> [flags]
-
-Disable kart autostart (idempotent).
-
-Arguments:
-  <name>    Kart name.
-
-Flags:
-  -h, --help              Show context-sensitive help.
-      --[no-]debug        Verbose output (default on; --no-debug to silence)
-                          ($DRIFT_DEBUG).
-      --no-color          Disable ANSI colors in text output ($NO_COLOR).
-  -c, --circuit=STRING    Target circuit (overrides default).
-  -o, --output="text"     Output format for structured commands.
-  -v, --version           Print drift version and exit.
-drift: expected "<name>"
-exit status 2
-```
-
-### `drift enable --help`
-
-```text
-Usage: drift enable <name> [flags]
-
-Enable kart autostart on circuit reboot (idempotent).
-
-Arguments:
-  <name>    Kart name.
-
-Flags:
-  -h, --help              Show context-sensitive help.
-      --[no-]debug        Verbose output (default on; --no-debug to silence)
-                          ($DRIFT_DEBUG).
-      --no-color          Disable ANSI colors in text output ($NO_COLOR).
-  -c, --circuit=STRING    Target circuit (overrides default).
-  -o, --output="text"     Output format for structured commands.
-  -v, --version           Print drift version and exit.
-drift: expected "<name>"
-exit status 2
 ```
 
 ### `drift help --help`
@@ -427,50 +404,24 @@ Flags:
 drift — Devpod for drifters
 Remote devcontainers tuned for life on the move — persistent, agentic, phone-friendly
 
-CIRCUITS
-  circuit [-l|--list]               List configured circuits
-  circuit add|rm                    Register or unregister a circuit
-  circuit set default|name          Set a circuit config field
-  init                              Interactive first-time setup wizard
-  status                            Show circuits + lakitu health + per-circuit karts
-  update                            Check GitHub for a newer drift and self-install
+▶  Full catalog:  drift help --full
 
-KARTS
-  new <name>                        Create a kart (from starter or existing repo)
-  connect [-l|--list] [<name>]      Cross-circuit picker, or -l to list karts; mosh (ssh fallback) when connecting
-  info <name>                       Show one kart's state
-  start|stop|restart|delete <name>  Kart lifecycle (idempotent; delete is not)
-  enable|disable <name>             Toggle kart autostart on circuit reboot
-  logs <name>                       Fetch a chunk of kart logs
-  migrate                           Adopt an existing devpod workspace as a drift kart (interactive)
+COMMANDS
+  init                     Interactive first-time setup wizard (circuits + characters)
+  status                   Circuits + lakitu health + per-circuit karts
+  connect [<name>]         Mosh/ssh into a circuit or kart (merged picker)
+  new <name>               Create a kart (from starter or existing repo)
+  karts                    List karts across circuits (cross-circuit; -c scopes)
+  kart <verb> <name>       Lifecycle: start / stop / restart / delete / logs / info / enable / disable
+  ai                       Launch Claude Code on the circuit
+  skill [<name> [prompt]]  Pick / invoke a Claude skill (`drift skills` to list)
+  run [<name>]             Execute a user-script shorthand (`drift runs` to list)
+  circuits                 List configured circuits
+  circuit <verb>           Manage circuits: add / rm / set (name|default) / connect
+  migrate                  Adopt an existing devpod workspace as a drift kart
+  update                   Check GitHub for a newer drift and self-install
 
-AI
-  ai                                Launch Claude Code on the circuit
-  skill [<name> [prompt]]           List or invoke a Claude skill on the circuit
-
-Run `drift <cmd> --help` for flags · `drift help --full` for the full catalog
-```
-
-### `drift info --help`
-
-```text
-Usage: drift info <name> [flags]
-
-Show a single kart's info.
-
-Arguments:
-  <name>    Kart name.
-
-Flags:
-  -h, --help              Show context-sensitive help.
-      --[no-]debug        Verbose output (default on; --no-debug to silence)
-                          ($DRIFT_DEBUG).
-      --no-color          Disable ANSI colors in text output ($NO_COLOR).
-  -c, --circuit=STRING    Target circuit (overrides default).
-  -o, --output="text"     Output format for structured commands.
-  -v, --version           Print drift version and exit.
-drift: expected "<name>"
-exit status 2
+Run `drift <cmd> --help` for per-command flags
 ```
 
 ### `drift init --help`
@@ -496,10 +447,125 @@ error: drift init requires a TTY on stdin (scripted equivalents: drift circuit a
 exit status 2
 ```
 
-### `drift logs --help`
+### `drift kart connect --help`
 
 ```text
-Usage: drift logs <name> [flags]
+Usage: drift kart connect [<name>] [flags]
+
+Connect to a kart via mosh (ssh fallback).
+
+Arguments:
+  [<name>]    Kart name; omit on a TTY to pick from a cross-circuit kart list.
+
+Flags:
+  -h, --help              Show context-sensitive help.
+      --[no-]debug        Verbose output (default on; --no-debug to silence)
+                          ($DRIFT_DEBUG).
+      --no-color          Disable ANSI colors in text output ($NO_COLOR).
+  -c, --circuit=STRING    Target circuit (overrides default).
+  -o, --output="text"     Output format for structured commands.
+  -v, --version           Print drift version and exit.
+
+      --ssh               Force plain SSH (skip mosh).
+      --forward-agent     Enable SSH agent forwarding (-A).
+error: drift kart connect requires a kart name (non-interactive)
+exit status 1
+```
+
+### `drift kart delete --help`
+
+```text
+Usage: drift kart delete <name> [flags]
+
+Delete a kart (errors if missing).
+
+Arguments:
+  <name>    Kart name.
+
+Flags:
+  -h, --help              Show context-sensitive help.
+      --[no-]debug        Verbose output (default on; --no-debug to silence)
+                          ($DRIFT_DEBUG).
+      --no-color          Disable ANSI colors in text output ($NO_COLOR).
+  -c, --circuit=STRING    Target circuit (overrides default).
+  -o, --output="text"     Output format for structured commands.
+  -v, --version           Print drift version and exit.
+
+  -y, --yes               Skip the interactive confirmation prompt.
+drift: expected "<name>"
+exit status 2
+```
+
+### `drift kart disable --help`
+
+```text
+Usage: drift kart disable <name>
+
+Disable kart autostart (idempotent).
+
+Arguments:
+  <name>    Kart name.
+
+Flags:
+  -h, --help              Show context-sensitive help.
+      --[no-]debug        Verbose output (default on; --no-debug to silence)
+                          ($DRIFT_DEBUG).
+      --no-color          Disable ANSI colors in text output ($NO_COLOR).
+  -c, --circuit=STRING    Target circuit (overrides default).
+  -o, --output="text"     Output format for structured commands.
+  -v, --version           Print drift version and exit.
+drift: expected "<name>"
+exit status 2
+```
+
+### `drift kart enable --help`
+
+```text
+Usage: drift kart enable <name>
+
+Enable kart autostart on circuit reboot (idempotent).
+
+Arguments:
+  <name>    Kart name.
+
+Flags:
+  -h, --help              Show context-sensitive help.
+      --[no-]debug        Verbose output (default on; --no-debug to silence)
+                          ($DRIFT_DEBUG).
+      --no-color          Disable ANSI colors in text output ($NO_COLOR).
+  -c, --circuit=STRING    Target circuit (overrides default).
+  -o, --output="text"     Output format for structured commands.
+  -v, --version           Print drift version and exit.
+drift: expected "<name>"
+exit status 2
+```
+
+### `drift kart info --help`
+
+```text
+Usage: drift kart info <name>
+
+Show a single kart's info.
+
+Arguments:
+  <name>    Kart name.
+
+Flags:
+  -h, --help              Show context-sensitive help.
+      --[no-]debug        Verbose output (default on; --no-debug to silence)
+                          ($DRIFT_DEBUG).
+      --no-color          Disable ANSI colors in text output ($NO_COLOR).
+  -c, --circuit=STRING    Target circuit (overrides default).
+  -o, --output="text"     Output format for structured commands.
+  -v, --version           Print drift version and exit.
+drift: expected "<name>"
+exit status 2
+```
+
+### `drift kart logs --help`
+
+```text
+Usage: drift kart logs <name> [flags]
 
 Fetch a chunk of kart logs.
 
@@ -520,6 +586,92 @@ Flags:
                           JSONL only.
       --level=STRING      Minimum level (debug|info|warn|error). JSONL only.
       --grep=STRING       Substring match on msg (JSONL) or raw line (text).
+drift: expected "<name>"
+exit status 2
+```
+
+### `drift kart restart --help`
+
+```text
+Usage: drift kart restart <name>
+
+Restart a kart.
+
+Arguments:
+  <name>    Kart name.
+
+Flags:
+  -h, --help              Show context-sensitive help.
+      --[no-]debug        Verbose output (default on; --no-debug to silence)
+                          ($DRIFT_DEBUG).
+      --no-color          Disable ANSI colors in text output ($NO_COLOR).
+  -c, --circuit=STRING    Target circuit (overrides default).
+  -o, --output="text"     Output format for structured commands.
+  -v, --version           Print drift version and exit.
+drift: expected "<name>"
+exit status 2
+```
+
+### `drift karts --help`
+
+```text
+Usage: drift karts [flags]
+
+List karts (cross-circuit by default; scope with -c).
+
+Flags:
+  -h, --help              Show context-sensitive help.
+      --[no-]debug        Verbose output (default on; --no-debug to silence)
+                          ($DRIFT_DEBUG).
+      --no-color          Disable ANSI colors in text output ($NO_COLOR).
+  -c, --circuit=STRING    Target circuit (overrides default).
+  -o, --output="text"     Output format for structured commands.
+  -v, --version           Print drift version and exit.
+→ /home/circuit/.drift/bin/devpod list --output json
+CIRCUIT  NAME   STATUS         SOURCE
+alpha    test2  error (stale)  clone https://github.com/kurisu-agent/tzone-buddy
+```
+
+### `drift kart start --help`
+
+```text
+Usage: drift kart start <name>
+
+Start a kart (idempotent).
+
+Arguments:
+  <name>    Kart name.
+
+Flags:
+  -h, --help              Show context-sensitive help.
+      --[no-]debug        Verbose output (default on; --no-debug to silence)
+                          ($DRIFT_DEBUG).
+      --no-color          Disable ANSI colors in text output ($NO_COLOR).
+  -c, --circuit=STRING    Target circuit (overrides default).
+  -o, --output="text"     Output format for structured commands.
+  -v, --version           Print drift version and exit.
+drift: expected "<name>"
+exit status 2
+```
+
+### `drift kart stop --help`
+
+```text
+Usage: drift kart stop <name>
+
+Stop a kart (idempotent).
+
+Arguments:
+  <name>    Kart name.
+
+Flags:
+  -h, --help              Show context-sensitive help.
+      --[no-]debug        Verbose output (default on; --no-debug to silence)
+                          ($DRIFT_DEBUG).
+      --no-color          Disable ANSI colors in text output ($NO_COLOR).
+  -c, --circuit=STRING    Target circuit (overrides default).
+  -o, --output="text"     Output format for structured commands.
+  -v, --version           Print drift version and exit.
 drift: expected "<name>"
 exit status 2
 ```
@@ -575,30 +727,10 @@ Flags:
                                dotfiles_repo).
       --character=STRING       Git/GitHub identity to inject.
       --autostart              Enable auto-start on server reboot.
+      --mount=MOUNT            Extra host-bind or volume mount (repeatable).
+                               type=bind,source=X,target=Y
       --[no-]connect           Connect to the kart after a successful create
                                (disable with --no-connect).
-drift: expected "<name>"
-exit status 2
-```
-
-### `drift restart --help`
-
-```text
-Usage: drift restart <name> [flags]
-
-Restart a kart.
-
-Arguments:
-  <name>    Kart name.
-
-Flags:
-  -h, --help              Show context-sensitive help.
-      --[no-]debug        Verbose output (default on; --no-debug to silence)
-                          ($DRIFT_DEBUG).
-      --no-color          Disable ANSI colors in text output ($NO_COLOR).
-  -c, --circuit=STRING    Target circuit (overrides default).
-  -o, --output="text"     Output format for structured commands.
-  -v, --version           Print drift version and exit.
 drift: expected "<name>"
 exit status 2
 ```
@@ -608,10 +740,10 @@ exit status 2
 ```text
 Usage: drift run [<name> [<args> ...]] [flags]
 
-Execute a user-script shorthand from runs.yaml; -l lists entries.
+Execute a user-script shorthand from runs.yaml.
 
 Arguments:
-  [<name>]        Shorthand name (see drift run -l); omit to pick interactively.
+  [<name>]        Shorthand name (see drift runs); omit to pick interactively.
   [<args> ...]    Positional args forwarded to the remote command.
 
 Flags:
@@ -623,10 +755,33 @@ Flags:
   -o, --output="text"     Output format for structured commands.
   -v, --version           Print drift version and exit.
 
-  -l, --list              List available runs on the target circuit instead of
-                          executing one.
       --ssh               Force plain SSH (skip mosh) for interactive entries.
       --forward-agent     Enable SSH agent forwarding (-A).
+error: circuit's lakitu is too old (version=dev api=1, missing run.list); this drift is devel api=1. update lakitu on the circuit and retry
+  type: method_not_found
+  client_api: 1
+  client_version: devel
+  method: run.list
+  server_api: 1
+  server_version: dev
+exit status 2
+```
+
+### `drift runs --help`
+
+```text
+Usage: drift runs [flags]
+
+List runs.yaml entries on the target circuit.
+
+Flags:
+  -h, --help              Show context-sensitive help.
+      --[no-]debug        Verbose output (default on; --no-debug to silence)
+                          ($DRIFT_DEBUG).
+      --no-color          Disable ANSI colors in text output ($NO_COLOR).
+  -c, --circuit=STRING    Target circuit (overrides default).
+  -o, --output="text"     Output format for structured commands.
+  -v, --version           Print drift version and exit.
 error: circuit's lakitu is too old (version=dev api=1, missing run.list); this drift is devel api=1. update lakitu on the circuit and retry
   type: method_not_found
   client_api: 1
@@ -642,7 +797,7 @@ exit status 2
 ```text
 Usage: drift skill [<name> [<prompt> ...]] [flags]
 
-List / invoke a Claude skill on the circuit.
+Pick / invoke a Claude skill on the circuit.
 
 Arguments:
   [<name>]          Skill name (see drift skill); omit to list.
@@ -663,15 +818,12 @@ no skills on this circuit
   drop SKILL.md files into ~/.claude/skills/<name>/ on the circuit
 ```
 
-### `drift start --help`
+### `drift skills --help`
 
 ```text
-Usage: drift start <name> [flags]
+Usage: drift skills [flags]
 
-Start a kart (idempotent).
-
-Arguments:
-  <name>    Kart name.
+List Claude skills on the target circuit.
 
 Flags:
   -h, --help              Show context-sensitive help.
@@ -681,8 +833,8 @@ Flags:
   -c, --circuit=STRING    Target circuit (overrides default).
   -o, --output="text"     Output format for structured commands.
   -v, --version           Print drift version and exit.
-drift: expected "<name>"
-exit status 2
+no skills on this circuit
+  drop SKILL.md files into ~/.claude/skills/<name>/ on the circuit
 ```
 
 ### `drift status --help`
@@ -708,33 +860,11 @@ drift devel
 default: alpha
 
    CIRCUIT  HOST                LAKITU  API  LATENCY  KARTS
-→  alpha    circuit@10.233.1.2  dev     1    13ms     0/1
+→  alpha    circuit@10.233.1.2  dev     1    11ms     0/1
 
 → alpha
 NAME   STATUS         SOURCE                                             TUNE  AUTOSTART
 test2  error (stale)  clone https://github.com/kurisu-agent/tzone-buddy  -     
-```
-
-### `drift stop --help`
-
-```text
-Usage: drift stop <name> [flags]
-
-Stop a kart (idempotent).
-
-Arguments:
-  <name>    Kart name.
-
-Flags:
-  -h, --help              Show context-sensitive help.
-      --[no-]debug        Verbose output (default on; --no-debug to silence)
-                          ($DRIFT_DEBUG).
-      --no-color          Disable ANSI colors in text output ($NO_COLOR).
-  -c, --circuit=STRING    Target circuit (overrides default).
-  -o, --output="text"     Output format for structured commands.
-  -v, --version           Print drift version and exit.
-drift: expected "<name>"
-exit status 2
 ```
 
 ### `drift update --help`

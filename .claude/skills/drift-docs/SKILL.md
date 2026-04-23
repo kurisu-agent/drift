@@ -66,18 +66,9 @@ Three specific sections to check:
 
 **Quickstart** — every command in this block must run without error on a fresh install. If `init` gained or lost a flag, or `new` changed shape, update the example. Don't invent flags that don't exist.
 
-**Shorthand / cheat sheet** — a compact block of the commands people type daily. Keep it tight (≤15 lines). Example shape:
+**Shorthand / cheat sheet** — a compact block of the commands people type daily. Keep it tight (≤15 lines). It's a *cheat sheet*, not a manual — flags people won't remember anyway don't belong here.
 
-```text
-drift connect                # cross-circuit picker (TTY only)
-drift connect <kart>         # mosh/ssh in, auto-starts
-drift connect -l             # list karts on the target circuit
-drift new <kart> --clone <url> --character <id>
-drift status                 # circuits + lakitu health + per-circuit karts
-drift circuit                # list circuits (same as `drift circuit list`)
-```
-
-It's a *cheat sheet*, not a manual — flags people won't remember anyway don't belong here. If the README already has a Commands block that doubles as shorthand, consolidate rather than duplicate.
+Deliberately no example block here: SKILL.md must not embed command examples, or the skill itself starts drifting from the binary. Mirror `drift help` (the curated top-level output) and the README's Commands section — those are the two places the shape gets checked. If the README already has a Commands block that doubles as shorthand, consolidate rather than duplicate.
 
 ### 5. Sanity-check before declaring done
 

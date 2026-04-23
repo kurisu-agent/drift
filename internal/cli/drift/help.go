@@ -29,11 +29,13 @@ var driftHelpRows = [][2]string{
 	{"connect [<name>]", "Mosh/ssh into a circuit or kart (merged picker)"},
 	{"new <name>", "Create a kart (from starter or existing repo)"},
 	{"karts", "List karts across circuits (cross-circuit; -c scopes)"},
-	{"kart <verb> <name>", "Kart lifecycle — start / stop / restart / delete / logs / info / …"},
+	{"kart <verb> <name>", "Lifecycle: start / stop / restart / delete / logs / info / enable / disable"},
 	{"ai", "Launch Claude Code on the circuit"},
 	{"skill [<name> [prompt]]", "Pick / invoke a Claude skill (`drift skills` to list)"},
 	{"run [<name>]", "Execute a user-script shorthand (`drift runs` to list)"},
 	{"circuits", "List configured circuits"},
+	{"circuit <verb>", "Manage circuits: add / rm / set (name|default) / connect"},
+	{"migrate", "Adopt an existing devpod workspace as a drift kart"},
 	{"update", "Check GitHub for a newer drift and self-install"},
 }
 
