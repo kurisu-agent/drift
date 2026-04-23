@@ -5,11 +5,11 @@
 lakitu init
 ! stderr .
 
-lakitu character add kurisu --git-name 'Kurisu Makise' --git-email kurisu@example.com
+lakitu character new kurisu --git-name 'Kurisu Makise' --git-email kurisu@example.com
 ! stderr .
 
 # Second add of the same name → code 4, name_collision.
-! lakitu character add kurisu --git-name 'Kurisu Makise' --git-email kurisu@example.com
+! lakitu character new kurisu --git-name 'Kurisu Makise' --git-email kurisu@example.com
 stderr '^error: character "kurisu" already exists'
 stderr '^  type: name_collision'
 stderr '^  name: kurisu'

@@ -32,19 +32,19 @@ func TestLayer1Dotfilesland(t *testing.T) {
 		patSecretName = "alice-pat"
 		patValue      = "ghp_testtoken_abcdef"
 	)
-	if _, err := c.LakituRPC(ctx, wire.MethodChestSet, map[string]string{
+	if _, err := c.LakituRPC(ctx, wire.MethodChestNew, map[string]string{
 		"name": patSecretName, "value": patValue,
 	}); err != nil {
-		t.Fatalf("chest.set: %v", err)
+		t.Fatalf("chest.new: %v", err)
 	}
-	if _, err := c.LakituRPC(ctx, wire.MethodCharacterAdd, map[string]string{
+	if _, err := c.LakituRPC(ctx, wire.MethodCharacterNew, map[string]string{
 		"name":        "alice",
 		"git_name":    "Alice Example",
 		"git_email":   "alice@example.com",
 		"github_user": "alice",
 		"pat_secret":  "chest:" + patSecretName,
 	}); err != nil {
-		t.Fatalf("character.add: %v", err)
+		t.Fatalf("character.new: %v", err)
 	}
 
 	kart := c.KartName("df-layer1")

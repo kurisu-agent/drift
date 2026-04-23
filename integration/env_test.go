@@ -29,12 +29,12 @@ func TestTuneEnvWorkspaceInjection(t *testing.T) {
 		chestValue = "sk-workspace-abc123"
 		envKey     = "OPENAI_API_KEY"
 	)
-	if _, err := c.LakituRPC(ctx, wire.MethodChestSet, map[string]string{
+	if _, err := c.LakituRPC(ctx, wire.MethodChestNew, map[string]string{
 		"name": chestName, "value": chestValue,
 	}); err != nil {
-		t.Fatalf("chest.set: %v", err)
+		t.Fatalf("chest.new: %v", err)
 	}
-	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]any{
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]any{
 		"name": "envtune-ws",
 		"env": map[string]any{
 			"workspace": map[string]string{
@@ -42,7 +42,7 @@ func TestTuneEnvWorkspaceInjection(t *testing.T) {
 			},
 		},
 	}); err != nil {
-		t.Fatalf("tune.set: %v", err)
+		t.Fatalf("tune.new: %v", err)
 	}
 
 	kart := c.KartName("env-ws")
@@ -95,10 +95,10 @@ func TestTuneEnvWorkspaceInjection(t *testing.T) {
 	// current value. Rotate the chest entry and assert the restart's devpod
 	// up picks up the new value.
 	const rotatedValue = "sk-workspace-rotated"
-	if _, err := c.LakituRPC(ctx, wire.MethodChestSet, map[string]string{
+	if _, err := c.LakituRPC(ctx, wire.MethodChestPatch, map[string]string{
 		"name": chestName, "value": rotatedValue,
 	}); err != nil {
-		t.Fatalf("chest.set rotate: %v", err)
+		t.Fatalf("chest.patch rotate: %v", err)
 	}
 	if _, err := c.LakituRPC(ctx, wire.MethodKartRestart, map[string]string{"name": kart}); err != nil {
 		t.Fatalf("kart.restart: %v", err)
@@ -129,12 +129,12 @@ func TestTuneEnvBuildInjection(t *testing.T) {
 		chestValue = "ghp_buildtoken_xyz"
 		envKey     = "GITHUB_TOKEN"
 	)
-	if _, err := c.LakituRPC(ctx, wire.MethodChestSet, map[string]string{
+	if _, err := c.LakituRPC(ctx, wire.MethodChestNew, map[string]string{
 		"name": chestName, "value": chestValue,
 	}); err != nil {
-		t.Fatalf("chest.set: %v", err)
+		t.Fatalf("chest.new: %v", err)
 	}
-	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]any{
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]any{
 		"name": "envtune-build",
 		"env": map[string]any{
 			"build": map[string]string{
@@ -142,7 +142,7 @@ func TestTuneEnvBuildInjection(t *testing.T) {
 			},
 		},
 	}); err != nil {
-		t.Fatalf("tune.set: %v", err)
+		t.Fatalf("tune.new: %v", err)
 	}
 
 	kart := c.KartName("env-build")
@@ -188,12 +188,12 @@ func TestTuneEnvSessionInjection(t *testing.T) {
 		chestValue = "sk-ant-session-456"
 		envKey     = "ANTHROPIC_API_KEY"
 	)
-	if _, err := c.LakituRPC(ctx, wire.MethodChestSet, map[string]string{
+	if _, err := c.LakituRPC(ctx, wire.MethodChestNew, map[string]string{
 		"name": chestName, "value": chestValue,
 	}); err != nil {
-		t.Fatalf("chest.set: %v", err)
+		t.Fatalf("chest.new: %v", err)
 	}
-	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]any{
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]any{
 		"name": "envtune-sess",
 		"env": map[string]any{
 			"session": map[string]string{
@@ -201,7 +201,7 @@ func TestTuneEnvSessionInjection(t *testing.T) {
 			},
 		},
 	}); err != nil {
-		t.Fatalf("tune.set: %v", err)
+		t.Fatalf("tune.new: %v", err)
 	}
 
 	kart := c.KartName("env-sess")
@@ -240,7 +240,7 @@ func TestTuneEnvMissingChestEntry(t *testing.T) {
 
 	c, rec := integration.StartReadyCircuit(ctx, t, true)
 
-	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]any{
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]any{
 		"name": "envtune-missing",
 		"env": map[string]any{
 			"workspace": map[string]string{
@@ -248,7 +248,7 @@ func TestTuneEnvMissingChestEntry(t *testing.T) {
 			},
 		},
 	}); err != nil {
-		t.Fatalf("tune.set: %v", err)
+		t.Fatalf("tune.new: %v", err)
 	}
 
 	kart := c.KartName("env-missing")
@@ -274,7 +274,7 @@ func TestTuneEnvRejectsLiteralValue(t *testing.T) {
 
 	c, _ := integration.StartReadyCircuit(ctx, t, true)
 
-	_, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]any{
+	_, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]any{
 		"name": "envtune-literal",
 		"env": map[string]any{
 			"workspace": map[string]string{
@@ -283,7 +283,7 @@ func TestTuneEnvRejectsLiteralValue(t *testing.T) {
 		},
 	})
 	if err == nil {
-		t.Fatalf("tune.set accepted a literal env value")
+		t.Fatalf("tune.new accepted a literal env value")
 	}
 	var re *rpcerr.Error
 	if !errors.As(err, &re) || re.Type != rpcerr.TypeInvalidFlag {

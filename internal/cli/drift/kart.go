@@ -41,6 +41,7 @@ type kartCmd struct {
 	Start   startCmd       `cmd:"" help:"Start a kart (idempotent)."`
 	Stop    stopCmd        `cmd:"" help:"Stop a kart (idempotent)."`
 	Restart restartCmd     `cmd:"" help:"Restart a kart."`
+	Rebuild rebuildCmd     `cmd:"" help:"Re-apply the current tune to a kart and recreate its container."`
 	Delete  deleteCmd      `cmd:"" help:"Delete a kart (errors if missing)."`
 	Logs    logsCmd        `cmd:"" help:"Fetch a chunk of kart logs."`
 	Enable  enableCmd      `cmd:"" help:"Enable kart autostart on circuit reboot (idempotent)."`
