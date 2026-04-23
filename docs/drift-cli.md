@@ -58,10 +58,10 @@ Commands:
     Choose which configured circuit is the default (interactive picker when no
     name given).
 
-  circuit connect [<name>] [flags]
+  circuit connect [<name> [<ssh-args> ...]] [flags]
     Open an interactive shell on the circuit's host (mosh/ssh).
 
-  kart connect [<name>] [flags]
+  kart connect [<name> [<ssh-args> ...]] [flags]
     Connect to a kart via mosh (ssh fallback).
 
   kart info <name>
@@ -88,7 +88,7 @@ Commands:
   kart disable <name>
     Disable kart autostart (idempotent).
 
-  connect (into,attach) [<name>] [flags]
+  connect (into,attach) [<name> [<ssh-args> ...]] [flags]
     Pick a circuit or kart and connect (merged picker).
 
   new <name> [flags]
@@ -248,12 +248,14 @@ exit status 2
 ### `drift circuit connect --help`
 
 ```text
-Usage: drift circuit connect [<name>] [flags]
+Usage: drift circuit connect [<name> [<ssh-args> ...]] [flags]
 
 Open an interactive shell on the circuit's host (mosh/ssh).
 
 Arguments:
-  [<name>]    Circuit name; omit on a TTY to pick from a list.
+  [<name>]            Circuit name; omit on a TTY to pick from a list.
+  [<ssh-args> ...]    Extra flags forwarded to ssh (e.g. -- -i ~/.ssh/id_lab).
+                      Under mosh, wrapped into --ssh="ssh …" for the bootstrap.
 
 Flags:
   -h, --help              Show context-sensitive help.
@@ -360,13 +362,15 @@ exit status 2
 ### `drift connect --help`
 
 ```text
-Usage: drift connect (into,attach) [<name>] [flags]
+Usage: drift connect (into,attach) [<name> [<ssh-args> ...]] [flags]
 
 Pick a circuit or kart and connect (merged picker).
 
 Arguments:
-  [<name>]    Kart name; omit on a TTY to pick from a merged circuits + karts
-              list.
+  [<name>]            Kart name; omit on a TTY to pick from a merged circuits +
+                      karts list.
+  [<ssh-args> ...]    Extra flags forwarded to ssh (e.g. -- -i ~/.ssh/id_lab).
+                      Under mosh, wrapped into --ssh="ssh …" for the bootstrap.
 
 Flags:
   -h, --help              Show context-sensitive help.
@@ -450,12 +454,15 @@ exit status 2
 ### `drift kart connect --help`
 
 ```text
-Usage: drift kart connect [<name>] [flags]
+Usage: drift kart connect [<name> [<ssh-args> ...]] [flags]
 
 Connect to a kart via mosh (ssh fallback).
 
 Arguments:
-  [<name>]    Kart name; omit on a TTY to pick from a cross-circuit kart list.
+  [<name>]            Kart name; omit on a TTY to pick from a cross-circuit kart
+                      list.
+  [<ssh-args> ...]    Extra flags forwarded to ssh (e.g. -- -i ~/.ssh/id_lab).
+                      Under mosh, wrapped into --ssh="ssh …" for the bootstrap.
 
 Flags:
   -h, --help              Show context-sensitive help.

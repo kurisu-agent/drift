@@ -32,9 +32,10 @@ type circuitCmd struct {
 // circuit picker. Mirrors the connect-flag surface of `drift connect` so
 // users who learned --ssh / --forward-agent there don't have to relearn.
 type circuitConnectCmd struct {
-	Name         string `arg:"" optional:"" help:"Circuit name; omit on a TTY to pick from a list."`
-	SSH          bool   `name:"ssh" help:"Force plain SSH (skip mosh)."`
-	ForwardAgent bool   `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
+	Name         string   `arg:"" optional:"" help:"Circuit name; omit on a TTY to pick from a list."`
+	SSHArgs      []string `arg:"" optional:"" passthrough:"" help:"Extra flags forwarded to ssh (e.g. -- -i ~/.ssh/id_lab). Under mosh, wrapped into --ssh=\"ssh …\" for the bootstrap."`
+	SSH          bool     `name:"ssh" help:"Force plain SSH (skip mosh)."`
+	ForwardAgent bool     `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
 }
 
 // circuitAddCmd: the positional arg is the raw SSH destination. The
