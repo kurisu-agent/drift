@@ -70,7 +70,7 @@ On NixOS circuits, import the module instead of wiring lakitu into your host con
 }
 ```
 
-That one import installs lakitu + devpod + mosh and registers the `lakitu-kart@` user-service template for `drift enable`. It deliberately does NOT set `DEVPOD_HOME` globally — lakitu's `kart.connect` RPC returns a fully-resolved remote argv (`env DEVPOD_HOME=… /abs/devpod ssh <kart> …`) that scopes drift's devpod state to the one command, leaving the user's plain `devpod` invocations untouched. Package pins are overridable through `services.lakitu.{package,devpodPackage,moshPackage}` for dev-VM live-tree builds or air-gapped mirrors.
+That one import installs lakitu + devpod + mosh and registers the `lakitu-kart@` user-service template for `drift kart enable`. It deliberately does NOT set `DEVPOD_HOME` globally — lakitu's `kart.connect` RPC returns a fully-resolved remote argv (`env DEVPOD_HOME=… /abs/devpod ssh <kart> …`) that scopes drift's devpod state to the one command, leaving the user's plain `devpod` invocations untouched. Package pins are overridable through `services.lakitu.{package,devpodPackage,moshPackage}` for dev-VM live-tree builds or air-gapped mirrors.
 
 ## Quickstart
 
