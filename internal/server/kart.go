@@ -182,7 +182,7 @@ func (d KartDeps) kartInfoHandler(ctx context.Context, params json.RawMessage) (
 			"kart %q is stale (garage state without devpod workspace)", p.Name).
 			With("kart", p.Name).
 			With("suggestion",
-				fmt.Sprintf("drift delete %s to clean up, then drift new %s", p.Name, p.Name))
+				fmt.Sprintf("drift kart delete %s to clean up, then drift new %s", p.Name, p.Name))
 	}
 
 	info := d.buildInfo(ctx, p.Name, cfg, ws, inDevpod, inGarage)

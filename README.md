@@ -90,22 +90,24 @@ drift status                        # circuits + lakitu health + kart counts
 drift update                        # self-install the newest release
 
 drift new <name> [--clone URL|--starter URL] [--tune T] [--character C]
-drift connect [-l|--list] [<name>]  # pick/list karts across all circuits; mosh (ssh fallback)
-drift info <name>                   # one kart's state
-drift start|stop|restart <name>     # lifecycle (idempotent)
-drift delete <name>                 # remove a kart
-drift enable|disable <name>         # autostart on circuit reboot
-drift logs <name>                   # fetch a chunk of kart logs
-drift migrate                       # adopt an existing devpod workspace
+drift connect [<name>]              # merged picker (circuits + karts); mosh (ssh fallback)
 
-drift circuit [-l|--list]           # list configured circuits
+drift circuits                      # print configured circuits
+drift circuit                       # pick a circuit → shell on its host
 drift circuit add|rm|set            # manage circuits (client config + SSH alias)
 
-drift ai                            # Claude on the circuit, preloaded with drift's CLI
-drift skill                         # list Claude skills on the circuit
-drift skill <name> [prompt]         # invoke a specific skill with an optional prompt
+drift karts                         # print karts across circuits (-c to scope to one)
+drift kart                          # pick a kart → connect
+drift kart connect [<name>]         # explicit connect
+drift kart info|start|stop|restart|delete|logs|enable|disable <name>
+drift migrate                       # adopt an existing devpod workspace
 
-drift run [-l|--list] [<name>] …    # run a shorthand from ~/.drift/runs.yaml; -l lists entries
+drift ai                            # Claude on the circuit, preloaded with drift's CLI
+drift skills                        # print available Claude skills
+drift skill [<name> [prompt]]       # pick + invoke a skill (explicit name skips picker)
+
+drift runs                          # print ~/.drift/runs.yaml entries
+drift run [<name>] [args…]          # pick + execute a run (explicit name skips picker)
 ```
 
 Global flags: `-c/--circuit <name>`, `-o/--output text|json`, `--no-debug`, `--no-color`. Full per-flag reference: [docs/drift-cli.md](docs/drift-cli.md).

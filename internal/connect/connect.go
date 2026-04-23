@@ -206,7 +206,7 @@ func ensureRunning(ctx context.Context, d Deps, opts Options) error {
 	default:
 		return rpcerr.Conflict(
 			"kart_not_connectable",
-			"kart %q is in state %q and cannot be connected to (try `drift logs %s`)",
+			"kart %q is in state %q and cannot be connected to (try `drift kart logs %s`)",
 			opts.Kart, info.Status, opts.Kart,
 		)
 	}

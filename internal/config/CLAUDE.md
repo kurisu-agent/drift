@@ -1,6 +1,6 @@
 # circuit — agent context
 
-You are an AI agent running on a **drift circuit** — a remote dev server. The user launched you via `drift ai` (bare REPL) or `drift skill <name>` (skill dispatch) on their workstation, which mosh/ssh'd in and ran `claude --dangerously-skip-permissions` from this directory (`~/.drift/`). Skills live at `~/.claude/skills/<name>/SKILL.md` on this circuit and are enumerated by `drift skill` from the workstation. (`drift run` is the generic shorthand dispatcher for non-AI commands — `drift run -l` lists entries in `~/.drift/runs.yaml`.)
+You are an AI agent running on a **drift circuit** — a remote dev server. The user launched you via `drift ai` (bare REPL) or `drift skill <name>` (skill dispatch) on their workstation, which mosh/ssh'd in and ran `claude --dangerously-skip-permissions` from this directory (`~/.drift/`). Skills live at `~/.claude/skills/<name>/SKILL.md` on this circuit and are enumerated by `drift skills` from the workstation. (`drift run` is the generic shorthand dispatcher for non-AI commands — `drift runs` lists entries in `~/.drift/runs.yaml`.)
 
 ## First thing to do
 
@@ -13,8 +13,8 @@ Run `lakitu help`. It prints the full, up-to-date reference for this circuit's s
 - **character** — a git-identity profile (name, email, SSH key, optional PAT).
 - **tune** — a preset: devcontainer features + starter repo + dotfiles.
 - **chest** — secrets store (`~/.drift/garage/chest/`, mode 0700).
-- **run** — a named shorthand in `~/.drift/runs.yaml` invoked as `drift run <name> [args…]` from the workstation. `drift run -l` lists them.
-- **skill** — a Claude Code skill under `~/.claude/skills/<name>/SKILL.md` on this circuit, invoked from the workstation as `drift skill <name> [prompt]`. `drift skill` (no args) lists them.
+- **run** — a named shorthand in `~/.drift/runs.yaml` invoked as `drift run <name> [args…]` from the workstation. `drift runs` prints them; bare `drift run` on a TTY picks one.
+- **skill** — a Claude Code skill under `~/.claude/skills/<name>/SKILL.md` on this circuit, invoked from the workstation as `drift skill <name> [prompt]`. `drift skills` prints them; bare `drift skill` on a TTY picks one.
 
 ## Registering a new run
 
@@ -23,7 +23,7 @@ Edit `~/.drift/runs.yaml` on this circuit. Every entry is one block:
 ```yaml
 runs:
   <name>:
-    description: "one-line summary shown in `drift run -l`"
+    description: "one-line summary shown in `drift runs`"
     mode: interactive | output
     post: ""                        # optional; connect-last-scaffold is the
                                     # only hook currently known to the client
@@ -55,7 +55,7 @@ Template data available inside `command:` (Go `text/template`):
 
 For Claude-specific dispatch, prefer skills over runs: add a new SKILL.md under `~/.claude/skills/<name>/` and it becomes reachable as `drift skill <name> [prompt]` from the workstation without touching `runs.yaml`.
 
-After editing, no server restart is needed — the `run.list` / `run.resolve` RPCs re-read the file on every call. Verify with `lakitu help` (which lists the RPC methods) or by asking the user to run `drift run -l` on their workstation.
+After editing, no server restart is needed — the `run.list` / `run.resolve` RPCs re-read the file on every call. Verify with `lakitu help` (which lists the RPC methods) or by asking the user to run `drift runs` on their workstation.
 
 ## Adding a new skill
 

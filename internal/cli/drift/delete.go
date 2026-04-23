@@ -40,7 +40,7 @@ func runKartDelete(ctx context.Context, io IO, root *CLI, cmd deleteCmd, deps de
 // confirming would be unsafe.
 func confirmDelete(io IO, name string) (bool, error) {
 	if !stdinIsTTY(io.Stdin) {
-		return false, errors.New("drift delete requires -y on non-interactive stdin")
+		return false, errors.New("drift kart delete requires -y on non-interactive stdin")
 	}
 	p := style.For(io.Stderr, false)
 	fmt.Fprintf(io.Stderr, "%s delete kart %q? [y/N]: ",

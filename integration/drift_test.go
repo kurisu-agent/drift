@@ -45,16 +45,16 @@ func TestDriftInitAndServerVersion(t *testing.T) {
 	}
 	_ = stdout
 
-	// Explicit probe via `drift circuit list` + RPC round-trip. Just
+	// Explicit probe via `drift circuits` + RPC round-trip. Just
 	// asserting the list command succeeds and names our circuit is enough
 	// signal that the config write worked; end-to-end version probing is
 	// covered by any subcommand that routes through client.Call — add a
 	// dedicated smoke later when `drift status` lands.
-	stdout, stderr, code = c.Drift(ctx, "circuit", "list")
+	stdout, stderr, code = c.Drift(ctx, "circuits")
 	if code != 0 {
-		t.Fatalf("drift circuit list exit=%d stderr=%q", code, stderr)
+		t.Fatalf("drift circuits exit=%d stderr=%q", code, stderr)
 	}
 	if !strings.Contains(stdout, integration.CircuitName) {
-		t.Errorf("circuit list did not mention test circuit:\n%s", stdout)
+		t.Errorf("drift circuits did not mention test circuit:\n%s", stdout)
 	}
 }

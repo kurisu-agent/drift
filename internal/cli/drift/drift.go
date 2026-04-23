@@ -25,31 +25,35 @@ type CLI struct {
 	// help output Kong auto-generates. See maybeVersionExit.
 	Version bool `short:"v" help:"Print drift version and exit."`
 
-	Help     helpCmd    `cmd:"" help:"Print an LLM-friendly command + protocol reference."`
-	Circuit_ circuitCmd `cmd:"" name:"circuit" help:"Manage circuits (client-side config + SSH config)."`
-	Init     initCmd    `cmd:"" name:"init" help:"Interactive first-time setup wizard (circuits + characters)."`
-	Status   statusCmd  `cmd:"" name:"status" help:"Show configured circuits + their lakitu health and per-circuit karts."`
-	New      newCmd     `cmd:"" name:"new" help:"Create a new kart (from starter or existing repo)."`
+	Help   helpCmd   `cmd:"" help:"Print an LLM-friendly command + protocol reference."`
+	Init   initCmd   `cmd:"" name:"init" help:"Interactive first-time setup wizard (circuits + characters)."`
+	Status statusCmd `cmd:"" name:"status" help:"Show configured circuits + their lakitu health and per-circuit karts."`
+	Update updateCmd `cmd:"" name:"update" help:"Check GitHub for a newer drift release and self-install."`
 
-	Info    infoCmd    `cmd:"" help:"Show a single kart's info."`
-	Start   startCmd   `cmd:"" help:"Start a kart (idempotent)."`
-	Stop    stopCmd    `cmd:"" help:"Stop a kart (idempotent)."`
-	Restart restartCmd `cmd:"" help:"Restart a kart."`
-	Delete  deleteCmd  `cmd:"" help:"Delete a kart (errors if missing)."`
-	Logs    logsCmd    `cmd:"" help:"Fetch a chunk of kart logs."`
-	Enable  enableCmd  `cmd:"" help:"Enable kart autostart on circuit reboot (idempotent)."`
-	Disable disableCmd `cmd:"" help:"Disable kart autostart (idempotent)."`
-	Connect connectCmd `cmd:"" aliases:"into,attach" help:"Pick a circuit or kart and connect (merged picker); -l lists karts cross-circuit."`
-	Kart    kartCmd    `cmd:"" name:"kart" help:"Kart-scoped commands (kart connect)."`
+	// Plural list verbs — print-only tables. Singular namespace verbs drop
+	// into pickers; plurals are for scripting and at-a-glance inspection.
+	Circuits circuitsCmd `cmd:"" name:"circuits" help:"List configured circuits (table)."`
+	Karts    kartsCmd    `cmd:"" name:"karts" help:"List karts (cross-circuit by default; scope with -c)."`
+	Runs     runsCmd     `cmd:"" name:"runs" help:"List runs.yaml entries on the target circuit."`
+	Skills   skillsCmd   `cmd:"" name:"skills" help:"List Claude skills on the target circuit."`
 
-	Run runCmd `cmd:"" name:"run" help:"Execute a user-script shorthand from runs.yaml; -l lists entries."`
+	// Noun namespaces. Bare `drift circuit` / `drift kart` resolve to the
+	// default subcommand (connect), so the singular verb acts as a picker.
+	Circuit_ circuitCmd `cmd:"" name:"circuit" help:"Circuit-scoped commands (bare: pick + shell)."`
+	Kart     kartCmd    `cmd:"" name:"kart" help:"Kart-scoped commands (bare: pick + connect)."`
 
+	// Merged picker — bare `drift connect` fans out over circuits + karts.
+	Connect connectCmd `cmd:"" aliases:"into,attach" help:"Pick a circuit or kart and connect (merged picker)."`
+
+	// Kart creation stays flat: `drift new` is a frequent top-level verb.
+	New newCmd `cmd:"" name:"new" help:"Create a new kart (from starter or existing repo)."`
+
+	// Name-first shortcuts with a single implicit verb (execute / invoke).
+	Run   runCmd   `cmd:"" name:"run" help:"Execute a user-script shorthand from runs.yaml."`
 	AI    aiCmd    `cmd:"" name:"ai" help:"Launch Claude Code on the circuit (interactive REPL)."`
-	Skill skillCmd `cmd:"" name:"skill" help:"List / invoke a Claude skill on the circuit."`
+	Skill skillCmd `cmd:"" name:"skill" help:"Pick / invoke a Claude skill on the circuit."`
 
 	Migrate migrateCmd `cmd:"" name:"migrate" help:"Adopt an existing devpod workspace as a drift kart (interactive)."`
-
-	Update updateCmd `cmd:"" name:"update" help:"Check GitHub for a newer drift release and self-install."`
 
 	SshProxy sshProxyCmd `cmd:"" name:"ssh-proxy" hidden:"" help:"ProxyCommand helper for drift.<circuit>.<kart> aliases (invoked by OpenSSH)."`
 }
@@ -135,42 +139,56 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 	switch kctx.Command() {
 	case "help":
 		return runHelp(io, parser, cli.Help)
+
+	// Plural listings
+	case "circuits":
+		return runCircuits(io, &cli, deps)
+	case "karts":
+		return runKarts(ctx, io, &cli, deps)
+	case "runs":
+		return runRuns(ctx, io, &cli, deps)
+	case "skills":
+		return runSkills(ctx, io, &cli, deps)
+
+	// Circuit namespace
 	case "circuit add", "circuit add <user@host>":
 		return runCircuitAdd(ctx, io, &cli, cli.Circuit_.Add, deps)
 	case "circuit rm <name>":
 		return runCircuitRm(io, &cli, cli.Circuit_.Rm, deps)
-	case "circuit list":
-		return runCircuitList(io, &cli, deps)
 	case "circuit set name <new-name>":
 		return runCircuitSetName(ctx, io, &cli, cli.Circuit_.Set.Name, deps)
 	case "circuit set default", "circuit set default <name>":
 		return runCircuitSetDefault(io, &cli, cli.Circuit_.Set.Default, deps)
-	case "circuit connect", "circuit connect <name>":
+	case "circuit", "circuit connect", "circuit connect <name>":
 		return runCircuitConnect(ctx, io, &cli, cli.Circuit_.Connect, deps)
-	case "kart connect", "kart connect <name>":
+
+	// Kart namespace
+	case "kart", "kart connect", "kart connect <name>":
 		return runKartConnect(ctx, io, &cli, cli.Kart.Connect, deps)
+	case "kart info <name>":
+		return runKartInfo(ctx, io, &cli, cli.Kart.Info, deps)
+	case "kart start <name>":
+		return runKartStart(ctx, io, &cli, cli.Kart.Start, deps)
+	case "kart stop <name>":
+		return runKartStop(ctx, io, &cli, cli.Kart.Stop, deps)
+	case "kart restart <name>":
+		return runKartRestart(ctx, io, &cli, cli.Kart.Restart, deps)
+	case "kart delete <name>":
+		return runKartDelete(ctx, io, &cli, cli.Kart.Delete, deps)
+	case "kart logs <name>":
+		return runKartLogs(ctx, io, &cli, cli.Kart.Logs, deps)
+	case "kart enable <name>":
+		return runKartEnable(ctx, io, &cli, cli.Kart.Enable, deps)
+	case "kart disable <name>":
+		return runKartDisable(ctx, io, &cli, cli.Kart.Disable, deps)
+
+	// Top-level verbs
 	case "new <name>":
 		return runNew(ctx, io, &cli, cli.New, deps)
-	case "info <name>":
-		return runKartInfo(ctx, io, &cli, cli.Info, deps)
 	case "init":
 		return runInit(ctx, io, &cli, cli.Init, deps)
 	case "status":
 		return runStatus(ctx, io, &cli, cli.Status, deps)
-	case "start <name>":
-		return runKartStart(ctx, io, &cli, cli.Start, deps)
-	case "stop <name>":
-		return runKartStop(ctx, io, &cli, cli.Stop, deps)
-	case "restart <name>":
-		return runKartRestart(ctx, io, &cli, cli.Restart, deps)
-	case "delete <name>":
-		return runKartDelete(ctx, io, &cli, cli.Delete, deps)
-	case "logs <name>":
-		return runKartLogs(ctx, io, &cli, cli.Logs, deps)
-	case "enable <name>":
-		return runKartEnable(ctx, io, &cli, cli.Enable, deps)
-	case "disable <name>":
-		return runKartDisable(ctx, io, &cli, cli.Disable, deps)
 	case "connect", "connect <name>":
 		return runConnect(ctx, io, &cli, cli.Connect, deps)
 	case "run", "run <name>", "run <name> <args>":

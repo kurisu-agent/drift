@@ -16,21 +16,20 @@ import (
 )
 
 // runCmd: `drift run <name> [args…]`. Args are forwarded to the server's
-// template expansion. Name is optional so `drift run` alone drops to the
-// listing — a nicer affordance than Kong's "expected <name>" for users
-// who forget the shorthand. `-l` mirrors `drift connect -l`: force the
-// listing regardless of TTY / args.
+// template expansion. Name is optional so bare `drift run` on a TTY drops
+// into the picker; non-TTY callers fall through to the listing the same
+// way `drift runs` would. Users who want the print-only surface should use
+// `drift runs` directly.
 type runCmd struct {
-	List         bool     `name:"list" short:"l" help:"List available runs on the target circuit instead of executing one."`
-	Name         string   `arg:"" optional:"" help:"Shorthand name (see drift run -l); omit to pick interactively."`
+	Name         string   `arg:"" optional:"" help:"Shorthand name (see drift runs); omit to pick interactively."`
 	Args         []string `arg:"" optional:"" passthrough:"" help:"Positional args forwarded to the remote command."`
 	SSH          bool     `name:"ssh" help:"Force plain SSH (skip mosh) for interactive entries."`
 	ForwardAgent bool     `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
 }
 
 // runRunsList fetches run.list and renders it as a table or JSON. Used
-// by `drift run -l`, `drift run` with no args on a non-TTY, and the
-// zero-entry hint inside the interactive picker.
+// by `drift runs`, bare `drift run` on a non-TTY, and the zero-entry hint
+// inside the interactive picker.
 func runRunsList(ctx context.Context, io IO, root *CLI, deps deps) int {
 	_, circuit, err := resolveCircuit(root, deps)
 	if err != nil {
@@ -63,12 +62,6 @@ func runRunsList(ctx context.Context, io IO, root *CLI, deps deps) int {
 }
 
 func runRunExec(ctx context.Context, io IO, root *CLI, cmd runCmd, deps deps) int {
-	// Explicit `-l` always lists, regardless of TTY / args. Mirrors
-	// `drift connect -l`.
-	if cmd.List {
-		return runRunsList(ctx, io, root, deps)
-	}
-
 	// Interactive prompts require a real TTY and a human-readable output
 	// channel; pipelines and `--output json` fall through to the scripted
 	// listing instead.

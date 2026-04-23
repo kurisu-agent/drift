@@ -79,7 +79,7 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 			"kart %q is stale (garage state without devpod workspace)", f.Name).
 			With("kart", f.Name).
 			With("suggestion",
-				fmt.Sprintf("drift delete %s to clean up, then drift new %s", f.Name, f.Name))
+				fmt.Sprintf("drift kart delete %s to clean up, then drift new %s", f.Name, f.Name))
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return nil, rpcerr.Internal("kart.new: stat %s: %v", kartDir, err).Wrap(err)
 	}

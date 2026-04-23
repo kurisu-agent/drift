@@ -22,17 +22,18 @@ type helpCmd struct {
 // path (init → status → connect) before the rest. Keep in sync when adding
 // or renaming commands; --full is the auto-derived fallback that cannot
 // drift and surfaces every leaf command, including ones omitted here
-// (circuit *, info, migrate, restart, delete, enable, disable).
+// (circuit *, kart subverbs, migrate, …).
 var driftHelpRows = [][2]string{
 	{"init", "Interactive first-time setup wizard (circuits + characters)"},
 	{"status", "Circuits + lakitu health + per-circuit karts"},
-	{"connect [<name>]", "Mosh into a kart (-l lists across circuits; ssh fallback)"},
+	{"connect [<name>]", "Mosh/ssh into a circuit or kart (merged picker)"},
 	{"new <name>", "Create a kart (from starter or existing repo)"},
+	{"karts", "List karts across circuits (cross-circuit; -c scopes)"},
+	{"kart <verb> <name>", "Kart lifecycle — start / stop / restart / delete / logs / info / …"},
 	{"ai", "Launch Claude Code on the circuit"},
-	{"skill [<name> [prompt]]", "List / invoke a Claude skill on the circuit"},
-	{"run [<name>]", "Execute a user-script shorthand from runs.yaml"},
-	{"logs <name>", "Fetch a chunk of kart logs"},
-	{"start|stop <name>", "Kart lifecycle (also restart / delete / enable / disable)"},
+	{"skill [<name> [prompt]]", "Pick / invoke a Claude skill (`drift skills` to list)"},
+	{"run [<name>]", "Execute a user-script shorthand (`drift runs` to list)"},
+	{"circuits", "List configured circuits"},
 	{"update", "Check GitHub for a newer drift and self-install"},
 }
 

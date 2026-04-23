@@ -17,12 +17,15 @@ import (
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
+// circuitCmd: the `circuit` namespace. `Connect` is the default subcommand
+// so bare `drift circuit` drops into the circuit picker + shell. The
+// print-only `drift circuits` (plural) lives at the top level — see
+// circuitsCmd in list.go.
 type circuitCmd struct {
 	Add     circuitAddCmd     `cmd:"" help:"Register a circuit (probes for name, updates client config + SSH config)."`
 	Rm      circuitRmCmd      `cmd:"" help:"Unregister a circuit."`
-	List    circuitListCmd    `cmd:"" default:"withargs" help:"List configured circuits (default when no subcommand is given)."`
 	Set     circuitSetCmd     `cmd:"" help:"Set a config field on the target circuit (e.g. name)."`
-	Connect circuitConnectCmd `cmd:"" help:"Open an interactive shell on the circuit's host (mosh/ssh)."`
+	Connect circuitConnectCmd `cmd:"" default:"withargs" help:"Open an interactive shell on the circuit's host (mosh/ssh)."`
 }
 
 // circuitConnectCmd: optional positional name; omit on a TTY for the
@@ -45,13 +48,6 @@ type circuitAddCmd struct {
 
 type circuitRmCmd struct {
 	Name string `arg:"" help:"Circuit name to remove."`
-}
-
-// circuitListCmd: `drift circuit list`. The `-l`/`--list` alias lets
-// users who learned the flag from `drift connect -l` type
-// `drift circuit -l` and get the same output — both forms route here.
-type circuitListCmd struct {
-	List bool `name:"list" short:"l" hidden:"" help:"Accepted for consistency with connect -l."`
 }
 
 // circuitSetCmd namespaces `drift circuit set <key> <value>` so we can

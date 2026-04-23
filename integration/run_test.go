@@ -109,7 +109,7 @@ exit 0
 	}
 }
 
-// TestRun_ListsBuiltins asserts that `drift run -l` returns the entries
+// TestRun_ListsBuiltins asserts that `drift runs` returns the entries
 // seeded by `lakitu init` — proving there is no embedded client-side
 // knowledge of run names.
 func TestRun_ListsBuiltins(t *testing.T) {
@@ -117,26 +117,26 @@ func TestRun_ListsBuiltins(t *testing.T) {
 
 	c, _ := integration.StartReadyCircuit(ctx, t, false)
 
-	stdout, stderr, code := c.Drift(ctx, "run", "-l")
+	stdout, stderr, code := c.Drift(ctx, "runs")
 	if code != 0 {
-		t.Fatalf("drift run -l: exit=%d stderr=%q", code, stderr)
+		t.Fatalf("drift runs: exit=%d stderr=%q", code, stderr)
 	}
 	for _, name := range []string{"ping", "uptime", "disk", "mem"} {
 		if !strings.Contains(stdout, name) {
-			t.Errorf("drift run -l output missing %q:\n%s", name, stdout)
+			t.Errorf("drift runs output missing %q:\n%s", name, stdout)
 		}
 	}
 	// `ai` and `scaffolder` moved to dedicated `drift ai` / `drift skill`
 	// commands; they should no longer be seeded into the run registry.
 	for _, gone := range []string{"ai", "scaffolder"} {
 		if strings.Contains(stdout, gone) {
-			t.Errorf("drift run -l unexpectedly still contains %q:\n%s", gone, stdout)
+			t.Errorf("drift runs unexpectedly still contains %q:\n%s", gone, stdout)
 		}
 	}
 }
 
 // TestRun_UnknownAfterEdit appends a new entry to the circuit's runs.yaml
-// after the drift client was built, then asserts it appears in `drift run -l`
+// after the drift client was built, then asserts it appears in `drift runs`
 // — the "no embedded list" guarantee we want to preserve as entries grow.
 func TestRun_UnknownAfterEdit(t *testing.T) {
 	ctx := integration.TestCtx(t, 2*time.Minute)
@@ -149,9 +149,9 @@ func TestRun_UnknownAfterEdit(t *testing.T) {
 		t.Fatalf("append runs.yaml: %v", err)
 	}
 
-	stdout, stderr, code := c.Drift(ctx, "run", "-l")
+	stdout, stderr, code := c.Drift(ctx, "runs")
 	if code != 0 {
-		t.Fatalf("drift run -l: exit=%d stderr=%q", code, stderr)
+		t.Fatalf("drift runs: exit=%d stderr=%q", code, stderr)
 	}
 	if !strings.Contains(stdout, "hello-from-test") {
 		t.Errorf("appended entry not visible to client:\n%s", stdout)
@@ -209,9 +209,9 @@ func TestRun_ListBackfillsArgsOnStaleYAML(t *testing.T) {
 		t.Fatalf("seed stale runs.yaml: %v", err)
 	}
 
-	stdout, stderr, code := c.Drift(ctx, "run", "-l", "--output", "json")
+	stdout, stderr, code := c.Drift(ctx, "runs", "--output", "json")
 	if code != 0 {
-		t.Fatalf("drift run -l --output json: exit=%d stderr=%q", code, stderr)
+		t.Fatalf("drift runs --output json: exit=%d stderr=%q", code, stderr)
 	}
 	var lr wire.RunListResult
 	if err := json.Unmarshal([]byte(stdout), &lr); err != nil {
