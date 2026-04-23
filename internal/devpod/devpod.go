@@ -188,10 +188,12 @@ type UpOpts struct {
 	DotfilesScriptEnv []string
 	// ConfigureSSH: drift manages its own SSH config and keeps this off.
 	ConfigureSSH bool
-	// Recreate renders `--recreate`, telling devpod to tear down and
-	// rebuild the workspace so a changed devcontainer.json (new features,
-	// bumped image) actually takes effect. Without it, `devpod up` on an
-	// existing workspace reuses the running container.
+	// Recreate renders `--recreate`, forcing devpod to tear down and
+	// rebuild the workspace (devcontainer reprocessed, image rebuilt,
+	// container recreated). Used by kart.recreate for devcontainer.json
+	// changes and by kart.rebuild when re-applying tune drift. Without
+	// it, `devpod up` on an existing workspace reuses the running
+	// container.
 	Recreate bool
 }
 

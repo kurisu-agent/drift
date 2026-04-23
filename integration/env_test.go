@@ -29,12 +29,12 @@ func TestTuneEnvWorkspaceInjection(t *testing.T) {
 		chestValue = "sk-workspace-abc123"
 		envKey     = "OPENAI_API_KEY"
 	)
-	if _, err := c.LakituRPC(ctx, wire.MethodChestSet, map[string]string{
+	if _, err := c.LakituRPC(ctx, wire.MethodChestNew, map[string]string{
 		"name": chestName, "value": chestValue,
 	}); err != nil {
-		t.Fatalf("chest.set: %v", err)
+		t.Fatalf("chest.new: %v", err)
 	}
-	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]any{
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]any{
 		"name": "envtune-ws",
 		"env": map[string]any{
 			"workspace": map[string]string{
@@ -42,7 +42,7 @@ func TestTuneEnvWorkspaceInjection(t *testing.T) {
 			},
 		},
 	}); err != nil {
-		t.Fatalf("tune.set: %v", err)
+		t.Fatalf("tune.new: %v", err)
 	}
 
 	kart := c.KartName("env-ws")
@@ -95,10 +95,10 @@ func TestTuneEnvWorkspaceInjection(t *testing.T) {
 	// current value. Rotate the chest entry and assert the restart's devpod
 	// up picks up the new value.
 	const rotatedValue = "sk-workspace-rotated"
-	if _, err := c.LakituRPC(ctx, wire.MethodChestSet, map[string]string{
+	if _, err := c.LakituRPC(ctx, wire.MethodChestPatch, map[string]string{
 		"name": chestName, "value": rotatedValue,
 	}); err != nil {
-		t.Fatalf("chest.set rotate: %v", err)
+		t.Fatalf("chest.patch rotate: %v", err)
 	}
 	if _, err := c.LakituRPC(ctx, wire.MethodKartRestart, map[string]string{"name": kart}); err != nil {
 		t.Fatalf("kart.restart: %v", err)
@@ -132,12 +132,12 @@ func TestKartRecreateRebuildsWithRotatedEnv(t *testing.T) {
 		chestValue = "sk-recreate-original"
 		envKey     = "OPENAI_API_KEY"
 	)
-	if _, err := c.LakituRPC(ctx, wire.MethodChestSet, map[string]string{
+	if _, err := c.LakituRPC(ctx, wire.MethodChestNew, map[string]string{
 		"name": chestName, "value": chestValue,
 	}); err != nil {
-		t.Fatalf("chest.set: %v", err)
+		t.Fatalf("chest.new: %v", err)
 	}
-	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]any{
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]any{
 		"name": "envtune-recreate",
 		"env": map[string]any{
 			"workspace": map[string]string{
@@ -145,7 +145,7 @@ func TestKartRecreateRebuildsWithRotatedEnv(t *testing.T) {
 			},
 		},
 	}); err != nil {
-		t.Fatalf("tune.set: %v", err)
+		t.Fatalf("tune.new: %v", err)
 	}
 
 	kart := c.KartName("recreate")
@@ -155,10 +155,10 @@ func TestKartRecreateRebuildsWithRotatedEnv(t *testing.T) {
 
 	// Rotate the chest entry; recreate should pick up the new value.
 	const rotatedValue = "sk-recreate-rotated"
-	if _, err := c.LakituRPC(ctx, wire.MethodChestSet, map[string]string{
+	if _, err := c.LakituRPC(ctx, wire.MethodChestPatch, map[string]string{
 		"name": chestName, "value": rotatedValue,
 	}); err != nil {
-		t.Fatalf("chest.set rotate: %v", err)
+		t.Fatalf("chest.patch rotate: %v", err)
 	}
 
 	// Drive the client CLI (not just the RPC) so the wiring through
@@ -197,6 +197,41 @@ func TestKartRecreateRebuildsWithRotatedEnv(t *testing.T) {
 	}
 }
 
+// TestKartRecreateLeavesKartConfigUnchanged is the integration-level
+// mirror of the same-named server unit test: confirms `drift kart
+// recreate` does NOT mutate the kart's config.yaml on disk (no tune
+// re-snapshot). That's the contract that differentiates recreate from
+// rebuild — users who've hand-edited config.yaml rely on this.
+func TestKartRecreateLeavesKartConfigUnchanged(t *testing.T) {
+	ctx := integration.TestCtx(t, 5*time.Minute)
+
+	c, _ := integration.StartReadyCircuit(ctx, t, true)
+
+	// A kart with a tune set is the interesting case — rebuild would
+	// re-snapshot env+mount_dirs from the tune; recreate must not.
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]any{
+		"name": "envtune-noop",
+	}); err != nil {
+		t.Fatalf("tune.new: %v", err)
+	}
+	kart := c.KartName("recreate-noop")
+	if _, stderr, code := c.Drift(ctx, "new", kart, "--tune", "envtune-noop"); code != 0 {
+		t.Fatalf("drift new: code=%d stderr=%q", code, stderr)
+	}
+
+	cfgPath := "/home/" + c.User + "/.drift/garage/karts/" + kart + "/config.yaml"
+	before := c.ExecInContainer(ctx, "sh", "-c", "cat "+cfgPath+" && stat -c %Y "+cfgPath)
+
+	if _, stderr, code := c.Drift(ctx, "kart", "recreate", kart); code != 0 {
+		t.Fatalf("drift kart recreate: code=%d stderr=%q", code, stderr)
+	}
+
+	after := c.ExecInContainer(ctx, "sh", "-c", "cat "+cfgPath+" && stat -c %Y "+cfgPath)
+	if string(before) != string(after) {
+		t.Errorf("kart config changed by recreate:\nbefore=%q\nafter=%q", before, after)
+	}
+}
+
 // TestTuneEnvBuildInjection verifies env.build entries reach both
 // dotfiles install paths — drift's layer-1 file:// install (process env)
 // and devpod's --dotfiles install via --dotfiles-script-env on devpod up
@@ -212,12 +247,12 @@ func TestTuneEnvBuildInjection(t *testing.T) {
 		chestValue = "ghp_buildtoken_xyz"
 		envKey     = "GITHUB_TOKEN"
 	)
-	if _, err := c.LakituRPC(ctx, wire.MethodChestSet, map[string]string{
+	if _, err := c.LakituRPC(ctx, wire.MethodChestNew, map[string]string{
 		"name": chestName, "value": chestValue,
 	}); err != nil {
-		t.Fatalf("chest.set: %v", err)
+		t.Fatalf("chest.new: %v", err)
 	}
-	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]any{
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]any{
 		"name": "envtune-build",
 		"env": map[string]any{
 			"build": map[string]string{
@@ -225,7 +260,7 @@ func TestTuneEnvBuildInjection(t *testing.T) {
 			},
 		},
 	}); err != nil {
-		t.Fatalf("tune.set: %v", err)
+		t.Fatalf("tune.new: %v", err)
 	}
 
 	kart := c.KartName("env-build")
@@ -271,12 +306,12 @@ func TestTuneEnvSessionInjection(t *testing.T) {
 		chestValue = "sk-ant-session-456"
 		envKey     = "ANTHROPIC_API_KEY"
 	)
-	if _, err := c.LakituRPC(ctx, wire.MethodChestSet, map[string]string{
+	if _, err := c.LakituRPC(ctx, wire.MethodChestNew, map[string]string{
 		"name": chestName, "value": chestValue,
 	}); err != nil {
-		t.Fatalf("chest.set: %v", err)
+		t.Fatalf("chest.new: %v", err)
 	}
-	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]any{
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]any{
 		"name": "envtune-sess",
 		"env": map[string]any{
 			"session": map[string]string{
@@ -284,7 +319,7 @@ func TestTuneEnvSessionInjection(t *testing.T) {
 			},
 		},
 	}); err != nil {
-		t.Fatalf("tune.set: %v", err)
+		t.Fatalf("tune.new: %v", err)
 	}
 
 	kart := c.KartName("env-sess")
@@ -323,7 +358,7 @@ func TestTuneEnvMissingChestEntry(t *testing.T) {
 
 	c, rec := integration.StartReadyCircuit(ctx, t, true)
 
-	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]any{
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]any{
 		"name": "envtune-missing",
 		"env": map[string]any{
 			"workspace": map[string]string{
@@ -331,7 +366,7 @@ func TestTuneEnvMissingChestEntry(t *testing.T) {
 			},
 		},
 	}); err != nil {
-		t.Fatalf("tune.set: %v", err)
+		t.Fatalf("tune.new: %v", err)
 	}
 
 	kart := c.KartName("env-missing")
@@ -357,7 +392,7 @@ func TestTuneEnvRejectsLiteralValue(t *testing.T) {
 
 	c, _ := integration.StartReadyCircuit(ctx, t, true)
 
-	_, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]any{
+	_, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]any{
 		"name": "envtune-literal",
 		"env": map[string]any{
 			"workspace": map[string]string{
@@ -366,7 +401,7 @@ func TestTuneEnvRejectsLiteralValue(t *testing.T) {
 		},
 	})
 	if err == nil {
-		t.Fatalf("tune.set accepted a literal env value")
+		t.Fatalf("tune.new accepted a literal env value")
 	}
 	var re *rpcerr.Error
 	if !errors.As(err, &re) || re.Type != rpcerr.TypeInvalidFlag {

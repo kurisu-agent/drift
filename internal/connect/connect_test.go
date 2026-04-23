@@ -161,6 +161,82 @@ func TestRunForwardAgentAddsDashA(t *testing.T) {
 	}
 }
 
+// TestRunSSHArgsSpliceOnSSHPath covers the ssh transport: args slot in
+// between `-A` and the target host so they apply to the connection, not
+// the remote command.
+func TestRunSSHArgsSpliceOnSSHPath(t *testing.T) {
+	f := &fakeServer{statuses: []string{"running"}}
+	rec := recordedExec{}
+	d := connect.Deps{
+		LookPath: func(s string) (string, error) { return "", errors.New("no mosh") },
+		Call:     f.call,
+		Exec: func(ctx context.Context, bin string, argv []string, stdio connect.Stdio) error {
+			rec.bin, rec.argv = bin, argv
+			return nil
+		},
+		Now:   time.Now,
+		Sleep: func(time.Duration) {},
+	}
+	err := connect.Run(context.Background(), d, connect.Options{
+		Circuit:      "c",
+		Kart:         "k",
+		ForwardAgent: true,
+		SSHArgs:      []string{"-i", "/k/id", "-o", "IdentitiesOnly=yes"},
+	}, connect.Stdio{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if rec.bin != "ssh" {
+		t.Errorf("bin = %q, want ssh (mosh absent)", rec.bin)
+	}
+	wantArgv := append(
+		[]string{"-t", "-A", "-i", "/k/id", "-o", "IdentitiesOnly=yes", "drift.c"},
+		serverArgv...,
+	)
+	if !equal(rec.argv, wantArgv) {
+		t.Errorf("argv = %v, want %v", rec.argv, wantArgv)
+	}
+}
+
+// TestRunSSHArgsForwardsThroughMosh covers the mosh transport: mosh uses
+// ssh to bootstrap mosh-server on the remote end, and --ssh="ssh …" swaps
+// in our flag-ladened ssh for that bootstrap. Each arg is POSIX-single-
+// quoted so paths with spaces / embedded quotes survive mosh's shell
+// split.
+func TestRunSSHArgsForwardsThroughMosh(t *testing.T) {
+	f := &fakeServer{statuses: []string{"running"}}
+	rec := recordedExec{}
+	d := connect.Deps{
+		LookPath: func(s string) (string, error) { return "/usr/bin/mosh", nil },
+		Call:     f.call,
+		Exec: func(ctx context.Context, bin string, argv []string, stdio connect.Stdio) error {
+			rec.bin, rec.argv = bin, argv
+			return nil
+		},
+		Now:   time.Now,
+		Sleep: func(time.Duration) {},
+	}
+	err := connect.Run(context.Background(), d, connect.Options{
+		Circuit: "c",
+		Kart:    "k",
+		SSHArgs: []string{"-i", "/k/has space/id", "-o", "Foo='bar'"},
+	}, connect.Stdio{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if rec.bin != "mosh" {
+		t.Errorf("bin = %q, want mosh", rec.bin)
+	}
+	wantOverride := `--ssh=ssh '-i' '/k/has space/id' '-o' 'Foo='\''bar'\'''`
+	wantArgv := append(
+		[]string{wantOverride, "drift.c", "--"},
+		serverArgv...,
+	)
+	if !equal(rec.argv, wantArgv) {
+		t.Errorf("argv = %v\n want %v", rec.argv, wantArgv)
+	}
+}
+
 // TestRunFallsBackWhenKartConnectMissing covers the cross-version case:
 // newer drift client talking to a lakitu that predates kart.connect. The
 // RPC returns method_not_found and the client synthesizes the historic

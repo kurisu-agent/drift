@@ -41,7 +41,8 @@ type kartCmd struct {
 	Start    startCmd       `cmd:"" help:"Start a kart (idempotent)."`
 	Stop     stopCmd        `cmd:"" help:"Stop a kart (idempotent)."`
 	Restart  restartCmd     `cmd:"" help:"Restart a kart."`
-	Recreate recreateCmd    `cmd:"" help:"Recreate a kart (rebuilds container to pick up devcontainer.json changes)."`
+	Recreate recreateCmd    `cmd:"" help:"Recreate a kart's container (no tune re-apply) — picks up devcontainer.json changes."`
+	Rebuild  rebuildCmd     `cmd:"" help:"Re-apply the current tune to a kart and recreate its container."`
 	Delete   deleteCmd      `cmd:"" help:"Delete a kart (errors if missing)."`
 	Logs     logsCmd        `cmd:"" help:"Fetch a chunk of kart logs."`
 	Enable   enableCmd      `cmd:"" help:"Enable kart autostart on circuit reboot (idempotent)."`
@@ -53,9 +54,10 @@ type kartCmd struct {
 // picker on bare `drift connect` is what makes this command worth its
 // own verb: this one always lands on a kart.
 type kartConnectCmd struct {
-	Name         string `arg:"" optional:"" help:"Kart name; omit on a TTY to pick from a cross-circuit kart list."`
-	SSH          bool   `name:"ssh" help:"Force plain SSH (skip mosh)."`
-	ForwardAgent bool   `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
+	Name         string   `arg:"" optional:"" help:"Kart name; omit on a TTY to pick from a cross-circuit kart list."`
+	SSHArgs      []string `arg:"" optional:"" passthrough:"" help:"Extra flags forwarded to ssh (e.g. -- -i ~/.ssh/id_lab). Under mosh, wrapped into --ssh=\"ssh …\" for the bootstrap."`
+	SSH          bool     `name:"ssh" help:"Force plain SSH (skip mosh)."`
+	ForwardAgent bool     `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
 }
 
 // emitKartResult: terse text so stdout stays scriptable; JSON passes

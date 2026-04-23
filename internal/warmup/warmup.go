@@ -64,7 +64,7 @@ type Deps struct {
 func Run(ctx context.Context, opts Options, deps Deps, stdin io.Reader, stdout io.Writer) error {
 	if !opts.IsTTY {
 		return rpcerr.UserError(rpcerr.TypeInvalidFlag,
-			"drift init requires a TTY on stdin (scripted equivalents: drift circuit add, drift character add, drift chest set)")
+			"drift init requires a TTY on stdin (scripted equivalents: drift circuit add; lakitu character new / chest new)")
 	}
 
 	p := style.For(stdout, false)
@@ -340,27 +340,27 @@ func addOneCharacter(ctx context.Context, deps Deps, br *bufio.Reader, w io.Writ
 		params["ssh_key_path"] = sshKeyPath
 	}
 
-	stagePAT, err := promptYesNo(br, w, "  stage a PAT via chest.set?", false)
+	stagePAT, err := promptYesNo(br, w, "  stage a PAT via chest.new?", false)
 	if err != nil {
 		return err
 	}
 	if stagePAT {
-		patValue, err := promptNonEmpty(br, w, "  PAT value (will be sent to chest.set): ")
+		patValue, err := promptNonEmpty(br, w, "  PAT value (will be sent to chest.new): ")
 		if err != nil {
 			return err
 		}
 		chestName := charName + "-pat"
-		if err := deps.Call(ctx, circuit, wire.MethodChestSet, map[string]any{
+		if err := deps.Call(ctx, circuit, wire.MethodChestNew, map[string]any{
 			"name":  chestName,
 			"value": patValue,
 		}, nil); err != nil {
-			return fmt.Errorf("chest.set: %w", err)
+			return fmt.Errorf("chest.new: %w", err)
 		}
 		params["pat_secret"] = chest.RefPrefix + chestName
 	}
 
-	if err := deps.Call(ctx, circuit, wire.MethodCharacterAdd, params, nil); err != nil {
-		return fmt.Errorf("character.add: %w", err)
+	if err := deps.Call(ctx, circuit, wire.MethodCharacterNew, params, nil); err != nil {
+		return fmt.Errorf("character.new: %w", err)
 	}
 	fmt.Fprintf(w, "  added character %q on %s\n", charName, circuit)
 

@@ -175,6 +175,8 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runKartRestart(ctx, io, &cli, cli.Kart.Restart, deps)
 	case "kart recreate <name>":
 		return runKartRecreate(ctx, io, &cli, cli.Kart.Recreate, deps)
+	case "kart rebuild <name>":
+		return runKartRebuild(ctx, io, &cli, cli.Kart.Rebuild, deps)
 	case "kart delete <name>":
 		return runKartDelete(ctx, io, &cli, cli.Kart.Delete, deps)
 	case "kart logs <name>":

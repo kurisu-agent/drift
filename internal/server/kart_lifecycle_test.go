@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -229,6 +230,59 @@ func TestKartRecreateInvokesDevpodUpWithRecreate(t *testing.T) {
 	}
 	if !sawRecreate {
 		t.Errorf("expected --recreate in up args, got %v", upArgs)
+	}
+}
+
+// TestKartRecreateLeavesKartConfigUnchanged locks in the key semantic
+// difference from kart.rebuild: recreate must NOT re-snapshot env or
+// mount_dirs from the current tune into the kart config. A user who
+// hand-edited config.yaml relies on this. kart.rebuild is the opt-in
+// that re-applies the tune.
+func TestKartRecreateLeavesKartConfigUnchanged(t *testing.T) {
+	t.Parallel()
+	fake := &recordingDevpod{
+		replies: map[string]fakeReply{
+			"up":     {stdout: ""},
+			"status": {stdout: `{"state":"Running"}`},
+		},
+	}
+	deps := newKartDeps(t, fake)
+	writeKart(t, deps, "alpha", server.KartConfig{
+		SourceMode: "clone",
+		Repo:       "u",
+		Tune:       "some-tune", // would trip rebuild into mutating config
+		User:       "hand-edited-user",
+	})
+
+	cfgPath := filepath.Join(deps.GarageDir, "karts", "alpha", "config.yaml")
+	before, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeStat, err := os.Stat(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp := registerLifecycleAndDispatch(t, deps, wire.MethodKartRecreate, map[string]string{"name": "alpha"})
+	if resp.Error != nil {
+		t.Fatalf("dispatch error: %+v", resp.Error)
+	}
+
+	after, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("kart config mutated by recreate; before=%q after=%q", before, after)
+	}
+	afterStat, err := os.Stat(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !afterStat.ModTime().Equal(beforeStat.ModTime()) {
+		t.Errorf("config.yaml mtime changed: before=%v after=%v — recreate must not rewrite the file",
+			beforeStat.ModTime(), afterStat.ModTime())
 	}
 }
 

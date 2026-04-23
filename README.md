@@ -99,7 +99,7 @@ drift circuit add|rm|set            # manage circuits (client config + SSH alias
 drift karts                         # print karts across circuits (-c to scope to one)
 drift kart                          # pick a kart → connect
 drift kart connect [<name>]         # explicit connect
-drift kart info|start|stop|restart|delete|logs|enable|disable <name>
+drift kart info|start|stop|restart|recreate|rebuild|delete|logs|enable|disable <name>
 drift migrate                       # adopt an existing devpod workspace
 
 drift ai                            # Claude on the circuit, preloaded with drift's CLI
@@ -110,7 +110,7 @@ drift runs                          # print ~/.drift/runs.yaml entries
 drift run [<name>] [args…]          # pick + execute a run (explicit name skips picker)
 ```
 
-Global flags: `-c/--circuit <name>`, `-o/--output text|json`, `--no-debug`, `--no-color`. Full per-flag reference: [docs/drift-cli.md](docs/drift-cli.md).
+Global flags: `-c/--circuit <name>`, `-o/--output text|json`, `--no-debug`, `--no-color`. Full per-flag reference: [docs/drift-cli.md](docs/drift-cli.md). Client config shape (default circuit, per-circuit ssh args, etc): [docs/drift-config.md](docs/drift-config.md).
 
 ## Terms
 

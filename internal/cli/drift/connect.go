@@ -20,9 +20,10 @@ import (
 )
 
 type connectCmd struct {
-	Name         string `arg:"" optional:"" help:"Kart name; omit on a TTY to pick from a merged circuits + karts list."`
-	SSH          bool   `name:"ssh" help:"Force plain SSH (skip mosh)."`
-	ForwardAgent bool   `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
+	Name         string   `arg:"" optional:"" help:"Kart name; omit on a TTY to pick from a merged circuits + karts list."`
+	SSHArgs      []string `arg:"" optional:"" passthrough:"" help:"Extra flags forwarded to ssh (e.g. -- -i ~/.ssh/id_lab). Under mosh, wrapped into --ssh=\"ssh …\" for the bootstrap."`
+	SSH          bool     `name:"ssh" help:"Force plain SSH (skip mosh)."`
+	ForwardAgent bool     `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
 }
 
 // circuitKart pairs a listEntry with the circuit it was fetched from, so
@@ -51,16 +52,28 @@ func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps
 	// the flag-driven `-c <circuit>` override). The name path is identical
 	// to `drift kart connect <name>`.
 	if cmd.Name != "" {
-		_, circuit, err := resolveCircuit(root, deps)
+		cfg, circuit, err := resolveCircuit(root, deps)
 		if err != nil {
 			return errfmt.Emit(io.Stderr, err)
 		}
-		return doConnect(ctx, io, root, deps, circuit, cmd.Name, cmd.SSH, cmd.ForwardAgent)
+		return doConnect(ctx, io, root, deps, circuit, cmd.Name, cmd.SSH, cmd.ForwardAgent,
+			mergeSSHArgs(cfg, circuit, cmd.SSHArgs))
 	}
 
 	if !stdinIsTTY(io.Stdin) || !stdoutIsTTY(io.Stdout) || root.Output == "json" {
 		return errfmt.Emit(io.Stderr,
 			errors.New("drift connect requires a kart name (non-interactive)"))
+	}
+	// Load config up front so the picker result can look up per-circuit
+	// ssh_args. The picker itself re-reads cfg internally; the extra load
+	// here is one yaml parse on the happy path.
+	cfgPath, cErr := deps.clientConfigPath()
+	if cErr != nil {
+		return errfmt.Emit(io.Stderr, cErr)
+	}
+	cfg, cErr := config.LoadClient(cfgPath)
+	if cErr != nil {
+		return errfmt.Emit(io.Stderr, cErr)
 	}
 	choice, ok, pErr := pickConnectTarget(ctx, io, deps)
 	if pErr != nil {
@@ -70,9 +83,11 @@ func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps
 		return 0
 	}
 	if choice.Kart == "" {
-		return doCircuitConnect(ctx, io, root, choice.Circuit, cmd.SSH, cmd.ForwardAgent)
+		return doCircuitConnect(ctx, io, root, choice.Circuit, cmd.SSH, cmd.ForwardAgent,
+			mergeSSHArgs(cfg, choice.Circuit, cmd.SSHArgs))
 	}
-	return doConnect(ctx, io, root, deps, choice.Circuit, choice.Kart, cmd.SSH, cmd.ForwardAgent)
+	return doConnect(ctx, io, root, deps, choice.Circuit, choice.Kart, cmd.SSH, cmd.ForwardAgent,
+		mergeSSHArgs(cfg, choice.Circuit, cmd.SSHArgs))
 }
 
 // runKartConnect is the entry point for `drift kart connect [name]`. It
@@ -80,15 +95,24 @@ func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps
 // users who want a kart always get a kart.
 func runKartConnect(ctx context.Context, io IO, root *CLI, cmd kartConnectCmd, deps deps) int {
 	if cmd.Name != "" {
-		_, circuit, err := resolveCircuit(root, deps)
+		cfg, circuit, err := resolveCircuit(root, deps)
 		if err != nil {
 			return errfmt.Emit(io.Stderr, err)
 		}
-		return doConnect(ctx, io, root, deps, circuit, cmd.Name, cmd.SSH, cmd.ForwardAgent)
+		return doConnect(ctx, io, root, deps, circuit, cmd.Name, cmd.SSH, cmd.ForwardAgent,
+			mergeSSHArgs(cfg, circuit, cmd.SSHArgs))
 	}
 	if !stdinIsTTY(io.Stdin) || !stdoutIsTTY(io.Stdout) || root.Output == "json" {
 		return errfmt.Emit(io.Stderr,
 			errors.New("drift kart connect requires a kart name (non-interactive)"))
+	}
+	cfgPath, cErr := deps.clientConfigPath()
+	if cErr != nil {
+		return errfmt.Emit(io.Stderr, cErr)
+	}
+	cfg, cErr := config.LoadClient(cfgPath)
+	if cErr != nil {
+		return errfmt.Emit(io.Stderr, cErr)
 	}
 	pickedCircuit, pickedKart, ok, pErr := pickConnectKart(ctx, io, deps)
 	if pErr != nil {
@@ -97,26 +121,28 @@ func runKartConnect(ctx context.Context, io IO, root *CLI, cmd kartConnectCmd, d
 	if !ok {
 		return 0
 	}
-	return doConnect(ctx, io, root, deps, pickedCircuit, pickedKart, cmd.SSH, cmd.ForwardAgent)
+	return doConnect(ctx, io, root, deps, pickedCircuit, pickedKart, cmd.SSH, cmd.ForwardAgent,
+		mergeSSHArgs(cfg, pickedCircuit, cmd.SSHArgs))
 }
 
 // runCircuitConnect is the entry point for `drift circuit connect [name]`
 // — drops the user into an interactive shell on the circuit's host with
 // no kart in between.
 func runCircuitConnect(ctx context.Context, io IO, root *CLI, cmd circuitConnectCmd, deps deps) int {
+	cfgPath, err := deps.clientConfigPath()
+	if err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+	cfg, err := config.LoadClient(cfgPath)
+	if err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
 	if cmd.Name != "" {
-		cfgPath, err := deps.clientConfigPath()
-		if err != nil {
-			return errfmt.Emit(io.Stderr, err)
-		}
-		cfg, err := config.LoadClient(cfgPath)
-		if err != nil {
-			return errfmt.Emit(io.Stderr, err)
-		}
 		if _, ok := cfg.Circuits[cmd.Name]; !ok {
 			return errfmt.Emit(io.Stderr, fmt.Errorf("circuit %q not configured", cmd.Name))
 		}
-		return doCircuitConnect(ctx, io, root, cmd.Name, cmd.SSH, cmd.ForwardAgent)
+		return doCircuitConnect(ctx, io, root, cmd.Name, cmd.SSH, cmd.ForwardAgent,
+			mergeSSHArgs(cfg, cmd.Name, cmd.SSHArgs))
 	}
 	if !stdinIsTTY(io.Stdin) || !stdoutIsTTY(io.Stdout) || root.Output == "json" {
 		return errfmt.Emit(io.Stderr,
@@ -129,7 +155,8 @@ func runCircuitConnect(ctx context.Context, io IO, root *CLI, cmd circuitConnect
 	if !ok {
 		return 0
 	}
-	return doCircuitConnect(ctx, io, root, picked, cmd.SSH, cmd.ForwardAgent)
+	return doCircuitConnect(ctx, io, root, picked, cmd.SSH, cmd.ForwardAgent,
+		mergeSSHArgs(cfg, picked, cmd.SSHArgs))
 }
 
 // pickConnectKart fetches kart.list from every configured circuit in
@@ -462,8 +489,10 @@ func formatCircuitOption(circuit, host, defaultCircuit string) string {
 // doCircuitConnect spawns an interactive shell on the circuit's host via
 // the SSH alias `drift.<circuit>` (mosh-preferred). No remote command is
 // passed, so the user lands in their login shell on the circuit. Mirrors
-// doConnect's transport logic.
-func doCircuitConnect(ctx context.Context, io IO, root *CLI, circuit string, forceSSH, forwardAgent bool) int {
+// doConnect's transport logic, including ssh_args forwarding — on mosh
+// the args get wrapped into --ssh="ssh …" so they apply to the ssh
+// bootstrap rather than being dropped.
+func doCircuitConnect(ctx context.Context, io IO, root *CLI, circuit string, forceSSH, forwardAgent bool, sshArgs []string) int {
 	transport := connect.Transport(osexec.LookPath, forceSSH)
 	target := "drift." + circuit
 
@@ -471,12 +500,16 @@ func doCircuitConnect(ctx context.Context, io IO, root *CLI, circuit string, for
 	var argv []string
 	if transport == "mosh" {
 		bin = "mosh"
-		argv = []string{target}
+		if len(sshArgs) > 0 {
+			argv = append(argv, "--ssh="+connect.BuildMoshSSHOverride(sshArgs))
+		}
+		argv = append(argv, target)
 	} else {
 		argv = []string{"-t"}
 		if forwardAgent {
 			argv = append(argv, "-A")
 		}
+		argv = append(argv, sshArgs...)
 		argv = append(argv, target)
 	}
 
@@ -499,7 +532,17 @@ func doCircuitConnect(ctx context.Context, io IO, root *CLI, circuit string, for
 // doConnect is the shared body behind `drift connect` and the post-create
 // auto-connect path of `drift new`. Both paths have already resolved the
 // circuit, so the helper takes it as a parameter instead of re-resolving.
-func doConnect(ctx context.Context, io IO, root *CLI, deps deps, circuit, name string, forceSSH, forwardAgent bool) int {
+// sshArgs holds the already-merged (config + CLI passthrough) flag list.
+func doConnect(ctx context.Context, io IO, root *CLI, deps deps, circuit, name string, forceSSH, forwardAgent bool, sshArgs []string) int {
+	// Drift-check preamble: if the kart's tune has changed since the
+	// container was built, give the user a chance to rebuild before
+	// connecting. Non-TTY or json paths print a warning and proceed.
+	if err := maybePromptRebuild(ctx, io.Stderr,
+		stdinIsTTY(io.Stdin), stdoutIsTTY(io.Stdout), root.Output == "json",
+		deps, circuit, name); err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+
 	transport := connect.Transport(osexec.LookPath, forceSSH)
 	ph := progress.Start(io.Stderr, root.Output == "json",
 		"connecting to kart \""+name+"\"", transport)
@@ -514,6 +557,7 @@ func doConnect(ctx context.Context, io IO, root *CLI, deps deps, circuit, name s
 		Kart:         name,
 		ForceSSH:     forceSSH,
 		ForwardAgent: forwardAgent,
+		SSHArgs:      sshArgs,
 	}
 	stdio := connect.Stdio{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
 

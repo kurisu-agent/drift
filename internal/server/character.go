@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -15,11 +16,12 @@ import (
 	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
+	"github.com/kurisu-agent/drift/internal/yamlpath"
 	"gopkg.in/yaml.v3"
 )
 
 // Character: git_name + git_email required. pat_secret always carries a
-// `chest:<name>` reference — literal tokens are rejected at add time.
+// `chest:<name>` reference — literal tokens are rejected at new/patch time.
 type Character struct {
 	GitName    string `yaml:"git_name" json:"git_name"`
 	GitEmail   string `yaml:"git_email" json:"git_email"`
@@ -28,13 +30,33 @@ type Character struct {
 	PATSecret  string `yaml:"pat_secret,omitempty" json:"pat_secret,omitempty"`
 }
 
-type CharacterAddParams struct {
+// CharacterNewParams carries the full shape at creation time. git_name
+// and git_email are required; the rest are optional.
+type CharacterNewParams struct {
 	Name       string `json:"name"`
 	GitName    string `json:"git_name"`
 	GitEmail   string `json:"git_email"`
 	GithubUser string `json:"github_user,omitempty"`
 	SSHKeyPath string `json:"ssh_key_path,omitempty"`
 	PATSecret  string `json:"pat_secret,omitempty"`
+}
+
+// CharacterPatchOp / CharacterPatchParams: same shape as tune.patch —
+// dotted-path field addressing.
+type CharacterPatchOp struct {
+	Path  string `json:"path"`
+	Op    string `json:"op"`
+	Value any    `json:"value,omitempty"`
+}
+
+type CharacterPatchParams struct {
+	Name string             `json:"name"`
+	Ops  []CharacterPatchOp `json:"ops"`
+}
+
+type CharacterReplaceParams struct {
+	Name string `json:"name"`
+	YAML string `json:"yaml"`
 }
 
 // CharacterResult bundles the name with the character yaml for easy
@@ -48,9 +70,11 @@ type CharacterNameOnly struct {
 	Name string `json:"name"`
 }
 
-// CharacterAddHandler is create-only — edits go through remove + add.
-func (d *Deps) CharacterAddHandler(_ context.Context, params json.RawMessage) (any, error) {
-	var p CharacterAddParams
+// CharacterNewHandler creates a character. Errors if one with the
+// same name exists — edits go through character.patch or
+// character.replace.
+func (d *Deps) CharacterNewHandler(_ context.Context, params json.RawMessage) (any, error) {
+	var p CharacterNewParams
 	if err := rpc.BindParams(params, &p); err != nil {
 		return nil, err
 	}
@@ -58,23 +82,23 @@ func (d *Deps) CharacterAddHandler(_ context.Context, params json.RawMessage) (a
 		return nil, err
 	}
 	if p.GitName == "" {
-		return nil, rpcerr.UserError(rpcerr.TypeInvalidFlag, "character.add: git_name is required")
+		return nil, rpcerr.UserError(rpcerr.TypeInvalidFlag, "character.new: git_name is required")
 	}
 	if p.GitEmail == "" {
-		return nil, rpcerr.UserError(rpcerr.TypeInvalidFlag, "character.add: git_email is required")
+		return nil, rpcerr.UserError(rpcerr.TypeInvalidFlag, "character.new: git_email is required")
 	}
 	if p.PATSecret != "" && !strings.HasPrefix(p.PATSecret, chest.RefPrefix) {
 		return nil, rpcerr.UserError(rpcerr.TypeInvalidFlag,
-			"character.add: pat_secret must be a chest reference of the form %q; literal tokens are not accepted",
+			"character.new: pat_secret must be a chest reference of the form %q; literal tokens are not accepted",
 			chest.RefPrefix+"<name>").With("pat_secret", "redacted")
 	}
 
 	path := d.characterPath(p.Name)
 	if _, err := os.Stat(path); err == nil {
 		return nil, rpcerr.Conflict(rpcerr.TypeNameCollision,
-			"character %q already exists", p.Name).With("name", p.Name)
+			"character %q already exists — use character.patch or character.replace to edit", p.Name).With("name", p.Name)
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return nil, rpcerr.Internal("character.add: stat %s: %v", path, err).Wrap(err)
+		return nil, rpcerr.Internal("character.new: stat %s: %v", path, err).Wrap(err)
 	}
 
 	c := Character{
@@ -84,12 +108,69 @@ func (d *Deps) CharacterAddHandler(_ context.Context, params json.RawMessage) (a
 		SSHKeyPath: p.SSHKeyPath,
 		PATSecret:  p.PATSecret,
 	}
-	buf, err := yaml.Marshal(&c)
-	if err != nil {
-		return nil, rpcerr.Internal("character.add: marshal: %v", err).Wrap(err)
+	if err := writeCharacter(path, &c); err != nil {
+		return nil, err
 	}
-	if err := config.WriteFileAtomic(path, buf, 0o644); err != nil {
-		return nil, rpcerr.Internal("character.add: %v", err).Wrap(err)
+	return CharacterResult{Name: p.Name, Character: c}, nil
+}
+
+// CharacterPatchHandler applies ops to an existing character.
+func (d *Deps) CharacterPatchHandler(_ context.Context, params json.RawMessage) (any, error) {
+	var p CharacterPatchParams
+	if err := rpc.BindParams(params, &p); err != nil {
+		return nil, err
+	}
+	if p.Name == "" {
+		return nil, rpcerr.UserError(rpcerr.TypeInvalidFlag, "character.patch: name is required")
+	}
+	c, err := d.loadCharacter(p.Name)
+	if err != nil {
+		return nil, err
+	}
+	ops := make([]yamlpath.Op, 0, len(p.Ops))
+	for _, op := range p.Ops {
+		ops = append(ops, yamlpath.Op{Path: op.Path, Op: op.Op, Value: op.Value})
+	}
+	if err := yamlpath.Apply(c, ops); err != nil {
+		return nil, wrapYAMLPathError("character.patch", err)
+	}
+	if err := validateCharacter(c); err != nil {
+		return nil, err
+	}
+	if err := writeCharacter(d.characterPath(p.Name), c); err != nil {
+		return nil, err
+	}
+	return CharacterResult{Name: p.Name, Character: *c}, nil
+}
+
+// CharacterReplaceHandler: full-YAML round-trip for the edit flow.
+func (d *Deps) CharacterReplaceHandler(_ context.Context, params json.RawMessage) (any, error) {
+	var p CharacterReplaceParams
+	if err := rpc.BindParams(params, &p); err != nil {
+		return nil, err
+	}
+	if p.Name == "" {
+		return nil, rpcerr.UserError(rpcerr.TypeInvalidFlag, "character.replace: name is required")
+	}
+	if _, err := os.Stat(d.characterPath(p.Name)); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, rpcerr.NotFound(rpcerr.TypeCharacterNotFound,
+				"character %q not found — use character.new to create", p.Name).With("name", p.Name)
+		}
+		return nil, rpcerr.Internal("character.replace: stat: %v", err).Wrap(err)
+	}
+	var c Character
+	dec := yaml.NewDecoder(strings.NewReader(p.YAML))
+	dec.KnownFields(true)
+	if err := dec.Decode(&c); err != nil && !errors.Is(err, io.EOF) {
+		return nil, rpcerr.UserError(rpcerr.TypeInvalidFlag,
+			"character.replace: invalid YAML: %v", err).With("name", p.Name)
+	}
+	if err := validateCharacter(&c); err != nil {
+		return nil, err
+	}
+	if err := writeCharacter(d.characterPath(p.Name), &c); err != nil {
+		return nil, err
 	}
 	return CharacterResult{Name: p.Name, Character: c}, nil
 }
@@ -164,6 +245,36 @@ func (d *Deps) CharacterRemoveHandler(_ context.Context, params json.RawMessage)
 		return nil, rpcerr.Internal("character.remove: %v", err).Wrap(err)
 	}
 	return CharacterNameOnly{Name: p.Name}, nil
+}
+
+func writeCharacter(path string, c *Character) error {
+	buf, err := yaml.Marshal(c)
+	if err != nil {
+		return rpcerr.Internal("character: marshal: %v", err).Wrap(err)
+	}
+	if err := config.WriteFileAtomic(path, buf, 0o644); err != nil {
+		return rpcerr.Internal("character: %v", err).Wrap(err)
+	}
+	return nil
+}
+
+// validateCharacter enforces the required-fields and chest-ref
+// invariants on the full character shape. Used by patch and replace
+// after the mutation is applied — new-time validation is inlined in
+// the new handler to surface errors against the specific CLI flag.
+func validateCharacter(c *Character) error {
+	if c.GitName == "" {
+		return rpcerr.UserError(rpcerr.TypeInvalidFlag, "character: git_name is required")
+	}
+	if c.GitEmail == "" {
+		return rpcerr.UserError(rpcerr.TypeInvalidFlag, "character: git_email is required")
+	}
+	if c.PATSecret != "" && !strings.HasPrefix(c.PATSecret, chest.RefPrefix) {
+		return rpcerr.UserError(rpcerr.TypeInvalidFlag,
+			"character: pat_secret must be a chest reference of the form %q; literal tokens are not accepted",
+			chest.RefPrefix+"<name>").With("pat_secret", "redacted")
+	}
+	return nil
 }
 
 func (d *Deps) characterDir() string {

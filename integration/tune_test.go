@@ -23,11 +23,11 @@ func TestTuneStarter(t *testing.T) {
 	c, rec := integration.StartReadyCircuit(ctx, t, true)
 	starterURL := c.StageStarter(ctx, "starterA", map[string]string{"README.md": "# starter\n"})
 
-	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]string{
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]string{
 		"name":    "mytune",
 		"starter": starterURL,
 	}); err != nil {
-		t.Fatalf("tune.set: %v", err)
+		t.Fatalf("tune.new: %v", err)
 	}
 
 	kart := c.KartName("starter")
@@ -104,11 +104,11 @@ func TestTuneDevcontainer(t *testing.T) {
 		t.Fatalf("stage devcontainer: %v", err)
 	}
 
-	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]string{
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]string{
 		"name":         "dctune",
 		"devcontainer": dcPath,
 	}); err != nil {
-		t.Fatalf("tune.set: %v", err)
+		t.Fatalf("tune.new: %v", err)
 	}
 
 	kart := c.KartName("dc")
@@ -142,13 +142,13 @@ func TestTuneMountDirs(t *testing.T) {
 
 	c, rec := integration.StartReadyCircuit(ctx, t, true)
 
-	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]any{
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]any{
 		"name": "mnttune",
 		"mount_dirs": []map[string]any{
 			{"type": "bind", "source": "${localEnv:HOME}/.claude", "target": "/home/dev/.claude"},
 		},
 	}); err != nil {
-		t.Fatalf("tune.set: %v", err)
+		t.Fatalf("tune.new: %v", err)
 	}
 
 	kart := c.KartName("mnt")
@@ -190,13 +190,13 @@ func TestMountFlagAppendsToTune(t *testing.T) {
 
 	c, rec := integration.StartReadyCircuit(ctx, t, true)
 
-	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]any{
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]any{
 		"name": "flagmnttune",
 		"mount_dirs": []map[string]any{
 			{"type": "bind", "source": "/circuit/tune", "target": "/tune-only"},
 		},
 	}); err != nil {
-		t.Fatalf("tune.set: %v", err)
+		t.Fatalf("tune.new: %v", err)
 	}
 
 	kart := c.KartName("mntflag")
@@ -240,11 +240,11 @@ func TestTuneDotfilesRepo(t *testing.T) {
 	c, rec := integration.StartReadyCircuit(ctx, t, true)
 
 	const dotfilesURL = "https://example.com/my/dotfiles"
-	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]string{
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]string{
 		"name":          "dftune",
 		"dotfiles_repo": dotfilesURL,
 	}); err != nil {
-		t.Fatalf("tune.set: %v", err)
+		t.Fatalf("tune.new: %v", err)
 	}
 
 	kart := c.KartName("df")
@@ -273,11 +273,11 @@ func TestTuneFeatures(t *testing.T) {
 	c, rec := integration.StartReadyCircuit(ctx, t, true)
 
 	const tuneFeatures = `{"ghcr.io/devcontainers/features/node:1":{"version":"20"}}`
-	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]string{
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]string{
 		"name":     "ftune",
 		"features": tuneFeatures,
 	}); err != nil {
-		t.Fatalf("tune.set: %v", err)
+		t.Fatalf("tune.new: %v", err)
 	}
 
 	kart := c.KartName("feat")
@@ -338,11 +338,11 @@ func TestFeaturesAdditiveMerge(t *testing.T) {
 		tuneFeatures = `{"ghcr.io/devcontainers/features/node:1":{"version":"20"},"ghcr.io/devcontainers/features/git:1":{}}`
 		flagFeatures = `{"ghcr.io/devcontainers/features/node:1":{"version":"22"},"ghcr.io/devcontainers/features/go:1":{"version":"1.22"}}`
 	)
-	if _, err := c.LakituRPC(ctx, wire.MethodTuneSet, map[string]string{
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]string{
 		"name":     "mergetune",
 		"features": tuneFeatures,
 	}); err != nil {
-		t.Fatalf("tune.set: %v", err)
+		t.Fatalf("tune.new: %v", err)
 	}
 
 	kart := c.KartName("merge")

@@ -26,15 +26,15 @@ func TestChestLifecycle(t *testing.T) {
 
 	const multiline = "line-one\nline-two\nline-three"
 
-	if _, err := c.LakituRPC(ctx, wire.MethodChestSet, map[string]string{
+	if _, err := c.LakituRPC(ctx, wire.MethodChestNew, map[string]string{
 		"name": "alice-pat", "value": "ghp_deadbeef",
 	}); err != nil {
-		t.Fatalf("chest.set simple: %v", err)
+		t.Fatalf("chest.new simple: %v", err)
 	}
-	if _, err := c.LakituRPC(ctx, wire.MethodChestSet, map[string]string{
+	if _, err := c.LakituRPC(ctx, wire.MethodChestNew, map[string]string{
 		"name": "multi", "value": multiline,
 	}); err != nil {
-		t.Fatalf("chest.set multiline: %v", err)
+		t.Fatalf("chest.new multiline: %v", err)
 	}
 
 	// Round-trip both values.

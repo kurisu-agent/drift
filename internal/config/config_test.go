@@ -44,6 +44,36 @@ rogue_key: oops
 	}
 }
 
+func TestLoadClient_SSHArgsRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	body := `default_circuit: lab
+circuits:
+  lab:
+    host: dev@lab.example.com
+    ssh_args:
+      - "-i"
+      - "~/.ssh/lab_ed25519"
+      - "-o"
+      - "IdentitiesOnly=yes"
+  plain:
+    host: dev@plain.example.com
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.LoadClient(path)
+	if err != nil {
+		t.Fatalf("LoadClient: %v", err)
+	}
+	wantLab := []string{"-i", "~/.ssh/lab_ed25519", "-o", "IdentitiesOnly=yes"}
+	if diff := cmp.Diff(wantLab, c.Circuits["lab"].SSHArgs); diff != "" {
+		t.Errorf("lab ssh_args (-want +got):\n%s", diff)
+	}
+	if got := c.Circuits["plain"].SSHArgs; got != nil {
+		t.Errorf("plain ssh_args = %v, want nil (field omitted)", got)
+	}
+}
+
 func TestLoadClient_ValidatesCircuitNames(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	body := `default_circuit: "my-box"

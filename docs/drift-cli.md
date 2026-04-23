@@ -58,10 +58,10 @@ Commands:
     Choose which configured circuit is the default (interactive picker when no
     name given).
 
-  circuit connect [<name>] [flags]
+  circuit connect [<name> [<ssh-args> ...]] [flags]
     Open an interactive shell on the circuit's host (mosh/ssh).
 
-  kart connect [<name>] [flags]
+  kart connect [<name> [<ssh-args> ...]] [flags]
     Connect to a kart via mosh (ssh fallback).
 
   kart info <name>
@@ -76,6 +76,13 @@ Commands:
   kart restart <name>
     Restart a kart.
 
+  kart recreate <name>
+    Recreate a kart's container (no tune re-apply) — picks up devcontainer.json
+    changes.
+
+  kart rebuild <name>
+    Re-apply the current tune to a kart and recreate its container.
+
   kart delete <name> [flags]
     Delete a kart (errors if missing).
 
@@ -88,7 +95,7 @@ Commands:
   kart disable <name>
     Disable kart autostart (idempotent).
 
-  connect (into,attach) [<name>] [flags]
+  connect (into,attach) [<name> [<ssh-args> ...]] [flags]
     Pick a circuit or kart and connect (merged picker).
 
   new <name> [flags]
@@ -138,6 +145,8 @@ COMMANDS (run `drift <cmd> --help` for flags)
   kart enable — Enable kart autostart on circuit reboot (idempotent).
   kart info — Show a single kart's info.
   kart logs — Fetch a chunk of kart logs.
+  kart rebuild — Re-apply the current tune to a kart and recreate its container.
+  kart recreate — Recreate a kart's container (no tune re-apply) — picks up devcontainer.json changes.
   kart restart — Restart a kart.
   kart start — Start a kart (idempotent).
   kart stop — Stop a kart (idempotent).
@@ -152,25 +161,31 @@ COMMANDS (run `drift <cmd> --help` for flags)
   update — Check GitHub for a newer drift release and self-install.
 
 RPC METHODS
-  character.add
   character.list
+  character.new
+  character.patch
   character.remove
+  character.replace
   character.show
   chest.get
   chest.list
+  chest.new
+  chest.patch
   chest.remove
-  chest.set
   config.set
   config.show
   kart.connect
   kart.delete
   kart.disable
+  kart.drift_check
   kart.enable
   kart.info
   kart.list
   kart.logs
   kart.migrate_list
   kart.new
+  kart.rebuild
+  kart.recreate
   kart.restart
   kart.session_env
   kart.start
@@ -184,8 +199,10 @@ RPC METHODS
   skill.list
   skill.resolve
   tune.list
+  tune.new
+  tune.patch
   tune.remove
-  tune.set
+  tune.replace
   tune.show
 
 EXIT CODES
@@ -248,12 +265,14 @@ exit status 2
 ### `drift circuit connect --help`
 
 ```text
-Usage: drift circuit connect [<name>] [flags]
+Usage: drift circuit connect [<name> [<ssh-args> ...]] [flags]
 
 Open an interactive shell on the circuit's host (mosh/ssh).
 
 Arguments:
-  [<name>]    Circuit name; omit on a TTY to pick from a list.
+  [<name>]            Circuit name; omit on a TTY to pick from a list.
+  [<ssh-args> ...]    Extra flags forwarded to ssh (e.g. -- -i ~/.ssh/id_lab).
+                      Under mosh, wrapped into --ssh="ssh …" for the bootstrap.
 
 Flags:
   -h, --help              Show context-sensitive help.
@@ -360,13 +379,15 @@ exit status 2
 ### `drift connect --help`
 
 ```text
-Usage: drift connect (into,attach) [<name>] [flags]
+Usage: drift connect (into,attach) [<name> [<ssh-args> ...]] [flags]
 
 Pick a circuit or kart and connect (merged picker).
 
 Arguments:
-  [<name>]    Kart name; omit on a TTY to pick from a merged circuits + karts
-              list.
+  [<name>]            Kart name; omit on a TTY to pick from a merged circuits +
+                      karts list.
+  [<ssh-args> ...]    Extra flags forwarded to ssh (e.g. -- -i ~/.ssh/id_lab).
+                      Under mosh, wrapped into --ssh="ssh …" for the bootstrap.
 
 Flags:
   -h, --help              Show context-sensitive help.
@@ -412,7 +433,7 @@ COMMANDS
   connect [<name>]         Mosh/ssh into a circuit or kart (merged picker)
   new <name>               Create a kart (from starter or existing repo)
   karts                    List karts across circuits (cross-circuit; -c scopes)
-  kart <verb> <name>       Lifecycle: start / stop / restart / delete / logs / info / enable / disable
+  kart <verb> <name>       Lifecycle: start / stop / restart / recreate / rebuild / delete / logs / info / enable / disable
   ai                       Launch Claude Code on the circuit
   skill [<name> [prompt]]  Pick / invoke a Claude skill (`drift skills` to list)
   run [<name>]             Execute a user-script shorthand (`drift runs` to list)
@@ -443,19 +464,22 @@ Flags:
       --skip-circuits      Skip the circuit phase (assume already configured).
       --skip-characters    Skip the character phase.
       --no-probe           Skip the server.version probe (offline setup).
-error: drift init requires a TTY on stdin (scripted equivalents: drift circuit add, drift character add, drift chest set)
+error: drift init requires a TTY on stdin (scripted equivalents: drift circuit add; lakitu character new / chest new)
 exit status 2
 ```
 
 ### `drift kart connect --help`
 
 ```text
-Usage: drift kart connect [<name>] [flags]
+Usage: drift kart connect [<name> [<ssh-args> ...]] [flags]
 
 Connect to a kart via mosh (ssh fallback).
 
 Arguments:
-  [<name>]    Kart name; omit on a TTY to pick from a cross-circuit kart list.
+  [<name>]            Kart name; omit on a TTY to pick from a cross-circuit kart
+                      list.
+  [<ssh-args> ...]    Extra flags forwarded to ssh (e.g. -- -i ~/.ssh/id_lab).
+                      Under mosh, wrapped into --ssh="ssh …" for the bootstrap.
 
 Flags:
   -h, --help              Show context-sensitive help.
@@ -586,6 +610,51 @@ Flags:
                           JSONL only.
       --level=STRING      Minimum level (debug|info|warn|error). JSONL only.
       --grep=STRING       Substring match on msg (JSONL) or raw line (text).
+drift: expected "<name>"
+exit status 2
+```
+
+### `drift kart rebuild --help`
+
+```text
+Usage: drift kart rebuild <name>
+
+Re-apply the current tune to a kart and recreate its container.
+
+Arguments:
+  <name>    Kart name.
+
+Flags:
+  -h, --help              Show context-sensitive help.
+      --[no-]debug        Verbose output (default on; --no-debug to silence)
+                          ($DRIFT_DEBUG).
+      --no-color          Disable ANSI colors in text output ($NO_COLOR).
+  -c, --circuit=STRING    Target circuit (overrides default).
+  -o, --output="text"     Output format for structured commands.
+  -v, --version           Print drift version and exit.
+drift: expected "<name>"
+exit status 2
+```
+
+### `drift kart recreate --help`
+
+```text
+Usage: drift kart recreate <name>
+
+Recreate a kart's container (no tune re-apply) — picks up devcontainer.json
+changes.
+
+Arguments:
+  <name>    Kart name.
+
+Flags:
+  -h, --help              Show context-sensitive help.
+      --[no-]debug        Verbose output (default on; --no-debug to silence)
+                          ($DRIFT_DEBUG).
+      --no-color          Disable ANSI colors in text output ($NO_COLOR).
+  -c, --circuit=STRING    Target circuit (overrides default).
+  -o, --output="text"     Output format for structured commands.
+  -v, --version           Print drift version and exit.
 drift: expected "<name>"
 exit status 2
 ```
@@ -860,7 +929,7 @@ drift devel
 default: alpha
 
    CIRCUIT  HOST                LAKITU  API  LATENCY  KARTS
-→  alpha    circuit@10.233.1.2  dev     1    11ms     0/1
+→  alpha    circuit@10.233.1.2  dev     1    10ms     0/1
 
 → alpha
 NAME   STATUS         SOURCE                                             TUNE  AUTOSTART
@@ -886,7 +955,7 @@ Flags:
       --check             Check for an update without downloading.
 → checking latest release
 current: devel
-latest:  0.6.0
+latest:  0.6.1
 error: refusing to self-update a development build; rebuild from source or install a tagged release
 exit status 1
 ```
