@@ -42,6 +42,7 @@ func RegisterKartLifecycle(reg *rpc.Registry, d KartDeps) {
 	reg.Register(wire.MethodKartStart, d.kartStartHandler)
 	reg.Register(wire.MethodKartStop, d.kartStopHandler)
 	reg.Register(wire.MethodKartRestart, d.kartRestartHandler)
+	reg.Register(wire.MethodKartRecreate, d.kartRecreateHandler)
 	reg.Register(wire.MethodKartRebuild, d.kartRebuildHandler)
 	reg.Register(wire.MethodKartDriftCheck, d.kartDriftCheckHandler)
 	reg.Register(wire.MethodKartDelete, d.kartDeleteHandler)
@@ -139,6 +140,49 @@ func (d KartDeps) kartRestartHandler(ctx context.Context, params json.RawMessage
 			"devpod up %s failed: %v", p.Name, err)
 	}
 	return KartLifecycleResult{Name: p.Name, Status: d.statusFor(ctx, p.Name)}, nil
+}
+
+// kartRecreateHandler runs `devpod up --recreate` so a changed
+// devcontainer.json (new features, bumped image) actually rebuilds the
+// container. Mirrors kartRestartHandler's DEVPOD_HOME plumbing: the
+// Devpod client here is the same one wired with DevpodHome at lakitu
+// registration, and workspace env resolves from chest up front so a
+// chest miss fails fast. Build output streams back to the client the
+// same way kart.new does — through the Devpod client's Mirror sink,
+// which lakitu points at the SSH stderr channel.
+//
+// kart.recreate leaves the kart config verbatim — for the "re-apply
+// current tune then recreate" flow, use kart.rebuild, which shares
+// the same devpod up --recreate core via recreateContainer.
+func (d KartDeps) kartRecreateHandler(ctx context.Context, params json.RawMessage) (any, error) {
+	p, err := bindLifecycleParams(params, "kart.recreate")
+	if err != nil {
+		return nil, err
+	}
+	if err := d.requireDevpod(); err != nil {
+		return nil, err
+	}
+	if err := d.recreateContainer(ctx, p.Name); err != nil {
+		return nil, err
+	}
+	return KartLifecycleResult{Name: p.Name, Status: d.statusFor(ctx, p.Name)}, nil
+}
+
+// recreateContainer resolves chest-backed workspace env and runs
+// `devpod up --recreate` for the named kart. Shared between
+// kart.recreate (no config mutation) and kart.rebuild (re-applies
+// tune env+mount_dirs first, then calls this). Callers are
+// responsible for requireDevpod and any kart-existence checks.
+func (d KartDeps) recreateContainer(ctx context.Context, name string) error {
+	wsEnv, err := d.workspaceEnvKVs(name)
+	if err != nil {
+		return err
+	}
+	if _, err := d.Devpod.Up(ctx, devpod.UpOpts{Name: name, WorkspaceEnv: wsEnv, Recreate: true}); err != nil {
+		return wrapDevpod(rpcerr.CodeDevpod, rpcerr.TypeDevpodUpFailed, name, err,
+			"devpod up --recreate %s failed: %v", name, err)
+	}
+	return nil
 }
 
 // kartDeleteHandler is the one lifecycle verb that errors on missing; both

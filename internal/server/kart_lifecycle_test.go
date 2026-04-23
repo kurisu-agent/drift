@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,9 +23,10 @@ import (
 // replays canned replies keyed by the first argument. Callers can pre-seed
 // per-call stdout or an error to cover idempotency / failure paths.
 type recordingDevpod struct {
-	mu      sync.Mutex
-	calls   []string
-	replies map[string]fakeReply
+	mu       sync.Mutex
+	calls    []string
+	fullArgs [][]string
+	replies  map[string]fakeReply
 }
 
 func (r *recordingDevpod) Run(_ context.Context, cmd driftexec.Cmd) (driftexec.Result, error) {
@@ -33,6 +35,7 @@ func (r *recordingDevpod) Run(_ context.Context, cmd driftexec.Cmd) (driftexec.R
 	}
 	r.mu.Lock()
 	r.calls = append(r.calls, cmd.Args[0])
+	r.fullArgs = append(r.fullArgs, append([]string(nil), cmd.Args...))
 	r.mu.Unlock()
 	reply, ok := r.replies[cmd.Args[0]]
 	if !ok {
@@ -183,6 +186,125 @@ func TestKartRestartStopsThenStarts(t *testing.T) {
 	}
 	if stopIdx < 0 || upIdx < 0 || stopIdx > upIdx {
 		t.Errorf("expected stop→up ordering, got %v", fake.calls)
+	}
+}
+
+func TestKartRecreateInvokesDevpodUpWithRecreate(t *testing.T) {
+	t.Parallel()
+	fake := &recordingDevpod{
+		replies: map[string]fakeReply{
+			"up":     {stdout: ""},
+			"status": {stdout: `{"state":"Running"}`},
+		},
+	}
+	deps := newKartDeps(t, fake)
+
+	resp := registerLifecycleAndDispatch(t, deps, wire.MethodKartRecreate, map[string]string{"name": "alpha"})
+	if resp.Error != nil {
+		t.Fatalf("dispatch error: %+v", resp.Error)
+	}
+	var got server.KartLifecycleResult
+	if err := json.Unmarshal(resp.Result, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != devpod.StatusRunning {
+		t.Errorf("status = %q, want running", got.Status)
+	}
+	// Find the `up` invocation and assert it carried --recreate.
+	var upArgs []string
+	for _, args := range fake.fullArgs {
+		if len(args) > 0 && args[0] == "up" {
+			upArgs = args
+			break
+		}
+	}
+	if upArgs == nil {
+		t.Fatalf("expected a devpod up invocation, got calls=%v", fake.calls)
+	}
+	sawRecreate := false
+	for _, a := range upArgs {
+		if a == "--recreate" {
+			sawRecreate = true
+			break
+		}
+	}
+	if !sawRecreate {
+		t.Errorf("expected --recreate in up args, got %v", upArgs)
+	}
+}
+
+// TestKartRecreateLeavesKartConfigUnchanged locks in the key semantic
+// difference from kart.rebuild: recreate must NOT re-snapshot env or
+// mount_dirs from the current tune into the kart config. A user who
+// hand-edited config.yaml relies on this. kart.rebuild is the opt-in
+// that re-applies the tune.
+func TestKartRecreateLeavesKartConfigUnchanged(t *testing.T) {
+	t.Parallel()
+	fake := &recordingDevpod{
+		replies: map[string]fakeReply{
+			"up":     {stdout: ""},
+			"status": {stdout: `{"state":"Running"}`},
+		},
+	}
+	deps := newKartDeps(t, fake)
+	writeKart(t, deps, "alpha", server.KartConfig{
+		SourceMode: "clone",
+		Repo:       "u",
+		Tune:       "some-tune", // would trip rebuild into mutating config
+		User:       "hand-edited-user",
+	})
+
+	cfgPath := filepath.Join(deps.GarageDir, "karts", "alpha", "config.yaml")
+	before, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeStat, err := os.Stat(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp := registerLifecycleAndDispatch(t, deps, wire.MethodKartRecreate, map[string]string{"name": "alpha"})
+	if resp.Error != nil {
+		t.Fatalf("dispatch error: %+v", resp.Error)
+	}
+
+	after, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("kart config mutated by recreate; before=%q after=%q", before, after)
+	}
+	afterStat, err := os.Stat(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !afterStat.ModTime().Equal(beforeStat.ModTime()) {
+		t.Errorf("config.yaml mtime changed: before=%v after=%v — recreate must not rewrite the file",
+			beforeStat.ModTime(), afterStat.ModTime())
+	}
+}
+
+func TestKartRecreateSurfacesDevpodFailure(t *testing.T) {
+	t.Parallel()
+	fake := &recordingDevpod{
+		replies: map[string]fakeReply{
+			"up": {err: &driftexec.Error{Name: "devpod", ExitCode: 2, FirstStderrLine: "build failed"}},
+		},
+	}
+	deps := newKartDeps(t, fake)
+
+	resp := registerLifecycleAndDispatch(t, deps, wire.MethodKartRecreate, map[string]string{"name": "alpha"})
+	if resp.Error == nil {
+		t.Fatal("expected error response")
+	}
+	if resp.Error.Code != int(rpcerr.CodeDevpod) {
+		t.Errorf("code = %d, want %d", resp.Error.Code, rpcerr.CodeDevpod)
+	}
+	e := rpcerr.FromWire(resp.Error)
+	if e.Type != rpcerr.TypeDevpodUpFailed {
+		t.Errorf("type = %q, want devpod_up_failed", e.Type)
 	}
 }
 
@@ -450,6 +572,7 @@ func TestKartLifecycleRequiresName(t *testing.T) {
 		wire.MethodKartStart,
 		wire.MethodKartStop,
 		wire.MethodKartRestart,
+		wire.MethodKartRecreate,
 		wire.MethodKartDelete,
 		wire.MethodKartLogs,
 	} {

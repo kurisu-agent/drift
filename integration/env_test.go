@@ -114,6 +114,124 @@ func TestTuneEnvWorkspaceInjection(t *testing.T) {
 	}
 }
 
+// TestKartRecreateRebuildsWithRotatedEnv verifies `drift kart recreate`
+// invokes `devpod up --recreate` (the flag is what makes a changed
+// devcontainer.json actually rebuild the container) and re-reads chest
+// so the rotated workspace env lands on the new container. This is the
+// integration-level partner to the server unit tests in
+// internal/server/kart_lifecycle_test.go — here we drive the full
+// drift→lakitu→shim recorder path to prove the wire constant, handler
+// registration, and CLI dispatch are all consistent.
+func TestKartRecreateRebuildsWithRotatedEnv(t *testing.T) {
+	ctx := integration.TestCtx(t, 5*time.Minute)
+
+	c, rec := integration.StartReadyCircuit(ctx, t, true)
+
+	const (
+		chestName  = "recreate-openai"
+		chestValue = "sk-recreate-original"
+		envKey     = "OPENAI_API_KEY"
+	)
+	if _, err := c.LakituRPC(ctx, wire.MethodChestNew, map[string]string{
+		"name": chestName, "value": chestValue,
+	}); err != nil {
+		t.Fatalf("chest.new: %v", err)
+	}
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]any{
+		"name": "envtune-recreate",
+		"env": map[string]any{
+			"workspace": map[string]string{
+				envKey: "chest:" + chestName,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("tune.new: %v", err)
+	}
+
+	kart := c.KartName("recreate")
+	if _, stderr, code := c.Drift(ctx, "new", kart, "--tune", "envtune-recreate"); code != 0 {
+		t.Fatalf("drift new: code=%d stderr=%q", code, stderr)
+	}
+
+	// Rotate the chest entry; recreate should pick up the new value.
+	const rotatedValue = "sk-recreate-rotated"
+	if _, err := c.LakituRPC(ctx, wire.MethodChestPatch, map[string]string{
+		"name": chestName, "value": rotatedValue,
+	}); err != nil {
+		t.Fatalf("chest.patch rotate: %v", err)
+	}
+
+	// Drive the client CLI (not just the RPC) so the wiring through
+	// drift.go dispatch + kartCmd + runKartLifecycle gets exercised.
+	if _, stderr, code := c.Drift(ctx, "kart", "recreate", kart); code != 0 {
+		t.Fatalf("drift kart recreate: code=%d stderr=%q", code, stderr)
+	}
+
+	ups := rec.FindAllUps(ctx)
+	if len(ups) < 2 {
+		t.Fatalf("want >=2 devpod up invocations (new + recreate), got %d", len(ups))
+	}
+	recreateUp := ups[len(ups)-1]
+
+	sawRecreateFlag := false
+	for _, a := range recreateUp.Argv {
+		if a == "--recreate" {
+			sawRecreateFlag = true
+			break
+		}
+	}
+	if !sawRecreateFlag {
+		t.Errorf("recreate up argv missing --recreate flag, got %v", recreateUp.Argv)
+	}
+
+	wantRotated := envKey + "=" + rotatedValue
+	if !integration.ArgvHas(recreateUp.Argv, "--workspace-env", wantRotated) {
+		t.Errorf("recreate up argv missing rotated --workspace-env %q, got %v", wantRotated, recreateUp.Argv)
+	}
+	// Ensure the initial `new` up did NOT carry --recreate (it should
+	// only be applied on the recreate verb).
+	for _, a := range ups[0].Argv {
+		if a == "--recreate" {
+			t.Errorf("initial `drift new` up carried --recreate; argv=%v", ups[0].Argv)
+		}
+	}
+}
+
+// TestKartRecreateLeavesKartConfigUnchanged is the integration-level
+// mirror of the same-named server unit test: confirms `drift kart
+// recreate` does NOT mutate the kart's config.yaml on disk (no tune
+// re-snapshot). That's the contract that differentiates recreate from
+// rebuild — users who've hand-edited config.yaml rely on this.
+func TestKartRecreateLeavesKartConfigUnchanged(t *testing.T) {
+	ctx := integration.TestCtx(t, 5*time.Minute)
+
+	c, _ := integration.StartReadyCircuit(ctx, t, true)
+
+	// A kart with a tune set is the interesting case — rebuild would
+	// re-snapshot env+mount_dirs from the tune; recreate must not.
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]any{
+		"name": "envtune-noop",
+	}); err != nil {
+		t.Fatalf("tune.new: %v", err)
+	}
+	kart := c.KartName("recreate-noop")
+	if _, stderr, code := c.Drift(ctx, "new", kart, "--tune", "envtune-noop"); code != 0 {
+		t.Fatalf("drift new: code=%d stderr=%q", code, stderr)
+	}
+
+	cfgPath := "/home/" + c.User + "/.drift/garage/karts/" + kart + "/config.yaml"
+	before := c.ExecInContainer(ctx, "sh", "-c", "cat "+cfgPath+" && stat -c %Y "+cfgPath)
+
+	if _, stderr, code := c.Drift(ctx, "kart", "recreate", kart); code != 0 {
+		t.Fatalf("drift kart recreate: code=%d stderr=%q", code, stderr)
+	}
+
+	after := c.ExecInContainer(ctx, "sh", "-c", "cat "+cfgPath+" && stat -c %Y "+cfgPath)
+	if string(before) != string(after) {
+		t.Errorf("kart config changed by recreate:\nbefore=%q\nafter=%q", before, after)
+	}
+}
+
 // TestTuneEnvBuildInjection verifies env.build entries reach both
 // dotfiles install paths — drift's layer-1 file:// install (process env)
 // and devpod's --dotfiles install via --dotfiles-script-env on devpod up

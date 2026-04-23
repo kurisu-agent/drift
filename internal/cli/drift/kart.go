@@ -36,16 +36,17 @@ func resolveCircuit(root *CLI, deps deps) (*config.Client, string, error) {
 // into the cross-circuit picker. The print-only `drift karts` (plural)
 // lives at the top level — see kartsCmd in list.go.
 type kartCmd struct {
-	Connect kartConnectCmd `cmd:"" default:"withargs" help:"Connect to a kart via mosh (ssh fallback)."`
-	Info    infoCmd        `cmd:"" help:"Show a single kart's info."`
-	Start   startCmd       `cmd:"" help:"Start a kart (idempotent)."`
-	Stop    stopCmd        `cmd:"" help:"Stop a kart (idempotent)."`
-	Restart restartCmd     `cmd:"" help:"Restart a kart."`
-	Rebuild rebuildCmd     `cmd:"" help:"Re-apply the current tune to a kart and recreate its container."`
-	Delete  deleteCmd      `cmd:"" help:"Delete a kart (errors if missing)."`
-	Logs    logsCmd        `cmd:"" help:"Fetch a chunk of kart logs."`
-	Enable  enableCmd      `cmd:"" help:"Enable kart autostart on circuit reboot (idempotent)."`
-	Disable disableCmd     `cmd:"" help:"Disable kart autostart (idempotent)."`
+	Connect  kartConnectCmd `cmd:"" default:"withargs" help:"Connect to a kart via mosh (ssh fallback)."`
+	Info     infoCmd        `cmd:"" help:"Show a single kart's info."`
+	Start    startCmd       `cmd:"" help:"Start a kart (idempotent)."`
+	Stop     stopCmd        `cmd:"" help:"Stop a kart (idempotent)."`
+	Restart  restartCmd     `cmd:"" help:"Restart a kart."`
+	Recreate recreateCmd    `cmd:"" help:"Recreate a kart's container (no tune re-apply) — picks up devcontainer.json changes."`
+	Rebuild  rebuildCmd     `cmd:"" help:"Re-apply the current tune to a kart and recreate its container."`
+	Delete   deleteCmd      `cmd:"" help:"Delete a kart (errors if missing)."`
+	Logs     logsCmd        `cmd:"" help:"Fetch a chunk of kart logs."`
+	Enable   enableCmd      `cmd:"" help:"Enable kart autostart on circuit reboot (idempotent)."`
+	Disable  disableCmd     `cmd:"" help:"Disable kart autostart (idempotent)."`
 }
 
 // kartConnectCmd has the same flag surface as `drift connect` so the two

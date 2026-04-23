@@ -74,25 +74,31 @@ Bypass during upgrades with `drift --skip-version-check …`.
 The canonical list lives in `internal/wire/methods.go`. Every method constant there is registered on the server in `internal/server/server.go` or `internal/server/kart.go`. The lakitu CLI renders the same catalog via `drift help --full` and `lakitu help`.
 
 ```text
-  character.add
   character.list
+  character.new
+  character.patch
   character.remove
+  character.replace
   character.show
   chest.get
   chest.list
+  chest.new
+  chest.patch
   chest.remove
-  chest.set
   config.set
   config.show
   kart.connect
   kart.delete
   kart.disable
+  kart.drift_check
   kart.enable
   kart.info
   kart.list
   kart.logs
   kart.migrate_list
   kart.new
+  kart.rebuild
+  kart.recreate
   kart.restart
   kart.session_env
   kart.start
@@ -106,8 +112,10 @@ The canonical list lives in `internal/wire/methods.go`. Every method constant th
   skill.list
   skill.resolve
   tune.list
+  tune.new
+  tune.patch
   tune.remove
-  tune.set
+  tune.replace
   tune.show
 ```
 

@@ -8,20 +8,20 @@ const (
 	MethodServerInit    = "server.init"
 	MethodServerVerify  = "server.verify"
 
-	MethodKartNew        = "kart.new"
-	MethodKartStart      = "kart.start"
-	MethodKartStop       = "kart.stop"
-	MethodKartRestart    = "kart.restart"
-	MethodKartRebuild    = "kart.rebuild"
-	MethodKartDriftCheck = "kart.drift_check"
-	MethodKartDelete     = "kart.delete"
-	MethodKartList       = "kart.list"
-	MethodKartInfo       = "kart.info"
-	MethodKartEnable     = "kart.enable"
-	MethodKartDisable    = "kart.disable"
-	MethodKartLogs       = "kart.logs"
-	MethodKartSessionEnv = "kart.session_env"
-
+	MethodKartNew         = "kart.new"
+	MethodKartStart       = "kart.start"
+	MethodKartStop        = "kart.stop"
+	MethodKartRestart     = "kart.restart"
+	MethodKartRecreate    = "kart.recreate"
+	MethodKartRebuild     = "kart.rebuild"
+	MethodKartDriftCheck  = "kart.drift_check"
+	MethodKartDelete      = "kart.delete"
+	MethodKartList        = "kart.list"
+	MethodKartInfo        = "kart.info"
+	MethodKartEnable      = "kart.enable"
+	MethodKartDisable     = "kart.disable"
+	MethodKartLogs        = "kart.logs"
+	MethodKartSessionEnv  = "kart.session_env"
 	MethodKartMigrateList = "kart.migrate_list"
 	MethodKartConnect     = "kart.connect"
 
@@ -62,7 +62,7 @@ func Methods() []string {
 	return []string{
 		MethodServerVersion, MethodServerInfo, MethodServerInit, MethodServerVerify,
 		MethodKartNew, MethodKartStart, MethodKartStop, MethodKartRestart,
-		MethodKartRebuild, MethodKartDriftCheck,
+		MethodKartRecreate, MethodKartRebuild, MethodKartDriftCheck,
 		MethodKartDelete, MethodKartList, MethodKartInfo,
 		MethodKartEnable, MethodKartDisable, MethodKartLogs,
 		MethodKartSessionEnv,

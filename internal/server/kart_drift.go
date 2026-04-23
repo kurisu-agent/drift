@@ -267,19 +267,11 @@ func (d KartDeps) kartRebuildHandler(ctx context.Context, params json.RawMessage
 		}
 	}
 
-	// Resolve workspace env from the (possibly refreshed) chest refs so
-	// the recreate picks up new values on the next up.
-	wsEnv, err := d.workspaceEnvKVs(p.Name)
-	if err != nil {
+	// Re-resolve chest-backed workspace env (possibly refreshed above)
+	// and force a devpod up --recreate so env.build / mount_dirs drift
+	// takes effect. Shared with kart.recreate.
+	if err := d.recreateContainer(ctx, p.Name); err != nil {
 		return nil, err
-	}
-	// devpod up --recreate rebuilds the container image and recreates
-	// the container itself — what we need for env.build / mount_dirs
-	// drift to take effect.
-	opts := devpod.UpOpts{Name: p.Name, WorkspaceEnv: wsEnv, Recreate: true}
-	if _, err := d.Devpod.Up(ctx, opts); err != nil {
-		return nil, wrapDevpod(rpcerr.CodeDevpod, rpcerr.TypeDevpodUpFailed, p.Name, err,
-			"devpod up --recreate %s failed: %v", p.Name, err)
 	}
 	return RebuildResult{Name: p.Name, Status: d.statusFor(ctx, p.Name)}, nil
 }

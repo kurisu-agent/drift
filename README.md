@@ -99,7 +99,7 @@ drift circuit add|rm|set            # manage circuits (client config + SSH alias
 drift karts                         # print karts across circuits (-c to scope to one)
 drift kart                          # pick a kart → connect
 drift kart connect [<name>]         # explicit connect
-drift kart info|start|stop|restart|delete|logs|enable|disable <name>
+drift kart info|start|stop|restart|recreate|rebuild|delete|logs|enable|disable <name>
 drift migrate                       # adopt an existing devpod workspace
 
 drift ai                            # Claude on the circuit, preloaded with drift's CLI

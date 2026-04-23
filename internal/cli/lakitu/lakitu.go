@@ -275,7 +275,8 @@ func registerDevpodBacked(ctx context.Context, reg *rpc.Registry, garage string,
 func methodNeedsDevpod(method string) bool {
 	switch method {
 	case wire.MethodKartNew, wire.MethodKartStart, wire.MethodKartStop,
-		wire.MethodKartRestart, wire.MethodKartRebuild, wire.MethodKartDriftCheck,
+		wire.MethodKartRestart, wire.MethodKartRecreate,
+		wire.MethodKartRebuild, wire.MethodKartDriftCheck,
 		wire.MethodKartDelete, wire.MethodKartList,
 		wire.MethodKartInfo, wire.MethodKartEnable, wire.MethodKartDisable,
 		wire.MethodKartLogs, wire.MethodKartSessionEnv,
