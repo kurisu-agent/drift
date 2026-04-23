@@ -23,40 +23,33 @@ devpod up https://github.com/example-org/myproj.git \
 
 drift powerslides past all these problems, letting you drift between devices, servers, and continents with zero friction and ride the drift boost of developer experience out of every corner.
 
+drift is deliberately opinionated: **Docker is the only supported devpod provider**. Every convenience in drift (auto-start on boot, `DEVPOD_HOME` isolation, kart-provisioning shortcuts, the Termux path) assumes a local Docker daemon on the circuit. If you need a different runtime, you want plain devpod, not drift.
+
 ## Highlights
 
-- **Multiple circuits, one client.** Register more than one host and switch between them with `drift -c <name>`. Fly from Osaka to London and the box in your attic is suddenly 200ms away; spin up a kart on a nearer circuit and keep going. `drift status` shows every circuit you've registered side by side along with their karts.
+- **Any client, any circuit, same karts.** State, keys, and secrets live on the server, not on whichever client created the kart, so your desktop, laptop, and phone all see the same karts on the same circuit without wrangling credentials on every device.
 - **AI at the CLI.** `drift ai` drops you into Claude on the circuit with drift's command surface preloaded. `drift skill <name>` invokes one of the circuit's Claude skills directly. Long commands are painful to type on a phone, easy to dictate.
 - **Persistent shells by default.** `drift connect` uses mosh so sessions survive wifi drops and closing the lid. Falls back to ssh when mosh isn't available.
 - **One-flag workspaces.** Preset environments (`tunes`) bundle features, starter repos, and dotfiles, so `drift new myproj --tune <name>` produces a container with the comforts you expect.
 - **Secrets that stay on the server.** The `chest` on the circuit holds your SSH keys and PATs; karts read them at start. A borrowed phone never needs to carry them.
 
-## What you need
-
-A Linux host you can SSH to, with Docker. That's it. The client side runs on macOS, Linux, or Termux on Android.
-
 ## Install
 
-On the host (circuit) — [scripts/install-lakitu.sh](scripts/install-lakitu.sh) installs the `lakitu` binary, wires up the systemd user unit + linger, adds you to the `docker` group, optionally installs mosh, and runs `lakitu init`. The pinned devpod binary downloads itself (SHA-verified) on first run.
+You need a Linux host you can SSH to, with Docker. The client side runs on macOS, Linux, or Termux on Android.
+
+On the host (circuit), run [scripts/install-lakitu.sh](scripts/install-lakitu.sh):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kurisu-agent/drift/main/scripts/install-lakitu.sh | sh
 ```
 
-On the client — [scripts/install-drift.sh](scripts/install-drift.sh) drops the `drift` binary into `~/.local/bin` (or `/usr/local/bin` if run as root, or `$PREFIX/bin` on Termux). `DRIFT_INSTALL_DIR=` overrides the target; `DRIFT_VERSION=v1.2.3` pins a tag. `drift update` pulls newer releases.
+On the client, run [scripts/install-drift.sh](scripts/install-drift.sh):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kurisu-agent/drift/main/scripts/install-drift.sh | sh
 ```
 
-A Nix flake is available for the elite users:
-
-```bash
-nix profile install github:kurisu-agent/drift            # client
-nix profile install github:kurisu-agent/drift#circuit    # server bundle (includes mosh)
-```
-
-On NixOS circuits, import the module instead of wiring lakitu into your host config by hand:
+On NixOS circuits, import the flake module:
 
 ```nix
 # flake.nix
@@ -70,7 +63,7 @@ On NixOS circuits, import the module instead of wiring lakitu into your host con
 }
 ```
 
-That one import installs lakitu + devpod + mosh and registers the `lakitu-kart@` user-service template for `drift kart enable`. It deliberately does NOT set `DEVPOD_HOME` globally — lakitu's `kart.connect` RPC returns a fully-resolved remote argv (`env DEVPOD_HOME=… /abs/devpod ssh <kart> …`) that scopes drift's devpod state to the one command, leaving the user's plain `devpod` invocations untouched. Package pins are overridable through `services.lakitu.{package,devpodPackage,moshPackage}` for dev-VM live-tree builds or air-gapped mirrors.
+Installs lakitu, devpod, and mosh; registers the `lakitu-kart@` user-service template for `drift kart enable`. Package pins are overridable via `services.lakitu.{package,devpodPackage,moshPackage}`.
 
 ## Quickstart
 
