@@ -188,6 +188,11 @@ type UpOpts struct {
 	DotfilesScriptEnv []string
 	// ConfigureSSH: drift manages its own SSH config and keeps this off.
 	ConfigureSSH bool
+	// Recreate passes `--recreate` to devpod up, forcing a container
+	// rebuild (devcontainer reprocessed, image rebuilt, container
+	// recreated). Used by kart.rebuild when the user opts in to
+	// applying drift between the captured shape and the current tune.
+	Recreate bool
 }
 
 func (o UpOpts) args() ([]string, error) {
@@ -227,6 +232,9 @@ func (o UpOpts) args() ([]string, error) {
 	}
 	if o.ConfigureSSH {
 		args = append(args, "--configure-ssh")
+	}
+	if o.Recreate {
+		args = append(args, "--recreate")
 	}
 	if o.Source != "" {
 		args = append(args, "--id", o.Name, o.Source)

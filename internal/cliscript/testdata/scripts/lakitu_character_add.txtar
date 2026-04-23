@@ -1,11 +1,11 @@
-# `lakitu character add` writes a character yaml under the garage and the
+# `lakitu character new` writes a character yaml under the garage and the
 # list/show/rm flow round-trips.
 
 lakitu init
 ! stderr .
 
 # Happy path: add a minimal character.
-lakitu character add alice --git-name=Alice --git-email=alice@example.com
+lakitu character new alice --git-name=Alice --git-email=alice@example.com
 ! stderr .
 stdout '"name": "alice"'
 stdout '"git_name": "Alice"'
@@ -26,19 +26,19 @@ lakitu character show alice
 stdout '"git_email": "alice@example.com"'
 
 # Re-adding collides with code:4.
-! lakitu character add alice --git-name=Alice --git-email=alice@example.com
+! lakitu character new alice --git-name=Alice --git-email=alice@example.com
 stderr 'name_collision'
 
 # Reserved name rejected with code:2.
-! lakitu character add default --git-name=Bad --git-email=bad@example.com
+! lakitu character new default --git-name=Bad --git-email=bad@example.com
 stderr 'invalid_name'
 
 # Literal PAT tokens rejected.
-! lakitu character add bob --git-name=Bob --git-email=bob@example.com --pat-secret=ghp_abc123
+! lakitu character new bob --git-name=Bob --git-email=bob@example.com --pat-secret=ghp_abc123
 stderr 'invalid_flag'
 
 # Chest reference accepted.
-lakitu character add bob --git-name=Bob --git-email=bob@example.com --pat-secret=chest:github
+lakitu character new bob --git-name=Bob --git-email=bob@example.com --pat-secret=chest:github
 ! stderr .
 stdout '"pat_secret": "chest:github"'
 

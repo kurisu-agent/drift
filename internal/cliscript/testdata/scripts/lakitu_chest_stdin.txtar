@@ -1,4 +1,4 @@
-# `lakitu chest set <name>` reads the secret value from stdin (never a
+# `lakitu chest new <name>` reads the secret value from stdin (never a
 # flag). The MVP yamlfile backend writes ~/.drift/garage/chest/secrets.yaml
 # at mode 0600; multi-line secrets (SSH keys, PEM-encoded tokens) ride on
 # YAML block scalars and round-trip without custom escaping.
@@ -7,7 +7,7 @@ lakitu init
 ! stderr .
 
 stdin secret.txt
-lakitu chest set github-pat
+lakitu chest new github-pat
 ! stderr .
 stdout '"name": "github-pat"'
 
@@ -27,7 +27,7 @@ stdout '"value": "ghp_live_token_abc"'
 # stdin text is terminated by a single trailing newline which runChestSet
 # strips; the interior newlines survive.
 stdin ssh_key.txt
-lakitu chest set ssh-ed25519
+lakitu chest new ssh-ed25519
 ! stderr .
 
 lakitu chest get ssh-ed25519
@@ -45,7 +45,7 @@ stdout 'ssh-ed25519'
 
 # Invalid name rejected.
 stdin secret.txt
-! lakitu chest set Bad-Name
+! lakitu chest new Bad-Name
 stderr 'invalid_name'
 
 -- secret.txt --

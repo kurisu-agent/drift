@@ -8,34 +8,42 @@ const (
 	MethodServerInit    = "server.init"
 	MethodServerVerify  = "server.verify"
 
-	MethodKartNew         = "kart.new"
-	MethodKartStart       = "kart.start"
-	MethodKartStop        = "kart.stop"
-	MethodKartRestart     = "kart.restart"
-	MethodKartDelete      = "kart.delete"
-	MethodKartList        = "kart.list"
-	MethodKartInfo        = "kart.info"
-	MethodKartEnable      = "kart.enable"
-	MethodKartDisable     = "kart.disable"
-	MethodKartLogs        = "kart.logs"
-	MethodKartSessionEnv  = "kart.session_env"
+	MethodKartNew        = "kart.new"
+	MethodKartStart      = "kart.start"
+	MethodKartStop       = "kart.stop"
+	MethodKartRestart    = "kart.restart"
+	MethodKartRebuild    = "kart.rebuild"
+	MethodKartDriftCheck = "kart.drift_check"
+	MethodKartDelete     = "kart.delete"
+	MethodKartList       = "kart.list"
+	MethodKartInfo       = "kart.info"
+	MethodKartEnable     = "kart.enable"
+	MethodKartDisable    = "kart.disable"
+	MethodKartLogs       = "kart.logs"
+	MethodKartSessionEnv = "kart.session_env"
+
 	MethodKartMigrateList = "kart.migrate_list"
 	MethodKartConnect     = "kart.connect"
 
-	MethodCharacterAdd    = "character.add"
-	MethodCharacterList   = "character.list"
-	MethodCharacterShow   = "character.show"
-	MethodCharacterRemove = "character.remove"
+	MethodCharacterNew     = "character.new"
+	MethodCharacterPatch   = "character.patch"
+	MethodCharacterReplace = "character.replace"
+	MethodCharacterList    = "character.list"
+	MethodCharacterShow    = "character.show"
+	MethodCharacterRemove  = "character.remove"
 
-	MethodChestSet    = "chest.set"
+	MethodChestNew    = "chest.new"
+	MethodChestPatch  = "chest.patch"
 	MethodChestGet    = "chest.get"
 	MethodChestList   = "chest.list"
 	MethodChestRemove = "chest.remove"
 
-	MethodTuneList   = "tune.list"
-	MethodTuneShow   = "tune.show"
-	MethodTuneSet    = "tune.set"
-	MethodTuneRemove = "tune.remove"
+	MethodTuneNew     = "tune.new"
+	MethodTunePatch   = "tune.patch"
+	MethodTuneReplace = "tune.replace"
+	MethodTuneList    = "tune.list"
+	MethodTuneShow    = "tune.show"
+	MethodTuneRemove  = "tune.remove"
 
 	MethodConfigShow = "config.show"
 	MethodConfigSet  = "config.set"
@@ -54,14 +62,17 @@ func Methods() []string {
 	return []string{
 		MethodServerVersion, MethodServerInfo, MethodServerInit, MethodServerVerify,
 		MethodKartNew, MethodKartStart, MethodKartStop, MethodKartRestart,
+		MethodKartRebuild, MethodKartDriftCheck,
 		MethodKartDelete, MethodKartList, MethodKartInfo,
 		MethodKartEnable, MethodKartDisable, MethodKartLogs,
 		MethodKartSessionEnv,
 		MethodKartMigrateList,
 		MethodKartConnect,
-		MethodCharacterAdd, MethodCharacterList, MethodCharacterShow, MethodCharacterRemove,
-		MethodChestSet, MethodChestGet, MethodChestList, MethodChestRemove,
-		MethodTuneList, MethodTuneShow, MethodTuneSet, MethodTuneRemove,
+		MethodCharacterNew, MethodCharacterPatch, MethodCharacterReplace,
+		MethodCharacterList, MethodCharacterShow, MethodCharacterRemove,
+		MethodChestNew, MethodChestPatch, MethodChestGet, MethodChestList, MethodChestRemove,
+		MethodTuneNew, MethodTunePatch, MethodTuneReplace,
+		MethodTuneList, MethodTuneShow, MethodTuneRemove,
 		MethodConfigShow, MethodConfigSet,
 		MethodSkillList, MethodSkillResolve,
 		MethodRunList, MethodRunResolve,

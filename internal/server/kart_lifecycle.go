@@ -42,6 +42,8 @@ func RegisterKartLifecycle(reg *rpc.Registry, d KartDeps) {
 	reg.Register(wire.MethodKartStart, d.kartStartHandler)
 	reg.Register(wire.MethodKartStop, d.kartStopHandler)
 	reg.Register(wire.MethodKartRestart, d.kartRestartHandler)
+	reg.Register(wire.MethodKartRebuild, d.kartRebuildHandler)
+	reg.Register(wire.MethodKartDriftCheck, d.kartDriftCheckHandler)
 	reg.Register(wire.MethodKartDelete, d.kartDeleteHandler)
 	reg.Register(wire.MethodKartLogs, d.kartLogsHandler)
 	reg.Register(wire.MethodKartSessionEnv, d.kartSessionEnvHandler)
