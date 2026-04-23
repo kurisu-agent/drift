@@ -1036,37 +1036,66 @@ func randomHex(n int) string {
 // containers belonging to the test suite. Called both before a test (to
 // clean after a crashed earlier run) and after every test via t.Cleanup.
 //
-// Filters:
-//   - label=drift.integration=1 catches circuits tagged by runContainer.
-//   - name=<kartPrefix> catches containers whose name includes the kart
-//     prefix (mostly a no-op since devpod hashes workspace names).
-//   - label=dev.containers.id catches devpod-built workspaces. Applied
-//     only when kartPrefix is given, so a stray outer-project devcontainer
-//     isn't wiped by a startup sweep.
+// Two passes:
+//  1. label=drift.integration=1 — circuit containers tagged by runContainer.
+//  2. devpod-built workspace containers whose `dev.containers.id` label
+//     starts with kartPrefix. Devpod sets that label to the workspace ID
+//     (see GetDockerLabelForID upstream), and our test workspaces are
+//     created with names beginning `int-<runID>-`, so the prefix uniquely
+//     identifies our spawned containers. An earlier version filtered by
+//     bare `label=dev.containers.id` and so swept *every* devcontainer on
+//     the daemon — happily `docker rm -f`'ing the user's own kart if it
+//     happened to be running. Don't reintroduce that.
 func sweepIntegrationContainers(ctx context.Context, t *testing.T, kartPrefix string) {
 	t.Helper()
-	filters := []string{"label=drift.integration=1"}
+	ids := dockerPSIDs(ctx, t, "label=drift.integration=1")
 	if kartPrefix != "" {
-		filters = append(filters,
-			"name="+kartPrefix,
-			"label=dev.containers.id",
-		)
+		ids = append(ids, devpodWorkspaceIDsWithPrefix(ctx, t, kartPrefix)...)
 	}
-	for _, f := range filters {
-		out, err := osexec.CommandContext(ctx, "docker", "ps", "-aq", "--filter", f).Output()
-		if err != nil {
-			t.Logf("sweep docker ps --filter %q: %v", f, err)
+	if len(ids) == 0 {
+		return
+	}
+	args := append([]string{"rm", "-f"}, ids...)
+	if out, err := osexec.CommandContext(ctx, "docker", args...).CombinedOutput(); err != nil {
+		t.Logf("sweep docker rm -f %v: %v\n%s", ids, err, out)
+	}
+}
+
+func dockerPSIDs(ctx context.Context, t *testing.T, filter string) []string {
+	t.Helper()
+	out, err := osexec.CommandContext(ctx, "docker", "ps", "-aq", "--filter", filter).Output()
+	if err != nil {
+		t.Logf("sweep docker ps --filter %q: %v", filter, err)
+		return nil
+	}
+	return strings.Fields(strings.TrimSpace(string(out)))
+}
+
+// devpodWorkspaceIDsWithPrefix returns container IDs for devpod-built
+// containers whose `dev.containers.id` label value starts with prefix.
+// Docker's --filter doesn't support prefix matching on label values, so we
+// list candidates with --format and trim by prefix in Go.
+func devpodWorkspaceIDsWithPrefix(ctx context.Context, t *testing.T, prefix string) []string {
+	t.Helper()
+	const format = `{{.ID}} {{.Label "dev.containers.id"}}`
+	out, err := osexec.CommandContext(ctx, "docker", "ps", "-a",
+		"--filter", "label=dev.containers.id",
+		"--format", format).Output()
+	if err != nil {
+		t.Logf("sweep dev.containers.id list: %v", err)
+		return nil
+	}
+	var ids []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
 			continue
 		}
-		ids := strings.Fields(strings.TrimSpace(string(out)))
-		if len(ids) == 0 {
-			continue
-		}
-		args := append([]string{"rm", "-f"}, ids...)
-		if out, err := osexec.CommandContext(ctx, "docker", args...).CombinedOutput(); err != nil {
-			t.Logf("sweep docker rm -f %v: %v\n%s", ids, err, out)
+		if strings.HasPrefix(fields[1], prefix) {
+			ids = append(ids, fields[0])
 		}
 	}
+	return ids
 }
 
 // overlayEnv replaces keys in os.Environ() rather than appending. Go's exec
