@@ -31,8 +31,8 @@ func TestCharacterLifecycle(t *testing.T) {
 		"github_user": "alice",
 		"pat_secret":  "chest:alice-pat",
 	}
-	if _, err := c.LakituRPC(ctx, wire.MethodCharacterAdd, addParams); err != nil {
-		t.Fatalf("character.add: %v", err)
+	if _, err := c.LakituRPC(ctx, wire.MethodCharacterNew, addParams); err != nil {
+		t.Fatalf("character.new: %v", err)
 	}
 
 	// List — must contain alice.
@@ -71,8 +71,8 @@ func TestCharacterLifecycle(t *testing.T) {
 	}
 
 	// Duplicate add is a name_collision conflict.
-	if _, err := c.LakituRPC(ctx, wire.MethodCharacterAdd, addParams); err == nil {
-		t.Fatal("character.add duplicate: want error, got nil")
+	if _, err := c.LakituRPC(ctx, wire.MethodCharacterNew, addParams); err == nil {
+		t.Fatal("character.new duplicate: want error, got nil")
 	} else {
 		var re *rpcerr.Error
 		if !errors.As(err, &re) || re.Code != rpcerr.CodeConflict {

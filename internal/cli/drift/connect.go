@@ -534,6 +534,15 @@ func doCircuitConnect(ctx context.Context, io IO, root *CLI, circuit string, for
 // circuit, so the helper takes it as a parameter instead of re-resolving.
 // sshArgs holds the already-merged (config + CLI passthrough) flag list.
 func doConnect(ctx context.Context, io IO, root *CLI, deps deps, circuit, name string, forceSSH, forwardAgent bool, sshArgs []string) int {
+	// Drift-check preamble: if the kart's tune has changed since the
+	// container was built, give the user a chance to rebuild before
+	// connecting. Non-TTY or json paths print a warning and proceed.
+	if err := maybePromptRebuild(ctx, io.Stderr,
+		stdinIsTTY(io.Stdin), stdoutIsTTY(io.Stdout), root.Output == "json",
+		deps, circuit, name); err != nil {
+		return errfmt.Emit(io.Stderr, err)
+	}
+
 	transport := connect.Transport(osexec.LookPath, forceSSH)
 	ph := progress.Start(io.Stderr, root.Output == "json",
 		"connecting to kart \""+name+"\"", transport)

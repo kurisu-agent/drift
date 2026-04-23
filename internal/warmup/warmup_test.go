@@ -275,17 +275,17 @@ func TestRun_SkipCircuits_GoesStraightToCharacters(t *testing.T) {
 	var sawAdd, sawConfigSet bool
 	for _, c := range s.calls {
 		switch c.method {
-		case "character.add":
+		case "character.new":
 			sawAdd = true
 			if p, ok := c.params.(map[string]any); !ok || p["name"] != "me" || p["git_email"] != "alice@example.com" {
-				t.Errorf("character.add params wrong: %+v", c.params)
+				t.Errorf("character.new params wrong: %+v", c.params)
 			}
 		case "config.set":
 			sawConfigSet = true
 		}
 	}
 	if !sawAdd {
-		t.Errorf("character.add not called; calls=%+v", s.calls)
+		t.Errorf("character.new not called; calls=%+v", s.calls)
 	}
 	if !sawConfigSet {
 		t.Errorf("config.set not called; calls=%+v", s.calls)
@@ -315,21 +315,21 @@ func TestRun_CharacterPATStagesChestSet(t *testing.T) {
 	var chestCall, addCall *rpcCall
 	for i := range s.calls {
 		switch s.calls[i].method {
-		case "chest.set":
+		case "chest.new":
 			chestCall = &s.calls[i]
-		case "character.add":
+		case "character.new":
 			addCall = &s.calls[i]
 		}
 	}
 	if chestCall == nil {
-		t.Fatalf("chest.set not called")
+		t.Fatalf("chest.new not called")
 	}
 	cp := chestCall.params.(map[string]any)
 	if cp["name"] != "me-pat" || cp["value"] != "gh_abcdef" {
-		t.Errorf("chest.set params: %+v", cp)
+		t.Errorf("chest.new params: %+v", cp)
 	}
 	if addCall == nil {
-		t.Fatalf("character.add not called")
+		t.Fatalf("character.new not called")
 	}
 	ap := addCall.params.(map[string]any)
 	if ap["pat_secret"] != "chest:me-pat" {
@@ -384,10 +384,10 @@ func TestRun_SkipsCharacterPhase_WhenServerHasDefault(t *testing.T) {
 	if !strings.Contains(out.String(), "already have a default_character") {
 		t.Errorf("expected skip message, got:\n%s", out.String())
 	}
-	// No character.add call should have been made.
+	// No character.new call should have been made.
 	for _, c := range s.calls {
-		if c.method == "character.add" {
-			t.Errorf("character.add called but a default was already set: %+v", s.calls)
+		if c.method == "character.new" {
+			t.Errorf("character.new called but a default was already set: %+v", s.calls)
 		}
 	}
 }

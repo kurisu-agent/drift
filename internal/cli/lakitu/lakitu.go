@@ -92,22 +92,36 @@ func Run(ctx context.Context, argv []string, io IO) int {
 		return runConfigShow(ctx, io)
 	case "config set <key> <value>":
 		return runConfigSet(ctx, io, cli.Config.Set)
-	case "character add <name>":
-		return runCharacterAdd(ctx, io, cli.Character.Add)
+	case "character new <name>":
+		return runCharacterNew(ctx, io, cli.Character.New)
+	case "character set <name> <field> <value>":
+		return runCharacterSet(ctx, io, cli.Character.Set)
+	case "character unset <name> <field>":
+		return runCharacterUnset(ctx, io, cli.Character.Unset)
+	case "character edit <name>":
+		return runCharacterEdit(ctx, io, cli.Character.Edit)
 	case "character list":
 		return runCharacterList(ctx, io)
 	case "character show <name>":
 		return runCharacterShow(ctx, io, cli.Character.Show)
 	case "character rm <name>":
 		return runCharacterRemove(ctx, io, cli.Character.Remove)
+	case "tune new <name>":
+		return runTuneNew(ctx, io, cli.Tune.New)
+	case "tune set <name> <field> <value>":
+		return runTuneSet(ctx, io, cli.Tune.Set)
+	case "tune unset <name> <field>":
+		return runTuneUnset(ctx, io, cli.Tune.Unset)
+	case "tune edit <name>":
+		return runTuneEdit(ctx, io, cli.Tune.Edit)
 	case "tune list":
 		return runTuneList(ctx, io)
 	case "tune show <name>":
 		return runTuneShow(ctx, io, cli.Tune.Show)
-	case "tune set <name>":
-		return runTuneSet(ctx, io, cli.Tune.Set)
 	case "tune rm <name>":
 		return runTuneRemove(ctx, io, cli.Tune.Remove)
+	case "chest new <name>":
+		return runChestNew(ctx, io, cli.Chest.New)
 	case "chest set <name>":
 		return runChestSet(ctx, io, cli.Chest.Set)
 	case "chest get <name>":
@@ -261,7 +275,8 @@ func registerDevpodBacked(ctx context.Context, reg *rpc.Registry, garage string,
 func methodNeedsDevpod(method string) bool {
 	switch method {
 	case wire.MethodKartNew, wire.MethodKartStart, wire.MethodKartStop,
-		wire.MethodKartRestart, wire.MethodKartDelete, wire.MethodKartList,
+		wire.MethodKartRestart, wire.MethodKartRebuild, wire.MethodKartDriftCheck,
+		wire.MethodKartDelete, wire.MethodKartList,
 		wire.MethodKartInfo, wire.MethodKartEnable, wire.MethodKartDisable,
 		wire.MethodKartLogs, wire.MethodKartSessionEnv,
 		wire.MethodKartMigrateList, wire.MethodKartConnect:
