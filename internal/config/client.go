@@ -14,6 +14,13 @@ type Client struct {
 
 type ClientCircuit struct {
 	Host string `yaml:"host"`
+	// SSHArgs are extra flags spliced into the ssh argv before the target
+	// host. Use for one-off overrides that don't belong in ~/.ssh/config —
+	// e.g. ["-i", "~/.ssh/lab_ed25519"] or ["-o", "IdentitiesOnly=yes"].
+	// Mosh is skipped whenever this is non-empty since mosh doesn't accept
+	// raw ssh flags. Tilde expansion happens at use-time; don't pre-expand
+	// so the file stays portable across hosts.
+	SSHArgs []string `yaml:"ssh_args,omitempty"`
 }
 
 // ManagesSSHConfig defaults to true when the field is absent.

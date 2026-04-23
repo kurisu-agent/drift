@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	osexec "os/exec"
+	"strings"
 	"time"
 
 	"github.com/kurisu-agent/drift/internal/devpod"
@@ -48,7 +49,13 @@ type Options struct {
 	// ForceSSH skips mosh detection entirely.
 	ForceSSH bool
 	// ForwardAgent sets `-A` on the ssh fallback (no effect on mosh).
-	ForwardAgent     bool
+	ForwardAgent bool
+	// SSHArgs are extra flags forwarded to ssh. On the ssh path they
+	// slot between `-A` and the target host. On the mosh path they get
+	// shell-quoted into `--ssh="ssh <args>"` so they apply to the ssh
+	// invocation mosh uses to bootstrap `mosh-server`. Callers merge
+	// config-pinned args with any CLI passthrough before populating this.
+	SSHArgs          []string
 	AutoStartTimeout time.Duration
 	AutoStartPoll    time.Duration
 }
@@ -174,16 +181,42 @@ func buildConnectArgv(useMosh bool, opts Options, remote []string) (string, []st
 	// + --set-env pairs) or the legacy hand-built one. Either way we
 	// only have to splice it into the transport argv here.
 	if useMosh {
-		argv := append([]string{target, "--"}, remote...)
+		var argv []string
+		if len(opts.SSHArgs) > 0 {
+			// mosh uses ssh to bootstrap mosh-server on the remote end;
+			// --ssh="ssh <args>" swaps in our flag-ladened ssh invocation
+			// for that bootstrap. mosh shell-splits the value, so each arg
+			// is POSIX-single-quoted to survive paths with spaces or '.
+			argv = append(argv, "--ssh="+BuildMoshSSHOverride(opts.SSHArgs))
+		}
+		argv = append(argv, target, "--")
+		argv = append(argv, remote...)
 		return "mosh", argv
 	}
 	sshArgs := []string{"-t"}
 	if opts.ForwardAgent {
 		sshArgs = append(sshArgs, "-A")
 	}
+	// User-supplied ssh flags (config-pinned + CLI passthrough, already
+	// merged by the caller) slot in before the target so they apply to
+	// the connection, not the remote command. Last-wins options like -p
+	// thus favor CLI over config; additive options like -i accumulate.
+	sshArgs = append(sshArgs, opts.SSHArgs...)
 	sshArgs = append(sshArgs, target)
 	sshArgs = append(sshArgs, remote...)
 	return "ssh", sshArgs
+}
+
+// BuildMoshSSHOverride assembles the value for mosh's --ssh=... flag:
+// `ssh <arg1> <arg2> …`, each arg POSIX-single-quoted. Single quotes
+// inside an arg close-escape-reopen via the standard `'\”` idiom.
+func BuildMoshSSHOverride(args []string) string {
+	parts := make([]string, 0, 1+len(args))
+	parts = append(parts, "ssh")
+	for _, a := range args {
+		parts = append(parts, "'"+strings.ReplaceAll(a, "'", `'\''`)+"'")
+	}
+	return strings.Join(parts, " ")
 }
 
 func ensureRunning(ctx context.Context, d Deps, opts Options) error {

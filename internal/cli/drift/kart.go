@@ -52,9 +52,10 @@ type kartCmd struct {
 // picker on bare `drift connect` is what makes this command worth its
 // own verb: this one always lands on a kart.
 type kartConnectCmd struct {
-	Name         string `arg:"" optional:"" help:"Kart name; omit on a TTY to pick from a cross-circuit kart list."`
-	SSH          bool   `name:"ssh" help:"Force plain SSH (skip mosh)."`
-	ForwardAgent bool   `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
+	Name         string   `arg:"" optional:"" help:"Kart name; omit on a TTY to pick from a cross-circuit kart list."`
+	SSHArgs      []string `arg:"" optional:"" passthrough:"" help:"Extra flags forwarded to ssh (e.g. -- -i ~/.ssh/id_lab). Under mosh, wrapped into --ssh=\"ssh …\" for the bootstrap."`
+	SSH          bool     `name:"ssh" help:"Force plain SSH (skip mosh)."`
+	ForwardAgent bool     `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
 }
 
 // emitKartResult: terse text so stdout stays scriptable; JSON passes
