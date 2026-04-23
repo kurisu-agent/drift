@@ -12,6 +12,7 @@ const (
 	MethodKartStart       = "kart.start"
 	MethodKartStop        = "kart.stop"
 	MethodKartRestart     = "kart.restart"
+	MethodKartRecreate    = "kart.recreate"
 	MethodKartDelete      = "kart.delete"
 	MethodKartList        = "kart.list"
 	MethodKartInfo        = "kart.info"
@@ -54,6 +55,7 @@ func Methods() []string {
 	return []string{
 		MethodServerVersion, MethodServerInfo, MethodServerInit, MethodServerVerify,
 		MethodKartNew, MethodKartStart, MethodKartStop, MethodKartRestart,
+		MethodKartRecreate,
 		MethodKartDelete, MethodKartList, MethodKartInfo,
 		MethodKartEnable, MethodKartDisable, MethodKartLogs,
 		MethodKartSessionEnv,

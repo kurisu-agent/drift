@@ -42,6 +42,7 @@ func RegisterKartLifecycle(reg *rpc.Registry, d KartDeps) {
 	reg.Register(wire.MethodKartStart, d.kartStartHandler)
 	reg.Register(wire.MethodKartStop, d.kartStopHandler)
 	reg.Register(wire.MethodKartRestart, d.kartRestartHandler)
+	reg.Register(wire.MethodKartRecreate, d.kartRecreateHandler)
 	reg.Register(wire.MethodKartDelete, d.kartDeleteHandler)
 	reg.Register(wire.MethodKartLogs, d.kartLogsHandler)
 	reg.Register(wire.MethodKartSessionEnv, d.kartSessionEnvHandler)
@@ -135,6 +136,33 @@ func (d KartDeps) kartRestartHandler(ctx context.Context, params json.RawMessage
 	if _, err := d.Devpod.Up(ctx, devpod.UpOpts{Name: p.Name, WorkspaceEnv: wsEnv}); err != nil {
 		return nil, wrapDevpod(rpcerr.CodeDevpod, rpcerr.TypeDevpodUpFailed, p.Name, err,
 			"devpod up %s failed: %v", p.Name, err)
+	}
+	return KartLifecycleResult{Name: p.Name, Status: d.statusFor(ctx, p.Name)}, nil
+}
+
+// kartRecreateHandler runs `devpod up --recreate` so a changed
+// devcontainer.json (new features, bumped image) actually rebuilds the
+// container. Mirrors kartRestartHandler's DEVPOD_HOME plumbing: the
+// Devpod client here is the same one wired with DevpodHome at lakitu
+// registration, and workspace env resolves from chest up front so a
+// chest miss fails fast. Build output streams back to the client the
+// same way kart.new does — through the Devpod client's Mirror sink,
+// which lakitu points at the SSH stderr channel.
+func (d KartDeps) kartRecreateHandler(ctx context.Context, params json.RawMessage) (any, error) {
+	p, err := bindLifecycleParams(params, "kart.recreate")
+	if err != nil {
+		return nil, err
+	}
+	if err := d.requireDevpod(); err != nil {
+		return nil, err
+	}
+	wsEnv, err := d.workspaceEnvKVs(p.Name)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := d.Devpod.Up(ctx, devpod.UpOpts{Name: p.Name, WorkspaceEnv: wsEnv, Recreate: true}); err != nil {
+		return nil, wrapDevpod(rpcerr.CodeDevpod, rpcerr.TypeDevpodUpFailed, p.Name, err,
+			"devpod up --recreate %s failed: %v", p.Name, err)
 	}
 	return KartLifecycleResult{Name: p.Name, Status: d.statusFor(ctx, p.Name)}, nil
 }

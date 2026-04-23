@@ -188,6 +188,11 @@ type UpOpts struct {
 	DotfilesScriptEnv []string
 	// ConfigureSSH: drift manages its own SSH config and keeps this off.
 	ConfigureSSH bool
+	// Recreate renders `--recreate`, telling devpod to tear down and
+	// rebuild the workspace so a changed devcontainer.json (new features,
+	// bumped image) actually takes effect. Without it, `devpod up` on an
+	// existing workspace reuses the running container.
+	Recreate bool
 }
 
 func (o UpOpts) args() ([]string, error) {
@@ -227,6 +232,9 @@ func (o UpOpts) args() ([]string, error) {
 	}
 	if o.ConfigureSSH {
 		args = append(args, "--configure-ssh")
+	}
+	if o.Recreate {
+		args = append(args, "--recreate")
 	}
 	if o.Source != "" {
 		args = append(args, "--id", o.Name, o.Source)

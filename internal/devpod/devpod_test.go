@@ -96,6 +96,26 @@ func TestUpArgsPropagateAllFlags(t *testing.T) {
 	}
 }
 
+func TestUpArgsIncludeRecreateFlag(t *testing.T) {
+	t.Parallel()
+	f := &fakeRunner{replay: []fakeReply{{stdout: "ok"}}}
+	c := newClient(f)
+
+	if _, err := c.Up(t.Context(), devpod.UpOpts{Name: "proj", Recreate: true}); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+	args := f.calls[0].Args
+	sawRecreate := false
+	for _, a := range args {
+		if a == "--recreate" {
+			sawRecreate = true
+		}
+	}
+	if !sawRecreate {
+		t.Errorf("expected --recreate in args, got %v", args)
+	}
+}
+
 // TestClientMirrorEchoesArgvAndWiresStreamMirrors verifies the verbose-mode
 // surface: a one-line argv echo lands on Mirror before each spawn (with
 // embedded URL creds redacted), and the runner Cmd carries non-nil
