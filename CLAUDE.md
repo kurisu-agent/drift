@@ -64,6 +64,15 @@ Never create or push a git tag unless the human explicitly asks for one in the c
 
 A user saying "commit and push" does not imply tagging. A user saying "release" or "cut a release" does imply a tag, but confirm the version number before pushing.
 
+If a downstream consumer wires drift into a NixOS flake via a path input (`path:/path/to/drift`), `nixos-rebuild` satisfies that input from the consumer's `flake.lock` `narHash`, so new drift commits stay invisible until the lock is bumped — even with `--impure`. Before tagging, refresh and test on any such consumer so the flake.lock commit records the exact drift state the tag corresponds to:
+
+```
+nix flake update drift --flake /path/to/consumer
+nixos-rebuild switch --flake /path/to/consumer#<hostname>
+```
+
+Verify with `grep -ao '<some-new-string>' "$(which lakitu)"` — the rebuilt binary should contain any new flag or identifier added by the release.
+
 # External repo references
 
 Never reference other repositories, organisations, or user handles in anything that lands in this repo — commits, code, docs, plans, commit messages, tests, examples. Only this repo (`kurisu-agent/drift`) and its dependencies may appear. Unless the user explicitly requires it in the current turn, use generic placeholders (`example-org`, `<your-org>`, etc.) in examples and documentation.
