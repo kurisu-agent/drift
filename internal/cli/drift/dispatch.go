@@ -45,6 +45,39 @@ func buildRunArgv(mode wire.RunMode, useMosh bool, circuit string, forwardAgent 
 	return "ssh", args
 }
 
+// wrapWithZellij wraps an interactive remote command so that when
+// zellij is available on the circuit (and we aren't already inside one)
+// it runs inside a fresh zellij session — user gets scrollback, panes,
+// and the same multiplexer keybinds they'd get from an interactive
+// login to the circuit. When zellij isn't on PATH, the wrapper falls
+// straight through to the bare command, so circuits without zellij are
+// unaffected.
+//
+// The inner command is dropped into a tempfile and invoked as
+// `sh <tmpfile>` from a minimal KDL layout. Going through a file (rather
+// than zellij's `--layout-string` + `args "-c" "<cmd>"`) avoids
+// character-by-character shell-to-KDL escaping of the payload; the only
+// thing left to worry about is a heredoc sentinel collision, handled by
+// using a long literal unlikely to appear in any real remote command.
+func wrapWithZellij(remoteCmd string) string {
+	return `if command -v zellij >/dev/null 2>&1 && [ -z "$ZELLIJ" ]; then
+  _sf=$(mktemp --suffix=.sh)
+  cat > "$_sf" <<'__DRIFT_ZELLIJ_CMD__'
+` + remoteCmd + `
+__DRIFT_ZELLIJ_CMD__
+  _lf=$(mktemp --suffix=.kdl)
+  cat > "$_lf" <<ZLAYOUT
+layout {
+    pane command="sh" {
+        args "$_sf"
+    }
+}
+ZLAYOUT
+  exec zellij --layout "$_lf"
+fi
+` + remoteCmd
+}
+
 // runPostHook dispatches the named client-side hook. An unknown hook
 // name is treated as a hard error — the server-side registry should
 // never ship a hook the client doesn't handle, but if it does we'd

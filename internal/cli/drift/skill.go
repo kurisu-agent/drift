@@ -72,7 +72,9 @@ func runSkillExec(ctx context.Context, io IO, root *CLI, cmd skillCmd, deps deps
 	}
 
 	useMosh := !cmd.SSH && moshOnPath()
-	bin, argv := buildRunArgv(wire.RunModeInteractive, useMosh, circuit, cmd.ForwardAgent, res.Command)
+	// res.Command is the server-rendered `cd ~/.drift && … exec claude`
+	// stanza; same zellij UX rationale as drift ai.
+	bin, argv := buildRunArgv(wire.RunModeInteractive, useMosh, circuit, cmd.ForwardAgent, wrapWithZellij(res.Command))
 
 	p := style.For(io.Stderr, root.Output == "json")
 	if p.Enabled {
