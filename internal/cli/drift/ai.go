@@ -25,7 +25,28 @@ type aiCmd struct {
 // bareClaudeCommand is the remote shell snippet `drift ai` hands to
 // ssh/mosh. Kept client-side — no RPC round-trip is needed because the
 // command is fixed and the server has no say in the shape.
-const bareClaudeCommand = `cd "$HOME/.drift" && exec claude --dangerously-skip-permissions`
+//
+// When zellij is available on the circuit and we're not already inside
+// one, wrap claude in a fresh zellij session so the user gets
+// scrollback / panes / keybinds — same UX they get from an interactive
+// login to the circuit. Without the wrap, `sh -c claude` runs straight
+// on the mosh/ssh PTY and the user loses scroll-back the moment claude's
+// TUI redraws. The layout is materialized to a tempfile because zellij's
+// --layout-string rejects single-line KDL (it wants real newlines,
+// awkward to embed cross-shell); writing a file sidesteps that.
+const bareClaudeCommand = `cd "$HOME/.drift"
+if command -v zellij >/dev/null 2>&1 && [ -z "$ZELLIJ" ]; then
+  _lf=$(mktemp --suffix=.kdl)
+  cat > "$_lf" <<'ZLAYOUT'
+layout {
+    pane command="claude" {
+        args "--dangerously-skip-permissions"
+    }
+}
+ZLAYOUT
+  exec zellij --layout "$_lf"
+fi
+exec claude --dangerously-skip-permissions`
 
 func runAIExec(ctx context.Context, io IO, root *CLI, cmd aiCmd, deps deps) int {
 	_, circuit, err := resolveCircuit(root, deps)
