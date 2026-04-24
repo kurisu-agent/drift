@@ -50,4 +50,3 @@ func copyTargetExpand(target string) string {
 	}
 	return target
 }
-

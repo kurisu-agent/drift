@@ -33,15 +33,15 @@ type KartNewDeps struct {
 // KartNewParams field names mirror `drift new` flags so drift and lakitu
 // schemas align without translation.
 type KartNewParams struct {
-	Name         string        `json:"name"`
-	Clone        string        `json:"clone,omitempty"`
-	Starter      string        `json:"starter,omitempty"`
-	Tune         string        `json:"tune,omitempty"`
-	Features     string        `json:"features,omitempty"`
-	Devcontainer string        `json:"devcontainer,omitempty"`
-	Dotfiles     string        `json:"dotfiles,omitempty"`
-	Character    string        `json:"character,omitempty"`
-	Autostart    bool          `json:"autostart,omitempty"`
+	Name         string              `json:"name"`
+	Clone        string              `json:"clone,omitempty"`
+	Starter      string              `json:"starter,omitempty"`
+	Tune         string              `json:"tune,omitempty"`
+	Features     string              `json:"features,omitempty"`
+	Devcontainer string              `json:"devcontainer,omitempty"`
+	Dotfiles     string              `json:"dotfiles,omitempty"`
+	Character    string              `json:"character,omitempty"`
+	Autostart    bool                `json:"autostart,omitempty"`
 	Mounts       []model.Mount       `json:"mounts,omitempty"`
 	MigratedFrom *model.MigratedFrom `json:"migrated_from,omitempty"`
 }

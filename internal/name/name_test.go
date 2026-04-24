@@ -75,4 +75,3 @@ func TestValidate_OKReturnsNil(t *testing.T) {
 		t.Errorf("Validate: %v", err)
 	}
 }
-
