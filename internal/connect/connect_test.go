@@ -26,13 +26,15 @@ var serverArgv = []string{
 
 // moshLocalePrefix mirrors the `env -u …` prefix buildConnectArgv emits
 // on the mosh path to strip locale forwarding. Kept in lockstep with
-// connect.go's moshLocaleStrip — if that list changes, this does too.
+// connect.go's moshLocaleStrip + moshLocaleForce — if those lists
+// change, this does too.
 var moshLocalePrefix = []string{
-	"-u", "LANG", "-u", "LANGUAGE",
-	"-u", "LC_ALL", "-u", "LC_CTYPE", "-u", "LC_NUMERIC", "-u", "LC_TIME",
+	"-u", "LANGUAGE",
+	"-u", "LC_CTYPE", "-u", "LC_NUMERIC", "-u", "LC_TIME",
 	"-u", "LC_COLLATE", "-u", "LC_MONETARY", "-u", "LC_MESSAGES",
 	"-u", "LC_PAPER", "-u", "LC_NAME", "-u", "LC_ADDRESS",
 	"-u", "LC_TELEPHONE", "-u", "LC_MEASUREMENT", "-u", "LC_IDENTIFICATION",
+	"LANG=C.UTF-8", "LC_ALL=C.UTF-8",
 }
 
 // moshExpected assembles the argv the mosh path produces: env-unset
