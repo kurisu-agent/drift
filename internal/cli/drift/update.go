@@ -374,13 +374,70 @@ func fetchViaSCP(ctx context.Context, source string, progress io.Writer) ([]byte
 	}
 	_ = tmp.Close()
 	defer func() { _ = os.Remove(tmp.Name()) }()
-	cmd := osexec.CommandContext(ctx, "scp", "-q", source, tmp.Name())
+
+	effective := rewriteDriftCircuitHost(source, loadClientForUpdate())
+	args := []string{"-q"}
+	if cfg := driftSSHConfigPathForUpdate(); cfg != "" {
+		args = append(args, "-F", cfg)
+	}
+	args = append(args, effective, tmp.Name())
+	if effective != source {
+		fmt.Fprintf(progress, "→ resolved %s via drift ssh_config → %s\n", source, effective)
+	}
+	cmd := osexec.CommandContext(ctx, "scp", args...)
 	cmd.Stdout = progress
 	cmd.Stderr = progress
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("scp %s: %w", source, err)
+		return nil, fmt.Errorf("scp %s: %w", effective, err)
 	}
 	return os.ReadFile(tmp.Name())
+}
+
+// rewriteDriftCircuitHost turns `circuit:path` into `drift.circuit:path`
+// when `circuit` matches a known drift circuit alias. Leaves anything
+// with a `@` user-prefix or existing `drift.` prefix alone. Other
+// shapes (IP addresses, real hostnames, user@host) pass through and
+// ssh_config lookup handles them as usual.
+func rewriteDriftCircuitHost(source string, cfg *config.Client) string {
+	if cfg == nil || len(cfg.Circuits) == 0 {
+		return source
+	}
+	idx := strings.Index(source, ":")
+	if idx <= 0 {
+		return source
+	}
+	host := source[:idx]
+	if strings.Contains(host, "@") || strings.HasPrefix(host, "drift.") {
+		return source
+	}
+	if _, ok := cfg.Circuits[host]; !ok {
+		return source
+	}
+	return "drift." + source
+}
+
+func loadClientForUpdate() *config.Client {
+	path, err := config.ClientConfigPath()
+	if err != nil {
+		return nil
+	}
+	cfg, err := config.LoadClient(path)
+	if err != nil {
+		return nil
+	}
+	return cfg
+}
+
+func driftSSHConfigPathForUpdate() string {
+	dir, err := config.ClientConfigDir()
+	if err != nil {
+		return ""
+	}
+	p := filepath.Join(dir, "ssh_config")
+	if _, err := os.Stat(p); err != nil {
+		return ""
+	}
+	return p
 }
 
 func downloadRaw(ctx context.Context, url string, progress io.Writer) ([]byte, error) {

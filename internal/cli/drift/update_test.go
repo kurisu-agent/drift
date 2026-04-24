@@ -14,6 +14,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/kurisu-agent/drift/internal/config"
 )
 
 func TestPickAsset(t *testing.T) {
@@ -323,5 +325,38 @@ func TestRunUpdateFromSourceRejectsSmall(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "too small") {
 		t.Fatalf("expected size-guard message, got %q", stderr.String())
+	}
+}
+
+func TestRewriteDriftCircuitHost(t *testing.T) {
+	cfg := &config.Client{
+		Circuits: map[string]config.ClientCircuit{
+			"devprox": {Host: "dev@10.0.0.2"},
+			"alpha":   {Host: "circuit@10.233.1.2"},
+		},
+	}
+	cases := []struct{ in, want string }{
+		{"devprox:/home/dev/bin/drift", "drift.devprox:/home/dev/bin/drift"},
+		{"alpha:~/Code/x", "drift.alpha:~/Code/x"},
+		{"unknown:/path", "unknown:/path"},             // not a known circuit
+		{"user@devprox:/path", "user@devprox:/path"},   // already user-qualified
+		{"drift.devprox:/path", "drift.devprox:/path"}, // already drift-prefixed
+		{"no-colon-form", "no-colon-form"},
+	}
+	for _, tc := range cases {
+		if got := rewriteDriftCircuitHost(tc.in, cfg); got != tc.want {
+			t.Errorf("rewriteDriftCircuitHost(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestRewriteDriftCircuitHostNoConfig(t *testing.T) {
+	// No config / no circuits → pass-through.
+	if got := rewriteDriftCircuitHost("devprox:/x", nil); got != "devprox:/x" {
+		t.Fatalf("nil cfg should pass-through; got %q", got)
+	}
+	empty := &config.Client{}
+	if got := rewriteDriftCircuitHost("devprox:/x", empty); got != "devprox:/x" {
+		t.Fatalf("empty cfg should pass-through; got %q", got)
 	}
 }

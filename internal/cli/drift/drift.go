@@ -217,7 +217,7 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runSkillExec(ctx, io, &cli, cli.Skill, deps)
 	case "migrate":
 		return runMigrate(ctx, io, &cli, cli.Migrate, deps)
-	case "update":
+	case "update", "update <source>":
 		return runUpdate(ctx, io, cli.Update)
 	case "ssh-proxy <alias>", "ssh-proxy <alias> <port>":
 		return runSSHProxy(ctx, io, &cli, cli.SshProxy, deps)
