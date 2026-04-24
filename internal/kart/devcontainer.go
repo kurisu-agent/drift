@@ -87,30 +87,57 @@ func NormalizeDevcontainer(ctx context.Context, raw, tmpDir string, fetch Devcon
 	}
 }
 
-// NormalizeDevcontainerWithMounts is NormalizeDevcontainer plus a mount
-// overlay. Behavior by input:
+// Overlay is the set of additions lakitu splices into the kart's
+// devcontainer.json at kart.new time. Zero-value is a valid empty
+// overlay (nothing to splice).
+type Overlay struct {
+	// Mounts is appended to the base devcontainer's `mounts` array,
+	// deduped by target inside this call.
+	Mounts []model.Mount
+	// NormaliseUser, when true, sets `remoteUser` to Character and
+	// splices an onCreateCommand that renames the image's default
+	// non-root user to Character (or creates one fresh). Requires
+	// Character to be set.
+	NormaliseUser bool
+	// Character is the kart's character name — used as the in-container
+	// username when NormaliseUser is true.
+	Character string
+}
+
+// empty reports whether the overlay adds nothing. Short-circuits the
+// file-write path so callers that pass a zero Overlay behave identically
+// to the no-overlay NormalizeDevcontainer path.
+func (o Overlay) empty() bool {
+	return len(o.Mounts) == 0 && !o.NormaliseUser
+}
+
+// NormalizeDevcontainerWithOverlay is NormalizeDevcontainer plus an
+// overlay (mounts and/or user-normalisation fields). Behavior by input:
 //
-//   - raw == "" && len(mounts) == 0 → empty path, no file written.
-//   - raw == "" && mounts != nil   → synthesize {"mounts": [...]} to tmpDir.
-//   - raw != "" && len(mounts) == 0 → same as NormalizeDevcontainer.
-//   - raw != "" && mounts != nil   → read/parse raw as JSONC (via hujson),
-//     splice mounts into it (appended, deduped-by-target inside our input
-//     only), serialize as strict JSON to tmpDir. devpod's own
-//     mergeMounts dedups again against the project's devcontainer.json at
-//     merge time.
+//   - raw == "" && overlay.empty() → empty path, no file written.
+//   - raw == "" && !empty          → synthesize {"mounts":[...],"remoteUser":...}.
+//   - raw != "" && overlay.empty() → same as NormalizeDevcontainer.
+//   - raw != "" && !empty          → read/parse raw as JSONC (via hujson),
+//     splice overlay into it, serialize as strict JSON to tmpDir. devpod's
+//     own mergeMounts dedups mounts again against the project's
+//     devcontainer.json at merge time.
 //
-// In all mount-bearing paths the file lands in tmpDir and cleanup removes
-// it; callers wire cleanup into the kart.new defer chain.
-func NormalizeDevcontainerWithMounts(
+// In all overlay-bearing paths the file lands in tmpDir and cleanup
+// removes it; callers wire cleanup into the kart.new defer chain.
+func NormalizeDevcontainerWithOverlay(
 	ctx context.Context,
 	raw, tmpDir string,
-	mounts []model.Mount,
+	overlay Overlay,
 	fetch DevcontainerFetcher,
 ) (path string, cleanup func(), err error) {
 	cleanup = func() {}
 	raw = strings.TrimSpace(raw)
-	if len(mounts) == 0 {
+	if overlay.empty() {
 		return NormalizeDevcontainer(ctx, raw, tmpDir, fetch)
+	}
+	if overlay.NormaliseUser && overlay.Character == "" {
+		return "", cleanup, rpcerr.Internal(
+			"kart.new: overlay requests user normalisation without a character name")
 	}
 	if fetch == nil {
 		fetch = defaultDevcontainerFetcher
@@ -138,21 +165,20 @@ func NormalizeDevcontainerWithMounts(
 		baseBody = body
 	}
 
-	spliced, serr := spliceMounts(baseBody, mounts)
+	spliced, serr := spliceOverlay(baseBody, overlay)
 	if serr != nil {
 		return "", cleanup, rpcerr.UserError(rpcerr.TypeInvalidFlag,
-			"kart.new: splice mount_dirs: %v", serr)
+			"kart.new: splice overlay: %v", serr)
 	}
 	return writeDevcontainerFile(tmpDir, spliced)
 }
 
-// spliceMounts parses body as JSONC (hujson-tolerant), appends mounts to
-// its `mounts` array (creating one if absent), and returns a strict-JSON
-// serialization. Existing mounts in body are kept; our mounts are appended
-// after any with a matching target removed from the body's list. That
-// local dedup keeps the overlay file tidy; devpod's own mergeMounts does
-// the same against the project's devcontainer.json at merge time.
-func spliceMounts(body []byte, mounts []model.Mount) ([]byte, error) {
+// spliceOverlay parses body as JSONC (hujson-tolerant), applies the
+// overlay (mounts and/or user normalisation), and returns strict JSON.
+// Existing mounts with a target that collides with an overlay mount are
+// replaced; the overlay's onCreateCommand entry is merged into the
+// object form so a project-authored one still runs.
+func spliceOverlay(body []byte, overlay Overlay) ([]byte, error) {
 	normalized, err := hujson.Standardize(body)
 	if err != nil {
 		return nil, fmt.Errorf("parse jsonc: %w", err)
@@ -165,6 +191,23 @@ func spliceMounts(body []byte, mounts []model.Mount) ([]byte, error) {
 		root = map[string]any{}
 	}
 
+	if len(overlay.Mounts) > 0 {
+		spliceMountsInto(root, overlay.Mounts)
+	}
+	if overlay.NormaliseUser {
+		if err := spliceUserNormalisation(root, overlay.Character); err != nil {
+			return nil, err
+		}
+	}
+
+	out, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal overlay: %w", err)
+	}
+	return append(out, '\n'), nil
+}
+
+func spliceMountsInto(root map[string]any, mounts []model.Mount) {
 	existing, _ := root["mounts"].([]any)
 	incomingTargets := make(map[string]bool, len(mounts))
 	for _, m := range mounts {
@@ -189,12 +232,6 @@ func spliceMounts(body []byte, mounts []model.Mount) ([]byte, error) {
 		kept = append(kept, mountToMap(m))
 	}
 	root["mounts"] = kept
-
-	out, err := json.MarshalIndent(root, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("marshal overlay: %w", err)
-	}
-	return append(out, '\n'), nil
 }
 
 func mountToMap(m model.Mount) map[string]any {

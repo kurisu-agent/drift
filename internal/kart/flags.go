@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/kurisu-agent/drift/internal/chest"
@@ -67,6 +68,10 @@ type Flags struct {
 	// Mounts carries --mount specs from `drift new`. Appended on top of
 	// tune.MountDirs (flag-wins-on-target during the resolver merge).
 	Mounts []model.Mount
+	// NormaliseUser, when non-nil, overrides the tune's normalise_user
+	// setting for this kart. Nil leaves the tune value in effect (which
+	// itself defaults to true).
+	NormaliseUser *bool
 	// MigratedFrom, when non-zero, is persisted on the kart config so
 	// `drift migrate` can filter out already-adopted devpod workspaces on
 	// subsequent runs. Never set by `drift new` — only by the migrate
@@ -92,10 +97,25 @@ type Resolved struct {
 	Env     ResolvedTuneEnv
 	EnvRefs TuneEnv
 	// Mounts is tune.MountDirs + flag mounts, deduped by target with
-	// flag-wins precedence. Bind sources have `~/` rewritten to
-	// `${localEnv:HOME}/` so devpod resolves against the circuit's env,
-	// not whatever happened to be in lakitu's $HOME at resolve time.
+	// flag-wins precedence. Bind sources have `~/` expanded to the
+	// lakitu process's literal $HOME; `~/` on the target side is
+	// rewritten to /home/<character>/ when a character is resolved.
+	// Source-side expansion happens here (not via devcontainer
+	// variable substitution) because devpod v0.22 does not substitute
+	// `${localEnv:…}` in mounts from --extra-devcontainer-path.
 	Mounts []model.Mount
+	// NormaliseUser is the effective setting after flag-beats-tune
+	// precedence: flag value wins when non-nil, else tune value (which
+	// itself defaults to true). False skips the remoteUser override and
+	// the onCreateCommand rename — the kart runs as the image's
+	// default user. Always false when no character is resolved (nothing
+	// to rename to).
+	NormaliseUser bool
+	// NormaliseUserRef records the explicit override the kart was
+	// created with, if any. Persisted on KartConfig so drift detection
+	// can tell the difference between "inherited from tune" and
+	// "explicitly set on this kart".
+	NormaliseUserRef *bool
 	// MigratedFrom threads through from Flags unchanged; the resolver has
 	// nothing to decide about it.
 	MigratedFrom model.MigratedFrom
@@ -245,27 +265,31 @@ func (r *Resolver) Resolve(f Flags) (*Resolved, error) {
 		}
 	}
 
-	mounts, err := mergeMounts(tuneMounts(tune), f.Mounts)
+	mounts, err := mergeMounts(tuneMounts(tune), f.Mounts, characterName)
 	if err != nil {
 		return nil, err
 	}
 
+	normaliseUser := resolveNormaliseUser(tune, f.NormaliseUser, characterName)
+
 	resolved := &Resolved{
-		Name:          f.Name,
-		SourceMode:    sourceMode,
-		SourceURL:     sourceURL,
-		TuneName:      effectiveTune,
-		Tune:          tune,
-		CharacterName: characterName,
-		Character:     character,
-		Features:      features,
-		Devcontainer:  devcontainer,
-		Dotfiles:      dotfiles,
-		Autostart:     f.Autostart,
-		Env:           resolvedEnv,
-		EnvRefs:       envRefs,
-		Mounts:        mounts,
-		MigratedFrom:  f.MigratedFrom,
+		Name:             f.Name,
+		SourceMode:       sourceMode,
+		SourceURL:        sourceURL,
+		TuneName:         effectiveTune,
+		Tune:             tune,
+		CharacterName:    characterName,
+		Character:        character,
+		Features:         features,
+		Devcontainer:     devcontainer,
+		Dotfiles:         dotfiles,
+		Autostart:        f.Autostart,
+		Env:              resolvedEnv,
+		EnvRefs:          envRefs,
+		Mounts:           mounts,
+		NormaliseUser:    normaliseUser,
+		NormaliseUserRef: f.NormaliseUser,
+		MigratedFrom:     f.MigratedFrom,
 	}
 	r.logResolved(resolved)
 	return resolved, nil
@@ -331,12 +355,17 @@ func tuneMounts(t *Tune) []model.Mount {
 	return t.MountDirs
 }
 
-// mergeMounts concatenates tune + flag mounts and rewrites `~/` in bind
-// sources to `${localEnv:HOME}/` so devpod's own substitution resolves
-// against the circuit's env. Flag mounts win on a matching target: a
-// second entry with the same target overrides the first. Targets are
-// required (mount without a target is nonsensical on docker's side).
-func mergeMounts(fromTune, fromFlag []model.Mount) ([]model.Mount, error) {
+// mergeMounts concatenates tune + flag mounts and rewrites `~/` in
+// bind sources to lakitu's literal $HOME and `~/` in bind targets to
+// `/home/<character>/`. Both expansions happen here (not via
+// devcontainer variable substitution) — devpod v0.22 does not
+// substitute `${localEnv:…}` for mounts that come in via
+// --extra-devcontainer-path, and the container user's home has no
+// devcontainer substitution at all. Flag mounts win on a matching
+// target: a second entry with the same target overrides the first.
+// Targets are required (mount without a target is nonsensical on
+// docker's side).
+func mergeMounts(fromTune, fromFlag []model.Mount, character string) ([]model.Mount, error) {
 	if len(fromTune) == 0 && len(fromFlag) == 0 {
 		return nil, nil
 	}
@@ -351,7 +380,12 @@ func mergeMounts(fromTune, fromFlag []model.Mount) ([]model.Mount, error) {
 			return nil, rpcerr.UserError(rpcerr.TypeInvalidFlag,
 				"kart.new: mount is missing a target (source=%q)", m.Source)
 		}
-		m.Source = expandHomeTilde(m.Source)
+		m.Source = expandHomeTildeSource(m.Source)
+		target, err := expandHomeTildeTarget(m.Target, character)
+		if err != nil {
+			return nil, err
+		}
+		m.Target = target
 		if idx, ok := byTarget[m.Target]; ok {
 			out[idx] = m
 			continue
@@ -362,22 +396,71 @@ func mergeMounts(fromTune, fromFlag []model.Mount) ([]model.Mount, error) {
 	return out, nil
 }
 
-// expandHomeTilde rewrites a leading `~/` (or bare `~`) to
-// `${localEnv:HOME}/` so devpod's devcontainer template substitution
-// resolves it on the circuit at up-time. A literal on-disk expansion via
-// os.UserHomeDir would bake lakitu's runtime home into garage/karts/
-// configs, which breaks as soon as a kart is adopted from a migrate or
-// the process runs under a different user than the persisted config was
-// written under.
-func expandHomeTilde(source string) string {
+// expandHomeTildeSource rewrites a leading `~/` (or bare `~`) to the
+// lakitu process's literal $HOME. devpod v0.22 does not apply
+// devcontainer variable substitution (`${localEnv:HOME}`) to mounts
+// that come in via --extra-devcontainer-path — the string is passed to
+// docker verbatim — so the tilde has to be expanded on this side.
+// Migrating a kart to a different host therefore requires a mount
+// source rewrite; that concern lives in the migrate path.
+func expandHomeTildeSource(source string) string {
 	switch {
 	case source == "~":
-		return "${localEnv:HOME}"
+		return homeOrTilde("~")
 	case strings.HasPrefix(source, "~/"):
-		return "${localEnv:HOME}/" + source[2:]
+		return homeOrTilde("~") + "/" + source[2:]
 	default:
 		return source
 	}
+}
+
+// homeOrTilde returns $HOME when set, otherwise falls back to
+// os.UserHomeDir — and finally back to the literal tilde so the error
+// surfaces at devpod-up time rather than silently expanding to an
+// empty string that'd bind-mount the filesystem root.
+func homeOrTilde(fallback string) string {
+	if h := os.Getenv("HOME"); h != "" {
+		return h
+	}
+	if h, err := os.UserHomeDir(); err == nil && h != "" {
+		return h
+	}
+	return fallback
+}
+
+// expandHomeTildeTarget rewrites a leading `~/` (or bare `~`) on the
+// container side to /home/<character>/ — requires a resolved character.
+// Errors if the mount uses `~/` but the kart has no character
+// (nothing to expand against).
+func expandHomeTildeTarget(target, character string) (string, error) {
+	if target != "~" && !strings.HasPrefix(target, "~/") {
+		return target, nil
+	}
+	if character == "" {
+		return "", rpcerr.UserError(rpcerr.TypeInvalidFlag,
+			"kart.new: mount target %q uses ~/ but the kart has no character to expand against", target)
+	}
+	home := "/home/" + character
+	if target == "~" {
+		return home, nil
+	}
+	return home + "/" + target[2:], nil
+}
+
+// resolveNormaliseUser applies the precedence: explicit flag > tune >
+// default(true). When no character is resolved, normalisation is forced
+// off — there's nothing to rename the user to.
+func resolveNormaliseUser(tune *Tune, flag *bool, character string) bool {
+	if character == "" {
+		return false
+	}
+	if flag != nil {
+		return *flag
+	}
+	if tune == nil {
+		return true
+	}
+	return tune.NormaliseUserEnabled()
 }
 
 // mergeFeatures composes tune + user features JSON, user-wins-on-overlap.

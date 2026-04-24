@@ -14,7 +14,15 @@ import (
 // Pattern: lowercase alphanumeric + hyphen, 1–63 chars, starts with a letter.
 const Pattern = `^[a-z][a-z0-9-]{0,62}$`
 
-var re = regexp.MustCompile(Pattern)
+// CharacterPattern is the tighter pattern applied to character names,
+// which double as in-container POSIX usernames: same shape as Pattern
+// but capped at 32 chars (the portable useradd/usermod limit).
+const CharacterPattern = `^[a-z][a-z0-9-]{0,31}$`
+
+var (
+	re   = regexp.MustCompile(Pattern)
+	reCh = regexp.MustCompile(CharacterPattern)
+)
 
 // Reserved collide with tune sentinel values.
 var reserved = map[string]struct{}{
@@ -51,6 +59,24 @@ func Validate(kind, s string) error {
 			With("kind", kind).
 			With("name", s).
 			With("pattern", Pattern)
+	}
+	return nil
+}
+
+// ValidateCharacter is Validate plus a POSIX-username tightening: the
+// name is used verbatim as the in-container username when the kart's
+// tune has normalise_user enabled, so it must fit the 32-char cap most
+// useradd/usermod toolchains enforce.
+func ValidateCharacter(s string) error {
+	if err := Validate("character", s); err != nil {
+		return err
+	}
+	if !reCh.MatchString(s) {
+		return rpcerr.UserError(rpcerr.TypeInvalidName,
+			"character name %q is invalid as a POSIX username (must match %s)", s, CharacterPattern).
+			With("kind", "character").
+			With("name", s).
+			With("pattern", CharacterPattern)
 	}
 	return nil
 }

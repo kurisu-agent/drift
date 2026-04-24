@@ -128,9 +128,18 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 	if len(resolved.Mounts) > 0 {
 		d.phase("splicing %d mount(s) into devcontainer overlay", len(resolved.Mounts))
 	}
+	if resolved.NormaliseUser {
+		d.phase("pinning container user to character %q", resolved.CharacterName)
+	}
 	dcDir := filepath.Join(scratch, "devcontainer")
-	dcPath, _, err := NormalizeDevcontainerWithMounts(
-		ctx, resolved.Devcontainer, dcDir, resolved.Mounts, d.Fetcher,
+	dcPath, _, err := NormalizeDevcontainerWithOverlay(
+		ctx, resolved.Devcontainer, dcDir,
+		Overlay{
+			Mounts:        resolved.Mounts,
+			NormaliseUser: resolved.NormaliseUser,
+			Character:     resolved.CharacterName,
+		},
+		d.Fetcher,
 	)
 	if err != nil {
 		return nil, err
@@ -286,6 +295,10 @@ func writeKartConfig(garageDir string, r *Resolved, now time.Time) error {
 	}
 	if len(r.Mounts) > 0 {
 		cfg.MountDirs = append([]model.Mount(nil), r.Mounts...)
+	}
+	if r.NormaliseUserRef != nil {
+		v := *r.NormaliseUserRef
+		cfg.NormaliseUser = &v
 	}
 	if !r.MigratedFrom.IsZero() {
 		mf := r.MigratedFrom

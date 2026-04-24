@@ -37,6 +37,10 @@ type newCmd struct {
 	// carry commas between their k=v pairs and would otherwise shatter
 	// into `type=bind`, `source=X`, `target=Y` as separate entries.
 	Mount []string `name:"mount" sep:"none" help:"Extra host-bind or volume mount (repeatable). type=bind,source=X,target=Y"`
+	// NoNormaliseUser disables the remoteUser rename at onCreateCommand
+	// time — the container runs as the image's default user. Overrides
+	// the tune's normalise_user setting.
+	NoNormaliseUser bool `name:"no-normalise-user" help:"Skip renaming the image's default non-root user to the character (overrides tune's normalise_user)."`
 	// Connect drops the user into the new kart after a successful create.
 	// Default-on for interactive callers; --no-connect preserves the old
 	// behavior for scripts that chain `drift new` with their own commands.
@@ -188,6 +192,9 @@ func buildNewParams(cmd newCmd) map[string]any {
 		if mounts, err := parseMountFlags(cmd.Mount); err == nil && len(mounts) > 0 {
 			params["mounts"] = mounts
 		}
+	}
+	if cmd.NoNormaliseUser {
+		params["normalise_user"] = false
 	}
 	return params
 }

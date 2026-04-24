@@ -278,6 +278,13 @@ func unsetInto(fv reflect.Value, fullPath string, rest []string) error {
 			Message: "list fields are not patchable — use `edit` to modify lists"}
 
 	case reflect.Ptr:
+		if len(rest) == 0 {
+			// Leaf pointer — clear to nil so omitempty round-trips cleanly.
+			// Matches git-config `--unset`: the field goes away, it doesn't
+			// just flip to its zero-pointed value.
+			fv.Set(reflect.Zero(fv.Type()))
+			return nil
+		}
 		if fv.IsNil() {
 			return nil
 		}
