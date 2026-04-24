@@ -73,7 +73,7 @@ func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 		// streaming RPC; tracked separately.
 		writeNewPreflight(io.Stderr, root.Output == "json", circuit, cmd)
 		if !confirmedOnce && stdinIsTTY(io.Stdin) && root.Output != "json" {
-			ok, cErr := confirmNewKart(cmd.Name)
+			ok, cErr := confirmNewKart(circuit, cmd)
 			if cErr != nil {
 				return errfmt.Emit(io.Stderr, cErr)
 			}
@@ -298,11 +298,15 @@ func writeNewPreflight(w interface{ Write(p []byte) (int, error) }, jsonMode boo
 // confirmNewKart pauses for a y/N confirmation right after the
 // preflight, so the user can bail before the server-side
 // clone+up+dotfiles flow (which can take minutes) actually starts.
-// Defaults to "create" — Enter accepts the summary as printed.
-func confirmNewKart(name string) (bool, error) {
+// Defaults to "create" — Enter accepts the summary as printed. The
+// description body repeats the resolved params (tune, character,
+// source, …) inline so the user doesn't have to scroll past the prompt
+// to recheck what they typed.
+func confirmNewKart(circuit string, cmd newCmd) (bool, error) {
 	val := true
 	prompt := huh.NewConfirm().
-		Title(fmt.Sprintf("create kart %q?", name)).
+		Title(fmt.Sprintf("create kart %q on circuit %q?", cmd.Name, circuit)).
+		Description(buildNewConfirmSummary(cmd)).
 		Affirmative("create").
 		Negative("cancel").
 		Value(&val)
@@ -313,6 +317,49 @@ func confirmNewKart(name string) (bool, error) {
 		return false, err
 	}
 	return val, nil
+}
+
+// buildNewConfirmSummary renders the resolved kart.new params as the
+// confirm prompt's Description body. Only populated fields appear, so
+// the prompt stays compact when the user accepts the tune's defaults.
+// The source row collapses --clone / --starter into one line since
+// they're mutually exclusive.
+func buildNewConfirmSummary(cmd newCmd) string {
+	var rows [][2]string
+	if cmd.Clone != "" {
+		rows = append(rows, [2]string{"source", cmd.Clone + " (clone)"})
+	} else if cmd.Starter != "" {
+		rows = append(rows, [2]string{"source", cmd.Starter + " (starter)"})
+	}
+	if cmd.Tune != "" {
+		rows = append(rows, [2]string{"tune", cmd.Tune})
+	}
+	if cmd.Character != "" {
+		rows = append(rows, [2]string{"character", cmd.Character})
+	}
+	if cmd.Devcontainer != "" {
+		rows = append(rows, [2]string{"devcontainer", cmd.Devcontainer})
+	}
+	if cmd.Features != "" {
+		rows = append(rows, [2]string{"features", cmd.Features})
+	}
+	if cmd.Dotfiles != "" {
+		rows = append(rows, [2]string{"dotfiles", cmd.Dotfiles})
+	}
+	if cmd.Autostart {
+		rows = append(rows, [2]string{"autostart", "enabled"})
+	}
+	for _, m := range cmd.Mount {
+		rows = append(rows, [2]string{"mount", m})
+	}
+	if len(rows) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range rows {
+		fmt.Fprintf(&b, "%-12s  %s\n", r[0]+":", r[1])
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // promptNewKartName asks for a replacement name after a name_collision

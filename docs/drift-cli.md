@@ -67,10 +67,10 @@ Commands:
   kart info <name>
     Show a single kart's info.
 
-  kart start <name>
+  kart start [<name>]
     Start a kart (idempotent).
 
-  kart stop <name>
+  kart stop [<name>]
     Stop a kart (idempotent).
 
   kart restart <name>
@@ -83,7 +83,7 @@ Commands:
   kart rebuild <name>
     Re-apply the current tune to a kart and recreate its container.
 
-  kart delete <name> [flags]
+  kart delete [<name>] [flags]
     Delete a kart (errors if missing).
 
   kart logs <name> [flags]
@@ -97,6 +97,15 @@ Commands:
 
   connect (into,attach) [<name> [<ssh-args> ...]] [flags]
     Pick a circuit or kart and connect (merged picker).
+
+  start [<name>] [flags]
+    Start a kart (picker when no name).
+
+  stop [<name>] [flags]
+    Stop a kart (picker when no name).
+
+  delete [<name>] [flags]
+    Delete a kart (picker when no name).
 
   new <name> [flags]
     Create a new kart (from starter or existing repo).
@@ -137,6 +146,7 @@ COMMANDS (run `drift <cmd> --help` for flags)
   circuit set name — Rename the target circuit (rewrites server config + local alias).
   circuits — List configured circuits (table).
   connect — Pick a circuit or kart and connect (merged picker).
+  delete — Delete a kart (picker when no name).
   help — Print an LLM-friendly command + protocol reference.
   init — Interactive first-time setup wizard (circuits + characters).
   kart connect — Connect to a kart via mosh (ssh fallback).
@@ -157,7 +167,9 @@ COMMANDS (run `drift <cmd> --help` for flags)
   runs — List runs.yaml entries on the target circuit.
   skill — Pick / invoke a Claude skill on the circuit.
   skills — List Claude skills on the target circuit.
+  start — Start a kart (picker when no name).
   status — Show configured circuits + their lakitu health and per-circuit karts.
+  stop — Stop a kart (picker when no name).
   update — Check GitHub for a newer drift release and self-install.
 
 RPC METHODS
@@ -404,6 +416,30 @@ error: drift connect requires a kart name (non-interactive)
 exit status 1
 ```
 
+### `drift delete --help`
+
+```text
+Usage: drift delete [<name>] [flags]
+
+Delete a kart (picker when no name).
+
+Arguments:
+  [<name>]    Kart name; omit on a TTY to pick from a cross-circuit kart list.
+
+Flags:
+  -h, --help              Show context-sensitive help.
+      --[no-]debug        Verbose output (default on; --no-debug to silence)
+                          ($DRIFT_DEBUG).
+      --no-color          Disable ANSI colors in text output ($NO_COLOR).
+  -c, --circuit=STRING    Target circuit (overrides default).
+  -o, --output="text"     Output format for structured commands.
+  -v, --version           Print drift version and exit.
+
+  -y, --yes               Skip the interactive confirmation prompt.
+error: drift delete requires a kart name (non-interactive)
+exit status 1
+```
+
 ### `drift help --help`
 
 ```text
@@ -428,19 +464,20 @@ Remote devcontainers tuned for life on the move — persistent, agentic, phone-f
 ▶  Full catalog:  drift help --full
 
 COMMANDS
-  init                     Interactive first-time setup wizard (circuits + characters)
-  status                   Circuits + lakitu health + per-circuit karts
-  connect [<name>]         Mosh/ssh into a circuit or kart (merged picker)
-  new <name>               Create a kart (from starter or existing repo)
-  karts                    List karts across circuits (cross-circuit; -c scopes)
-  kart <verb> <name>       Lifecycle: start / stop / restart / recreate / rebuild / delete / logs / info / enable / disable
-  ai                       Launch Claude Code on the circuit
-  skill [<name> [prompt]]  Pick / invoke a Claude skill (`drift skills` to list)
-  run [<name>]             Execute a user-script shorthand (`drift runs` to list)
-  circuits                 List configured circuits
-  circuit <verb>           Manage circuits: add / rm / set (name|default) / connect
-  migrate                  Adopt an existing devpod workspace as a drift kart
-  update                   Check GitHub for a newer drift and self-install
+  init                            Interactive first-time setup wizard (circuits + characters)
+  status                          Circuits + lakitu health + per-circuit karts
+  connect [<name>]                Mosh/ssh into a circuit or kart (merged picker)
+  new <name>                      Create a kart (from starter or existing repo)
+  karts                           List karts across circuits (cross-circuit; -c scopes)
+  start | stop | delete [<name>]  Lifecycle shortcuts; bare drops into the cross-circuit kart picker
+  kart <verb> <name>              Full lifecycle: start / stop / restart / recreate / rebuild / delete / logs / info / enable / disable
+  ai                              Launch Claude Code on the circuit
+  skill [<name> [prompt]]         Pick / invoke a Claude skill (`drift skills` to list)
+  run [<name>]                    Execute a user-script shorthand (`drift runs` to list)
+  circuits                        List configured circuits
+  circuit <verb>                  Manage circuits: add / rm / set (name|default) / connect
+  migrate                         Adopt an existing devpod workspace as a drift kart
+  update                          Check GitHub for a newer drift and self-install
 
 Run `drift <cmd> --help` for per-command flags
 ```
@@ -499,12 +536,12 @@ exit status 1
 ### `drift kart delete --help`
 
 ```text
-Usage: drift kart delete <name> [flags]
+Usage: drift kart delete [<name>] [flags]
 
 Delete a kart (errors if missing).
 
 Arguments:
-  <name>    Kart name.
+  [<name>]    Kart name; omit on a TTY to pick from a cross-circuit kart list.
 
 Flags:
   -h, --help              Show context-sensitive help.
@@ -516,8 +553,8 @@ Flags:
   -v, --version           Print drift version and exit.
 
   -y, --yes               Skip the interactive confirmation prompt.
-drift: expected "<name>"
-exit status 2
+error: drift delete requires a kart name (non-interactive)
+exit status 1
 ```
 
 ### `drift kart disable --help`
@@ -704,12 +741,12 @@ alpha    test2  error (stale)  clone https://github.com/kurisu-agent/tzone-buddy
 ### `drift kart start --help`
 
 ```text
-Usage: drift kart start <name>
+Usage: drift kart start [<name>]
 
 Start a kart (idempotent).
 
 Arguments:
-  <name>    Kart name.
+  [<name>]    Kart name; omit on a TTY to pick from a cross-circuit kart list.
 
 Flags:
   -h, --help              Show context-sensitive help.
@@ -719,19 +756,19 @@ Flags:
   -c, --circuit=STRING    Target circuit (overrides default).
   -o, --output="text"     Output format for structured commands.
   -v, --version           Print drift version and exit.
-drift: expected "<name>"
-exit status 2
+error: drift start requires a kart name (non-interactive)
+exit status 1
 ```
 
 ### `drift kart stop --help`
 
 ```text
-Usage: drift kart stop <name>
+Usage: drift kart stop [<name>]
 
 Stop a kart (idempotent).
 
 Arguments:
-  <name>    Kart name.
+  [<name>]    Kart name; omit on a TTY to pick from a cross-circuit kart list.
 
 Flags:
   -h, --help              Show context-sensitive help.
@@ -741,8 +778,8 @@ Flags:
   -c, --circuit=STRING    Target circuit (overrides default).
   -o, --output="text"     Output format for structured commands.
   -v, --version           Print drift version and exit.
-drift: expected "<name>"
-exit status 2
+error: drift stop requires a kart name (non-interactive)
+exit status 1
 ```
 
 ### `drift migrate --help`
@@ -826,14 +863,8 @@ Flags:
 
       --ssh               Force plain SSH (skip mosh) for interactive entries.
       --forward-agent     Enable SSH agent forwarding (-A).
-error: circuit's lakitu is too old (version=dev api=1, missing run.list); this drift is devel api=1. update lakitu on the circuit and retry
-  type: method_not_found
-  client_api: 1
-  client_version: devel
-  method: run.list
-  server_api: 1
-  server_version: dev
-exit status 2
+no runs configured on this circuit
+  edit ~/.drift/runs.yaml on the circuit to add entries
 ```
 
 ### `drift runs --help`
@@ -851,14 +882,8 @@ Flags:
   -c, --circuit=STRING    Target circuit (overrides default).
   -o, --output="text"     Output format for structured commands.
   -v, --version           Print drift version and exit.
-error: circuit's lakitu is too old (version=dev api=1, missing run.list); this drift is devel api=1. update lakitu on the circuit and retry
-  type: method_not_found
-  client_api: 1
-  client_version: devel
-  method: run.list
-  server_api: 1
-  server_version: dev
-exit status 2
+no runs configured on this circuit
+  edit ~/.drift/runs.yaml on the circuit to add entries
 ```
 
 ### `drift skill --help`
@@ -906,6 +931,28 @@ no skills on this circuit
   drop SKILL.md files into ~/.claude/skills/<name>/ on the circuit
 ```
 
+### `drift start --help`
+
+```text
+Usage: drift start [<name>] [flags]
+
+Start a kart (picker when no name).
+
+Arguments:
+  [<name>]    Kart name; omit on a TTY to pick from a cross-circuit kart list.
+
+Flags:
+  -h, --help              Show context-sensitive help.
+      --[no-]debug        Verbose output (default on; --no-debug to silence)
+                          ($DRIFT_DEBUG).
+      --no-color          Disable ANSI colors in text output ($NO_COLOR).
+  -c, --circuit=STRING    Target circuit (overrides default).
+  -o, --output="text"     Output format for structured commands.
+  -v, --version           Print drift version and exit.
+error: drift start requires a kart name (non-interactive)
+exit status 1
+```
+
 ### `drift status --help`
 
 ```text
@@ -936,6 +983,28 @@ NAME   STATUS         SOURCE                                             TUNE  A
 test2  error (stale)  clone https://github.com/kurisu-agent/tzone-buddy  -     
 ```
 
+### `drift stop --help`
+
+```text
+Usage: drift stop [<name>] [flags]
+
+Stop a kart (picker when no name).
+
+Arguments:
+  [<name>]    Kart name; omit on a TTY to pick from a cross-circuit kart list.
+
+Flags:
+  -h, --help              Show context-sensitive help.
+      --[no-]debug        Verbose output (default on; --no-debug to silence)
+                          ($DRIFT_DEBUG).
+      --no-color          Disable ANSI colors in text output ($NO_COLOR).
+  -c, --circuit=STRING    Target circuit (overrides default).
+  -o, --output="text"     Output format for structured commands.
+  -v, --version           Print drift version and exit.
+error: drift stop requires a kart name (non-interactive)
+exit status 1
+```
+
 ### `drift update --help`
 
 ```text
@@ -955,7 +1024,7 @@ Flags:
       --check             Check for an update without downloading.
 → checking latest release
 current: devel
-latest:  0.7.0
+latest:  0.7.1
 error: refusing to self-update a development build; rebuild from source or install a tagged release
 exit status 1
 ```
