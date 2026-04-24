@@ -140,12 +140,23 @@ func runCircuitConnect(ctx context.Context, io IO, root *CLI, cmd circuitConnect
 		expandCLISSHArgs(cmd.SSHArgs))
 }
 
-// pickConnectKart fetches kart.list from every configured circuit in
-// parallel and renders a filterable huh.Select ordered by last-used
-// descending. Returns (circuit, kart, true, nil) on selection, (_, _,
-// false, nil) on abort / empty lists (the latter prints its own notice),
-// err on fatal failure.
+// pickConnectKart is the connect-flavored cross-circuit kart picker.
+// Thin wrapper around pickKartAcrossCircuits that supplies the title /
+// description tuned for `drift kart connect`.
 func pickConnectKart(ctx context.Context, io IO, deps deps) (string, string, bool, error) {
+	return pickKartAcrossCircuits(ctx, io, deps,
+		"drift connect — pick a kart",
+		"type to filter · enter to connect · esc to cancel")
+}
+
+// pickKartAcrossCircuits fetches kart.list from every configured circuit
+// in parallel and renders a filterable huh.Select ordered by last-used
+// descending. Caller supplies the prompt strings so the picker fits the
+// invoking verb (`drift connect`, `drift delete`, `drift start`, …).
+// Returns (circuit, kart, true, nil) on selection, (_, _, false, nil) on
+// abort / empty lists (the latter prints its own notice), err on fatal
+// failure.
+func pickKartAcrossCircuits(ctx context.Context, io IO, deps deps, title, description string) (string, string, bool, error) {
 	cfgPath, err := deps.clientConfigPath()
 	if err != nil {
 		return "", "", false, err
@@ -177,8 +188,8 @@ func pickConnectKart(ctx context.Context, io IO, deps deps) (string, string, boo
 	}
 	var pick string
 	sel := huh.NewSelect[string]().
-		Title("drift connect — pick a kart").
-		Description("type to filter · enter to connect · esc to cancel").
+		Title(title).
+		Description(description).
 		Options(opts...).
 		Filtering(true).
 		Height(18).
@@ -194,6 +205,40 @@ func pickConnectKart(ctx context.Context, io IO, deps deps) (string, string, boo
 		return "", "", false, nil
 	}
 	return karts[idx].Circuit, karts[idx].Entry.Name, true, nil
+}
+
+// resolveKartTarget produces the (circuit, kart) pair for a lifecycle
+// verb that supports the picker fallback (`drift start/stop/delete`).
+// With an explicit name, returns the configured default circuit (or -c
+// override) paired with that name. With an empty name on a TTY, drops
+// into the cross-circuit picker. Non-interactive callers without a name
+// get a hard error so scripts fail fast.
+//
+// The bool reports whether a target was resolved; on false the int is
+// the exit code the caller should return (0 for clean abort, non-zero
+// for an error already printed to stderr).
+func resolveKartTarget(ctx context.Context, io IO, root *CLI, deps deps, name, verb string) (string, string, bool, int) {
+	if name != "" {
+		_, circuit, err := resolveCircuit(root, deps)
+		if err != nil {
+			return "", "", false, errfmt.Emit(io.Stderr, err)
+		}
+		return circuit, name, true, 0
+	}
+	if !stdinIsTTY(io.Stdin) || !stdoutIsTTY(io.Stdout) || root.Output == "json" {
+		return "", "", false, errfmt.Emit(io.Stderr,
+			fmt.Errorf("%s requires a kart name (non-interactive)", verb))
+	}
+	circuit, kart, picked, err := pickKartAcrossCircuits(ctx, io, deps,
+		verb+" — pick a kart",
+		"type to filter · enter to confirm · esc to cancel")
+	if err != nil {
+		return "", "", false, errfmt.Emit(io.Stderr, err)
+	}
+	if !picked {
+		return "", "", false, 0
+	}
+	return circuit, kart, true, 0
 }
 
 // collectCircuitKarts fans out kart.list across every configured circuit

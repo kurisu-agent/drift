@@ -45,6 +45,14 @@ type CLI struct {
 	// Merged picker — bare `drift connect` fans out over circuits + karts.
 	Connect connectCmd `cmd:"" aliases:"into,attach" help:"Pick a circuit or kart and connect (merged picker)."`
 
+	// Top-level lifecycle aliases for the highest-traffic kart verbs.
+	// Each forwards to the same runner as `drift kart <verb>`, including
+	// the no-arg cross-circuit picker; the namespace form stays for
+	// completeness and tab-completion discoverability.
+	Start  startCmd  `cmd:"" name:"start" help:"Start a kart (picker when no name)."`
+	Stop   stopCmd   `cmd:"" name:"stop" help:"Stop a kart (picker when no name)."`
+	Delete deleteCmd `cmd:"" name:"delete" help:"Delete a kart (picker when no name)."`
+
 	// Kart creation stays flat: `drift new` is a frequent top-level verb.
 	New newCmd `cmd:"" name:"new" help:"Create a new kart (from starter or existing repo)."`
 
@@ -167,9 +175,9 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runKartConnect(ctx, io, &cli, cli.Kart.Connect, deps)
 	case "kart info <name>":
 		return runKartInfo(ctx, io, &cli, cli.Kart.Info, deps)
-	case "kart start <name>":
+	case "kart start", "kart start <name>":
 		return runKartStart(ctx, io, &cli, cli.Kart.Start, deps)
-	case "kart stop <name>":
+	case "kart stop", "kart stop <name>":
 		return runKartStop(ctx, io, &cli, cli.Kart.Stop, deps)
 	case "kart restart <name>":
 		return runKartRestart(ctx, io, &cli, cli.Kart.Restart, deps)
@@ -177,7 +185,7 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runKartRecreate(ctx, io, &cli, cli.Kart.Recreate, deps)
 	case "kart rebuild <name>":
 		return runKartRebuild(ctx, io, &cli, cli.Kart.Rebuild, deps)
-	case "kart delete <name>":
+	case "kart delete", "kart delete <name>":
 		return runKartDelete(ctx, io, &cli, cli.Kart.Delete, deps)
 	case "kart logs <name>":
 		return runKartLogs(ctx, io, &cli, cli.Kart.Logs, deps)
@@ -195,6 +203,12 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runStatus(ctx, io, &cli, cli.Status, deps)
 	case "connect", "connect <name>":
 		return runConnect(ctx, io, &cli, cli.Connect, deps)
+	case "start", "start <name>":
+		return runKartStart(ctx, io, &cli, cli.Start, deps)
+	case "stop", "stop <name>":
+		return runKartStop(ctx, io, &cli, cli.Stop, deps)
+	case "delete", "delete <name>":
+		return runKartDelete(ctx, io, &cli, cli.Delete, deps)
 	case "run", "run <name>", "run <name> <args>":
 		return runRunExec(ctx, io, &cli, cli.Run, deps)
 	case "ai":

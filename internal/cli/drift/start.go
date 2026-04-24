@@ -12,21 +12,36 @@ import (
 )
 
 type startCmd struct {
-	Name string `arg:"" help:"Kart name."`
+	Name string `arg:"" optional:"" help:"Kart name; omit on a TTY to pick from a cross-circuit kart list."`
 }
 
 func runKartStart(ctx context.Context, io IO, root *CLI, cmd startCmd, deps deps) int {
-	return runKartLifecycle(ctx, io, root, cmd.Name, wire.MethodKartStart, "starting", "started", deps)
+	circuit, name, ok, rc := resolveKartTarget(ctx, io, root, deps, cmd.Name, "drift start")
+	if !ok {
+		return rc
+	}
+	return runKartLifecycleOn(ctx, io, root, circuit, name, wire.MethodKartStart, "starting", "started", deps)
 }
 
 // runKartLifecycle handles start/stop/restart/delete — they differ only
 // by method name and the stdout verb fragment. delete's not_found comes
 // back as a structured rpcerr so the shared path doesn't special-case it.
+// Used by verbs that don't support the picker (restart/recreate/rebuild);
+// the picker-capable verbs resolve their own (circuit, name) via
+// resolveKartTarget and call runKartLifecycleOn directly.
 func runKartLifecycle(ctx context.Context, io IO, root *CLI, name, method, activeVerb, pastVerb string, deps deps) int {
 	_, circuit, err := resolveCircuit(root, deps)
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
+	return runKartLifecycleOn(ctx, io, root, circuit, name, method, activeVerb, pastVerb, deps)
+}
+
+// runKartLifecycleOn runs the lifecycle RPC against a pre-resolved
+// (circuit, name). The picker paths in start/stop/delete go through here
+// so the user's choice from the cross-circuit picker is honored without
+// re-resolving the default circuit.
+func runKartLifecycleOn(ctx context.Context, io IO, root *CLI, circuit, name, method, activeVerb, pastVerb string, deps deps) int {
 	writeLifecyclePreflight(io.Stderr, root.Output == "json", circuit, method, name)
 	// Spinner on stderr; no-op under --output json / non-TTY so scripted
 	// usage is unchanged. Suppressed under --debug too, same reason as

@@ -7,9 +7,13 @@ import (
 )
 
 type stopCmd struct {
-	Name string `arg:"" help:"Kart name."`
+	Name string `arg:"" optional:"" help:"Kart name; omit on a TTY to pick from a cross-circuit kart list."`
 }
 
 func runKartStop(ctx context.Context, io IO, root *CLI, cmd stopCmd, deps deps) int {
-	return runKartLifecycle(ctx, io, root, cmd.Name, wire.MethodKartStop, "stopping", "stopped", deps)
+	circuit, name, ok, rc := resolveKartTarget(ctx, io, root, deps, cmd.Name, "drift stop")
+	if !ok {
+		return rc
+	}
+	return runKartLifecycleOn(ctx, io, root, circuit, name, wire.MethodKartStop, "stopping", "stopped", deps)
 }
