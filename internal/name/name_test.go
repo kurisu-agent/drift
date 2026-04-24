@@ -76,28 +76,3 @@ func TestValidate_OKReturnsNil(t *testing.T) {
 	}
 }
 
-func TestValidateCharacterRejectsLongName(t *testing.T) {
-	// 33 chars — valid as a generic name, invalid as a character / POSIX user.
-	longOK := "a" + strings.Repeat("b", 32)
-	if err := name.Validate("kart", longOK); err != nil {
-		t.Fatalf("generic validate should accept 33-char name: %v", err)
-	}
-	if err := name.ValidateCharacter(longOK); err == nil {
-		t.Fatalf("ValidateCharacter should reject 33-char name")
-	}
-}
-
-func TestValidateCharacterAcceptsNormalName(t *testing.T) {
-	if err := name.ValidateCharacter("kurisu"); err != nil {
-		t.Fatalf("unexpected: %v", err)
-	}
-	if err := name.ValidateCharacter("a-b"); err != nil {
-		t.Fatalf("unexpected: %v", err)
-	}
-}
-
-func TestValidateCharacterAlsoRejectsReserved(t *testing.T) {
-	if err := name.ValidateCharacter("default"); err == nil {
-		t.Fatalf("reserved name should still be rejected")
-	}
-}

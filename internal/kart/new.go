@@ -128,17 +128,10 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 	if len(resolved.Mounts) > 0 {
 		d.phase("splicing %d mount(s) into devcontainer overlay", len(resolved.Mounts))
 	}
-	if resolved.NormaliseUser {
-		d.phase("pinning container user to character %q", resolved.CharacterName)
-	}
 	dcDir := filepath.Join(scratch, "devcontainer")
 	dcPath, _, err := NormalizeDevcontainerWithOverlay(
 		ctx, resolved.Devcontainer, dcDir,
-		Overlay{
-			Mounts:        resolved.Mounts,
-			NormaliseUser: resolved.NormaliseUser,
-			Character:     resolved.CharacterName,
-		},
+		Overlay{Mounts: resolved.Mounts},
 		d.Fetcher,
 	)
 	if err != nil {
@@ -214,6 +207,28 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 			re = re.With(rpcerr.DataKeyDevpodStdout, tail)
 		}
 		return nil, kartErrCleanup(re)
+	}
+
+	// Post-up finalisers coalesce into a single `devpod ssh --command`.
+	// Each ssh handshake adds ~200-400ms over wireguard to a remote
+	// circuit; three separate hops was close to a second of dead time.
+	script := newContainerScript("kart.new")
+	script.Append(symlinkFragment(homeMountSymlinks(resolved.Mounts)))
+	copyFrag, cerr := copyFragment(resolved.Mounts)
+	if cerr != nil {
+		return nil, kartErrCleanup(wrapDevpodPhase("copy tune files", resolved.Name, cerr))
+	}
+	script.Append(copyFrag)
+	claudeFrag, cerr := claudeMDFragment(resolved)
+	if cerr != nil {
+		return nil, kartErrCleanup(rpcerr.Internal("kart.new: render CLAUDE.md: %v", cerr).Wrap(cerr))
+	}
+	script.Append(claudeFrag)
+	if !script.Empty() {
+		d.phase("finalising kart (symlinks, copies, CLAUDE.md)")
+		if err := script.Run(ctx, d.Devpod, resolved.Name); err != nil {
+			return nil, kartErrCleanup(wrapDevpodPhase("finalise kart", resolved.Name, err))
+		}
 	}
 
 	// KNOWN LIMITATION (skevetter/devpod v0.22): install-dotfiles runs
@@ -296,10 +311,6 @@ func writeKartConfig(garageDir string, r *Resolved, now time.Time) error {
 	if len(r.Mounts) > 0 {
 		cfg.MountDirs = append([]model.Mount(nil), r.Mounts...)
 	}
-	if r.NormaliseUserRef != nil {
-		v := *r.NormaliseUserRef
-		cfg.NormaliseUser = &v
-	}
 	if !r.MigratedFrom.IsZero() {
 		mf := r.MigratedFrom
 		cfg.MigratedFrom = &mf
@@ -349,6 +360,14 @@ func (d NewDeps) phase(format string, args ...any) {
 
 // envKVPairs renders a resolved env map as sorted KEY=VALUE strings.
 // Sorted so devpod argv is stable across runs (tests and log diffs).
+// wrapDevpodPhase wraps a post-`devpod up` helper failure in the
+// standard rpcerr shape so the three finalisation steps share one
+// error-reporting convention.
+func wrapDevpodPhase(phase, kart string, err error) error {
+	return rpcerr.New(rpcerr.CodeDevpod, rpcerr.TypeDevpodUpFailed,
+		"kart.new: %s: %v", phase, err).Wrap(err).With("kart", kart)
+}
+
 func envKVPairs(m map[string]string) []string {
 	if len(m) == 0 {
 		return nil
