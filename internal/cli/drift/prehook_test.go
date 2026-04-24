@@ -96,6 +96,13 @@ func TestUpdateBannerLine(t *testing.T) {
 		{"devel suppresses", "devel", "0.3.0", true},
 		{"empty current suppresses", "", "0.3.0", true},
 		{"empty latest suppresses", "0.2.0", "", true},
+		// Semver regression guard: state.json may hold a stale "latest"
+		// from a prior version. The banner must compare by semver, not
+		// string equality, or a just-upgraded user sees the old version
+		// advertised as available.
+		{"stale latest older than current suppresses", "0.7.0", "0.6.1", true},
+		{"minor-bump latest older than current suppresses", "0.7.0", "0.5.9", true},
+		{"major-bump newer fires", "1.0.0", "2.0.0", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

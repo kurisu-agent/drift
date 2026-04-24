@@ -2,39 +2,23 @@ package drift
 
 import (
 	"strings"
-
-	"github.com/kurisu-agent/drift/internal/config"
 )
 
-// mergeSSHArgs concatenates per-circuit config args (first) with CLI
-// passthrough args (last), then expands a leading `~/` / bare `~` against
-// $HOME so ssh receives a concrete path.
-//
-// Config-first / CLI-last matches how ssh resolves duplicate flags:
-// last-wins options like `-p` or `-o Port=…` favor the CLI override, while
-// accumulating options like `-i` pick up all keys the user supplied.
-//
-// cfg may be nil (test paths) and name may refer to a circuit that isn't
-// in the config — both collapse to "just use cliArgs" rather than
-// erroring, since the CLI passthrough stands on its own.
-func mergeSSHArgs(cfg *config.Client, name string, cliArgs []string) []string {
-	var circuitArgs []string
-	if cfg != nil {
-		if c, ok := cfg.Circuits[name]; ok {
-			circuitArgs = c.SSHArgs
-		}
-	}
-	if len(circuitArgs) == 0 && len(cliArgs) == 0 {
+// expandCLISSHArgs expands a leading `~/` / bare `~` against $HOME in
+// every element of cliArgs so ssh receives concrete paths. Per-circuit
+// options live in the `ssh:` map of the client config and are emitted
+// as ssh_config directives (see internal/sshconf); only the one-off
+// `drift connect mykart -- -i …` passthrough flows through here.
+func expandCLISSHArgs(cliArgs []string) []string {
+	if len(cliArgs) == 0 {
 		return nil
 	}
-	out := make([]string, 0, len(circuitArgs)+len(cliArgs))
-	out = append(out, circuitArgs...)
-	out = append(out, cliArgs...)
 	home, err := userHome()
 	if err != nil {
-		return out
+		return append([]string(nil), cliArgs...)
 	}
-	for i, a := range out {
+	out := make([]string, len(cliArgs))
+	for i, a := range cliArgs {
 		out[i] = expandSSHTilde(a, home)
 	}
 	return out

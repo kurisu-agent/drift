@@ -134,7 +134,7 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 	// deprecation notices) + fire-and-forget background checks. Must
 	// stay non-blocking — anything network-bound hands off to a
 	// goroutine and writes state.json for the next invocation to read.
-	runPreDispatch(io, &cli, kctx.Command())
+	runPreDispatch(io, &cli, kctx.Command(), deps)
 
 	switch kctx.Command() {
 	case "help":

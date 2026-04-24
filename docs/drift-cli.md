@@ -929,7 +929,7 @@ drift devel
 default: alpha
 
    CIRCUIT  HOST                LAKITU  API  LATENCY  KARTS
-→  alpha    circuit@10.233.1.2  dev     1    10ms     0/1
+→  alpha    circuit@10.233.1.2  dev     1    11ms     0/1
 
 → alpha
 NAME   STATUS         SOURCE                                             TUNE  AUTOSTART
@@ -955,7 +955,7 @@ Flags:
       --check             Check for an update without downloading.
 → checking latest release
 current: devel
-latest:  0.6.1
+latest:  0.7.0
 error: refusing to self-update a development build; rebuild from source or install a tagged release
 exit status 1
 ```

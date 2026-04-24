@@ -14,13 +14,13 @@ type Client struct {
 
 type ClientCircuit struct {
 	Host string `yaml:"host"`
-	// SSHArgs are extra flags spliced into the ssh argv before the target
-	// host. Use for one-off overrides that don't belong in ~/.ssh/config —
-	// e.g. ["-i", "~/.ssh/lab_ed25519"] or ["-o", "IdentitiesOnly=yes"].
-	// Mosh is skipped whenever this is non-empty since mosh doesn't accept
-	// raw ssh flags. Tilde expansion happens at use-time; don't pre-expand
-	// so the file stays portable across hosts.
-	SSHArgs []string `yaml:"ssh_args,omitempty"`
+	// SSH is a map of ssh_config directive names to values. Entries flow
+	// straight into the generated `Host drift.<circuit>` block in
+	// ~/.config/drift/ssh_config, so lakitu RPCs (which always dial
+	// `ssh drift.<circuit>`) pick them up. Keys use ssh_config's native
+	// names — IdentityFile, Port, ForwardAgent, User, ProxyJump, …
+	// Values are not pre-expanded; `~/` resolves at ssh-use time.
+	SSH map[string]string `yaml:"ssh,omitempty"`
 }
 
 // ManagesSSHConfig defaults to true when the field is absent.

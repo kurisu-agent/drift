@@ -107,14 +107,29 @@ func runCircuitAdd(ctx context.Context, io IO, root *CLI, cmd circuitAddCmd, dep
 	if cfg.Circuits == nil {
 		cfg.Circuits = make(map[string]config.ClientCircuit)
 	}
-	if existing, ok := cfg.Circuits[info.Name]; ok && existing.Host != cmd.UserHost {
+	existing, existed := cfg.Circuits[info.Name]
+	if existed && existing.Host != cmd.UserHost {
 		return errfmt.Emit(io.Stderr, rpcerr.Conflict(rpcerr.TypeNameCollision,
 			"circuit %q already configured for %s (rename the new server via `drift circuit set name <other-name>` or remove the existing entry with `drift circuit rm %s`)",
 			info.Name, existing.Host, info.Name).With("circuit", info.Name).With("existing_host", existing.Host))
 	}
-	cfg.Circuits[info.Name] = config.ClientCircuit{Host: cmd.UserHost}
+	// Preserve existing fields (ssh) on a same-host re-add so
+	// hand-configured options aren't silently dropped when the user
+	// re-runs `drift circuit add`. Only Host + Default change here.
+	entry := existing
+	entry.Host = cmd.UserHost
+	cfg.Circuits[info.Name] = entry
 	if cmd.Default || cfg.DefaultCircuit == "" {
 		cfg.DefaultCircuit = info.Name
+	}
+	// --no-ssh-config persists as manage_ssh_config: false on the config
+	// file so subsequent drift invocations (where the pre-dispatch
+	// reconciler would otherwise re-sync the managed file) also honor
+	// the opt-out. Only flips the setting to false — never turns
+	// management back on silently.
+	if cmd.NoSSHConfig {
+		no := false
+		cfg.ManageSSHConfig = &no
 	}
 	if err := config.SaveClient(cfgPath, cfg); err != nil {
 		return errfmt.Emit(io.Stderr, err)
@@ -126,7 +141,7 @@ func runCircuitAdd(ctx context.Context, io IO, root *CLI, cmd circuitAddCmd, dep
 		if err != nil {
 			return errfmt.Emit(io.Stderr, err)
 		}
-		if err := mgr.InstallCircuit(userSSHConfigPath(), info.Name, hostPart, userPart); err != nil {
+		if err := mgr.InstallCircuit(userSSHConfigPath(), info.Name, hostPart, userPart, entry.SSH); err != nil {
 			return errfmt.Emit(io.Stderr, err)
 		}
 	}
@@ -330,7 +345,7 @@ func runCircuitSetName(ctx context.Context, io IO, root *CLI, cmd circuitSetName
 		if err := mgr.RemoveCircuitBlock(oldName); err != nil {
 			return errfmt.Emit(io.Stderr, err)
 		}
-		if err := mgr.InstallCircuit(userSSHConfigPath(), cmd.NewName, hostPart, userPart); err != nil {
+		if err := mgr.InstallCircuit(userSSHConfigPath(), cmd.NewName, hostPart, userPart, entry.SSH); err != nil {
 			return errfmt.Emit(io.Stderr, err)
 		}
 	}

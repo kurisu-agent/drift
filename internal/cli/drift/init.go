@@ -41,12 +41,12 @@ func runInit(ctx context.Context, io IO, root *CLI, cmd initCmd, deps deps) int 
 	wdeps := warmup.Deps{
 		LoadClientConfig: func() (*config.Client, error) { return config.LoadClient(cfgPath) },
 		SaveClientConfig: func(c *config.Client) error { return config.SaveClient(cfgPath, c) },
-		WriteSSHBlock: func(circuit, hostPart, userPart string) error {
+		WriteSSHBlock: func(circuit, hostPart, userPart string, ssh map[string]string) error {
 			mgr, err := sshManagerFor(cfgPath)
 			if err != nil {
 				return err
 			}
-			return mgr.InstallCircuit(userSSHConfigPath(), circuit, hostPart, userPart)
+			return mgr.InstallCircuit(userSSHConfigPath(), circuit, hostPart, userPart, ssh)
 		},
 		Probe: func(ctx context.Context, circuit string) (*warmup.ProbeResult, error) {
 			if deps.probe == nil {

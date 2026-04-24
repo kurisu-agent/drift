@@ -8,7 +8,11 @@ import (
 	"time"
 
 	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/config"
+	"github.com/kurisu-agent/drift/internal/name"
+	"github.com/kurisu-agent/drift/internal/sshconf"
 	"github.com/kurisu-agent/drift/internal/version"
+	"golang.org/x/mod/semver"
 )
 
 // updateCheckInterval gates how often drift phones GitHub in the
@@ -40,10 +44,46 @@ var (
 // once-a-day phone-home checks). All work is non-blocking — anything
 // that needs the network fires a goroutine and the result lands in
 // state.json for the *next* invocation to surface.
-func runPreDispatch(io IO, cli *CLI, command string) {
+func runPreDispatch(io IO, cli *CLI, command string, deps deps) {
 	preHookUpdateCheck(io, cli, command)
+	preHookReconcileSSHConfig(deps)
 	// Future pre-dispatch hooks go here. Each should be: cheap when
 	// disabled, non-blocking when enabled, safe to no-op on error.
+}
+
+// preHookReconcileSSHConfig keeps ~/.config/drift/ssh_config in sync with
+// hand-edits to ~/.config/drift/config.yaml. Without this, editing a
+// circuit's `ssh:` map (or adding a whole circuit by hand) would leave
+// the managed ssh_config block stale, and any RPC using the
+// drift.<circuit> alias would fail. Silent on every failure — a broken
+// ssh_config file shouldn't brick drift.
+func preHookReconcileSSHConfig(deps deps) {
+	cfgPath, err := deps.clientConfigPath()
+	if err != nil {
+		return
+	}
+	cfg, err := config.LoadClient(cfgPath)
+	if err != nil || !cfg.ManagesSSHConfig() || len(cfg.Circuits) == 0 {
+		return
+	}
+	specs := make([]sshconf.CircuitSpec, 0, len(cfg.Circuits))
+	for circuitName, c := range cfg.Circuits {
+		userPart, hostPart, err := name.SplitUserHost(c.Host)
+		if err != nil {
+			continue
+		}
+		specs = append(specs, sshconf.CircuitSpec{
+			Circuit: circuitName,
+			Host:    hostPart,
+			User:    userPart,
+			SSH:     c.SSH,
+		})
+	}
+	mgr, err := sshManagerFor(cfgPath)
+	if err != nil {
+		return
+	}
+	_ = mgr.Reconcile(userSSHConfigPath(), specs)
 }
 
 // preHookUpdateCheck prints an "update available" banner if state.json
@@ -86,11 +126,17 @@ func firstWord(s string) string {
 // updateBannerLine is the pure-function core of the banner: given the
 // running version and the latest known version, it returns what to
 // print (or "" for no banner). Kept testable — showUpdateBanner adds
-// the I/O and palette.
+// the I/O and palette. Semver comparison (not string equality) guards
+// against a stale state.json emitting a "0.6.1 is available" banner
+// after the user has already upgraded past it.
 func updateBannerLine(cur, latest string, p *style.Palette) string {
 	cur = strings.TrimPrefix(cur, "v")
 	latest = strings.TrimPrefix(latest, "v")
-	if cur == "" || cur == "devel" || latest == "" || latest == cur {
+	if cur == "" || cur == "devel" || latest == "" {
+		return ""
+	}
+	// semver.Compare needs a leading `v`.
+	if semver.Compare("v"+latest, "v"+cur) <= 0 {
 		return ""
 	}
 	return fmt.Sprintf("%s drift %s is available (current %s) — run %s",

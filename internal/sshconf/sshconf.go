@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/kurisu-agent/drift/internal/config"
@@ -182,7 +183,7 @@ func CircuitHostName(circuit string) string {
 	return "drift." + circuit
 }
 
-func (m *Manager) WriteCircuitBlock(name, host, user string) error {
+func (m *Manager) WriteCircuitBlock(name, host, user string, ssh map[string]string) error {
 	if !m.Options.Manage {
 		return nil
 	}
@@ -200,7 +201,7 @@ func (m *Manager) WriteCircuitBlock(name, host, user string) error {
 		return err
 	}
 
-	block := circuitBlock(name, host, user)
+	block := circuitBlock(name, host, user, ssh)
 	// Keep the wildcard block at the end so OpenSSH's first-match rule
 	// favors the literal Host drift.<name>.
 	var wildcard *HostBlock
@@ -331,19 +332,106 @@ func hasIncludeAtTop(data []byte) bool {
 	return false
 }
 
+// CircuitSpec is the minimal data needed to materialize a drift.<name>
+// Host block: the fields come straight from the client config
+// (circuits.<name>.host and .ssh).
+type CircuitSpec struct {
+	Circuit string
+	Host    string
+	User    string
+	SSH     map[string]string
+}
+
+// Reconcile makes the managed ssh_config reflect the given circuit
+// specs. Used by the client's pre-dispatch hook so hand-edits to
+// ~/.config/drift/config.yaml (add an ssh_args entry, change the host)
+// take effect on the next drift invocation without re-running
+// `drift circuit add`. No-op when Options.Manage is false or when every
+// circuit's on-disk block already matches.
+//
+// Each spec's block is upserted; blocks for circuits no longer in the
+// config are left alone (drift circuit rm already removes them, and we
+// don't want to prune hand-authored aliases sharing the file).
+func (m *Manager) Reconcile(userSSHConfigPath string, specs []CircuitSpec) error {
+	if !m.Options.Manage {
+		return nil
+	}
+	if len(specs) == 0 {
+		return nil
+	}
+	if err := ensureParentDir(m.Paths.ManagedSSHConfig); err != nil {
+		return err
+	}
+	mf, err := parseManaged(m.Paths.ManagedSSHConfig)
+	if err != nil {
+		return err
+	}
+	changed := false
+	// Pull the wildcard aside so upserts stay before it; re-append at the end.
+	var wildcard *HostBlock
+	if found := mf.findBlock(WildcardHost); found != nil {
+		dup := HostBlock{Name: found.Name, Body: append([]string(nil), found.Body...)}
+		wildcard = &dup
+		mf.removeBlock(WildcardHost)
+	}
+	for _, s := range specs {
+		if s.Circuit == "" || s.Host == "" {
+			continue
+		}
+		block := circuitBlock(s.Circuit, s.Host, s.User, s.SSH)
+		if existing := mf.findBlock(block.Name); existing != nil && blocksEqual(*existing, block) {
+			continue
+		}
+		mf.upsertBlock(block)
+		changed = true
+	}
+	if wildcard != nil {
+		mf.Blocks = append(mf.Blocks, *wildcard)
+	} else {
+		// No prior wildcard: install one now so the Include chain resolves
+		// `drift.<circuit>.<kart>` aliases via ssh-proxy on first use.
+		mf.upsertBlock(wildcardBlock())
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	// Deliberately do NOT call EnsureInclude here: wiring up the user's
+	// ~/.ssh/config is `drift circuit add`'s / `drift init`'s job (via
+	// InstallCircuit). Reconcile only keeps the drift-managed file in
+	// sync with the yaml; touching the user's ssh_config on every
+	// invocation would undo hand-removal of the Include line.
+	if err := m.EnsureSocketsDir(); err != nil {
+		return err
+	}
+	return config.WriteFileAtomic(m.Paths.ManagedSSHConfig, mf.bytes(), 0o600)
+}
+
+func blocksEqual(a, b HostBlock) bool {
+	if a.Name != b.Name || len(a.Body) != len(b.Body) {
+		return false
+	}
+	for i := range a.Body {
+		if a.Body[i] != b.Body[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // InstallCircuit is the "full install" fan-out used by the CLI init/circuit
 // flows: prepend the Include line to the user's ssh_config, make sure the
 // sockets dir exists, (re)write the drift.<circuit> Host block, and ensure
 // the trailing wildcard block is present. No-ops when m.Options.Manage is
 // false — matches the other mutating Manager methods.
-func (m *Manager) InstallCircuit(userSSHConfigPath, circuit, host, user string) error {
+func (m *Manager) InstallCircuit(userSSHConfigPath, circuit, host, user string, ssh map[string]string) error {
 	if err := m.EnsureInclude(userSSHConfigPath); err != nil {
 		return err
 	}
 	if err := m.EnsureSocketsDir(); err != nil {
 		return err
 	}
-	if err := m.WriteCircuitBlock(circuit, host, user); err != nil {
+	if err := m.WriteCircuitBlock(circuit, host, user, ssh); err != nil {
 		return err
 	}
 	return m.EnsureWildcardBlock()
@@ -369,7 +457,7 @@ func (m *Manager) EnsureSocketsDir() error {
 	return nil
 }
 
-func circuitBlock(circuitName, host, user string) HostBlock {
+func circuitBlock(circuitName, host, user string, ssh map[string]string) HostBlock {
 	// Accept host as either "example.com", "example.com:2222", "[::1]",
 	// or "[::1]:2222"; the explicit `Port` directive matters because
 	// OpenSSH does not parse a colon-port inside HostName. name.SplitHostPort
@@ -394,6 +482,15 @@ func circuitBlock(circuitName, host, user string) HostBlock {
 	if user != "" {
 		body = append(body, "  User "+user)
 	}
+	// ssh comes straight from the client config's `ssh:` map. Each entry
+	// maps an ssh_config directive name to its value — IdentityFile,
+	// Port, ForwardAgent, and so on. Emitted in sorted key order so
+	// repeated reconciles produce byte-identical output.
+	for _, k := range sortedKeys(ssh) {
+		if v := strings.TrimSpace(ssh[k]); v != "" {
+			body = append(body, "  "+k+" "+v)
+		}
+	}
 	body = append(body,
 		"  ControlMaster auto",
 		"  ControlPath ~/.config/drift/sockets/cm-%r@%h:%p",
@@ -402,6 +499,18 @@ func circuitBlock(circuitName, host, user string) HostBlock {
 		"  ServerAliveCountMax 3",
 	)
 	return HostBlock{Name: CircuitHostName(circuitName), Body: body}
+}
+
+func sortedKeys(m map[string]string) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func wildcardBlock() HostBlock {
