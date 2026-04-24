@@ -526,6 +526,24 @@ func TestReconcile_WritesMissingBlock(t *testing.T) {
 	}
 }
 
+// TestReconcile_WritesIncludeOnFirstRun covers the hand-edit-config.yaml
+// flow: a user who edited ~/.config/drift/config.yaml without ever
+// running `drift circuit add` has no Include line in ~/.ssh/config.
+// Reconcile must prepend it on first sync or the drift.<circuit>
+// alias never resolves ("Could not resolve hostname drift.<circuit>").
+func TestReconcile_WritesIncludeOnFirstRun(t *testing.T) {
+	m, paths := newTestManager(t, true)
+	if err := m.Reconcile(paths.UserSSHConfig, []CircuitSpec{
+		{Circuit: "devprox", Host: "devprox", User: "dev"},
+	}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	got := readFile(t, paths.UserSSHConfig)
+	if !strings.Contains(got, IncludeDirective) {
+		t.Errorf("user ssh_config missing Include directive after first Reconcile:\n%s", got)
+	}
+}
+
 // TestReconcile_UpdatesStaleBlock: user hand-edits ~/.config/drift/config.yaml
 // to add an IdentityFile under circuits.<name>.ssh. Reconcile must
 // rewrite the existing block to match — otherwise RPCs still fail.

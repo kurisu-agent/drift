@@ -72,12 +72,15 @@
           # way to pluck the latest git tag from a flake attribute, and
           # release builds come through goreleaser (.goreleaser.yaml) which
           # injects Version={{.Version}} + Commit={{.Commit}} itself.
-          # Commit is wired so `drift --version` renders a short hash
-          # suffix even on untagged dev builds.
+          # Commit prefers self.shortRev (clean tree), falling back to
+          # self.dirtyShortRev (dirty tree, suffixed `-dirty`), and
+          # finally the literal "dirty" when neither is available. This
+          # keeps `lakitu version` / `drift --version` showing an actual
+          # hash on dirty flake rebuilds, not a bare `lakitu dev`.
           driftLdflags = [
             "-s" "-w"
             "-X github.com/kurisu-agent/drift/internal/version.Version=dev"
-            "-X github.com/kurisu-agent/drift/internal/version.Commit=${self.rev or "dirty"}"
+            "-X github.com/kurisu-agent/drift/internal/version.Commit=${self.shortRev or self.dirtyShortRev or "dirty"}"
             "-X github.com/kurisu-agent/drift/internal/devpod.ExpectedVersion=${devpodPin.version}"
           ];
 

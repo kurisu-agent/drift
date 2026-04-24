@@ -4,6 +4,7 @@ package version
 
 import (
 	"runtime/debug"
+	"strings"
 	"sync"
 )
 
@@ -59,3 +60,25 @@ var readInfo = sync.OnceValue(func() Info {
 })
 
 func Get() Info { return readInfo() }
+
+// Format renders `<binary> <Version> (<short-commit>)` for human text
+// output. The short-commit suffix is appended only when Commit is set
+// AND doesn't already appear in Version (nix-built binaries sometimes
+// stuff the hash into Version via ldflags). Shared between drift and
+// lakitu so a single version surface stays consistent.
+func (i Info) Format(binary string) string {
+	out := binary + " " + i.Version
+	c := shortCommit(i.Commit)
+	if c != "" && !strings.Contains(i.Version, c) {
+		out += " (" + c + ")"
+	}
+	return out
+}
+
+func shortCommit(c string) string {
+	const short = 7
+	if len(c) > short {
+		return c[:short]
+	}
+	return c
+}
