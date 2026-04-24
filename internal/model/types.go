@@ -16,6 +16,22 @@ type Tune struct {
 	// these with the project's mounts, deduped by target, so the
 	// project repo never needs to be edited to add host binds.
 	MountDirs []Mount `yaml:"mount_dirs,omitempty" json:"mount_dirs,omitempty"`
+	// NormaliseUser, when unset or true, tells kart.new to rename the
+	// image's default non-root user to the kart's character at
+	// onCreateCommand time. A *bool lets an omitted field round-trip
+	// without flipping the default; set to a pointer-to-false to opt
+	// out. Kart-level KartConfig.NormaliseUser overrides this value.
+	NormaliseUser *bool `yaml:"normalise_user,omitempty" json:"normalise_user,omitempty"`
+}
+
+// NormaliseUserEnabled reports the effective setting of NormaliseUser —
+// true when unset (default-on) or explicitly true, false only when
+// explicitly set to false.
+func (t Tune) NormaliseUserEnabled() bool {
+	if t.NormaliseUser == nil {
+		return true
+	}
+	return *t.NormaliseUser
 }
 
 // Mount mirrors the devcontainer.json mount shape (and the skevetter/devpod
@@ -110,6 +126,9 @@ type KartConfig struct {
 	Env          TuneEnv       `yaml:"env,omitempty" json:"env,omitempty"`
 	MountDirs    []Mount       `yaml:"mount_dirs,omitempty" json:"mount_dirs,omitempty"`
 	MigratedFrom *MigratedFrom `yaml:"migrated_from,omitempty" json:"migrated_from,omitempty"`
+	// NormaliseUser overrides the kart's tune NormaliseUser setting when
+	// non-nil. Unset inherits the tune (which itself defaults on).
+	NormaliseUser *bool `yaml:"normalise_user,omitempty" json:"normalise_user,omitempty"`
 }
 
 // Character is the on-disk shape for garage/characters/<name>.yaml. PATSecret

@@ -65,4 +65,16 @@ Create `~/.claude/skills/<name>/SKILL.md` on this circuit — the front-matter s
 
 `drift` is the **client** — it runs on the user's workstation, not here. You will not use `drift` commands on this machine. Everything you can actuate from here is `lakitu …` (local CLI, for inspection and edits that don't go through the wire) or direct filesystem reads under `~/.drift/garage/`. When the user asks about something that only the client can do (`drift init`, `drift new`, `drift connect`, `drift ai`, `drift skill`, `drift run`, …), say so and suggest the command they would run on their workstation.
 
+## Invoking `devpod` directly
+
+When you need to reach devpod below lakitu (inspect a workspace, force-delete a stuck kart, tail an agent log), you must set `DEVPOD_HOME=~/.drift/devpod` — lakitu stores devpod state under `~/.drift/devpod/` rather than the default `~/.devpod/`, so bare `devpod list` will show nothing even when karts exist.
+
+```
+DEVPOD_HOME=~/.drift/devpod ~/.drift/bin/devpod list
+DEVPOD_HOME=~/.drift/devpod ~/.drift/bin/devpod ssh <kart> --command '…'
+DEVPOD_HOME=~/.drift/devpod ~/.drift/bin/devpod delete <kart> --force
+```
+
+Use this only for debugging / recovery; routine kart management should go through `lakitu` so the garage and devpod stay in sync.
+
 <!-- drift:user — your notes below this line are preserved across `lakitu init`. Anything above this marker is regenerated from drift's embedded template. -->

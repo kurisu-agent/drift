@@ -78,7 +78,7 @@ func (d *Deps) CharacterNewHandler(_ context.Context, params json.RawMessage) (a
 	if err := rpc.BindParams(params, &p); err != nil {
 		return nil, err
 	}
-	if err := name.Validate("character", p.Name); err != nil {
+	if err := name.ValidateCharacter(p.Name); err != nil {
 		return nil, err
 	}
 	if p.GitName == "" {

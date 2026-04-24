@@ -78,3 +78,14 @@ The `drift` client runs on Termux (Android) as a first-class platform — releas
 - **No `/etc/resolv.conf`.** Go's pure-Go resolver fails when it's missing. Preserve the fallback wired up in `internal/cli/drift/dnsfix.go` (and the `DRIFT_DEBUG` re-export) when adding new networked subcommands.
 
 None of these apply to `lakitu` (server-side, runs on the circuit, not on Android).
+
+# Invoking `devpod` manually on a circuit
+
+lakitu stores devpod state under `~/.drift/devpod/`, not the default `~/.devpod/`. Running `devpod list` / `devpod ssh <kart>` / `devpod delete <kart>` against lakitu's state requires `DEVPOD_HOME=~/.drift/devpod`:
+
+```
+DEVPOD_HOME=~/.drift/devpod ~/.drift/bin/devpod list
+DEVPOD_HOME=~/.drift/devpod ~/.drift/bin/devpod ssh <kart> --command '…'
+```
+
+Bare `devpod list` will show no workspaces even when lakitu has several. When a failed kart.new leaves garage state that `lakitu` won't clean up, `DEVPOD_HOME=~/.drift/devpod ~/.drift/bin/devpod delete <name> --force` is the escape hatch before `rm -rf ~/.drift/garage/karts/<name>`.

@@ -353,26 +353,28 @@ func TestResolveMountsMerge(t *testing.T) {
 	}
 }
 
-// TestResolveMountsTildeRewrite confirms a leading `~/` in a bind source
-// is rewritten to ${localEnv:HOME}/ so devpod resolves against the
-// circuit's env rather than being baked via lakitu's runtime home.
+// TestResolveMountsTildeRewrite confirms a leading `~/` in a bind
+// source is rewritten to the lakitu process's literal $HOME. devpod
+// v0.22 does not substitute devcontainer variables in overlay mounts,
+// so the expansion has to happen on this side.
 func TestResolveMountsTildeRewrite(t *testing.T) {
+	t.Setenv("HOME", "/home/circuit-user")
 	r := &Resolver{}
 	got, err := r.Resolve(Flags{
 		Name: "k",
 		Mounts: []model.Mount{
-			{Type: "bind", Source: "~/.claude", Target: "/home/dev/.claude"},
-			{Type: "bind", Source: "~", Target: "/home/dev/home"},
+			{Type: "bind", Source: "~/.claude", Target: "/tgt/claude"},
+			{Type: "bind", Source: "~", Target: "/tgt/home"},
 			{Type: "bind", Source: "/etc/passwd", Target: "/etc/passwd"},
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Mounts[0].Source != "${localEnv:HOME}/.claude" {
+	if got.Mounts[0].Source != "/home/circuit-user/.claude" {
 		t.Fatalf("`~/.claude` not rewritten: %q", got.Mounts[0].Source)
 	}
-	if got.Mounts[1].Source != "${localEnv:HOME}" {
+	if got.Mounts[1].Source != "/home/circuit-user" {
 		t.Fatalf("bare `~` not rewritten: %q", got.Mounts[1].Source)
 	}
 	if got.Mounts[2].Source != "/etc/passwd" {

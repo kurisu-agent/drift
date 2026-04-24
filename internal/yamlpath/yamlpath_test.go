@@ -7,12 +7,13 @@ import (
 )
 
 type tuneLike struct {
-	Starter      string            `yaml:"starter,omitempty"`
-	Devcontainer string            `yaml:"devcontainer,omitempty"`
-	Env          tuneEnvLike       `yaml:"env,omitempty"`
-	MountDirs    []mountLike       `yaml:"mount_dirs,omitempty"`
-	Extras       map[string]string `yaml:"extras,omitempty"`
-	Autostart    bool              `yaml:"autostart,omitempty"`
+	Starter       string            `yaml:"starter,omitempty"`
+	Devcontainer  string            `yaml:"devcontainer,omitempty"`
+	Env           tuneEnvLike       `yaml:"env,omitempty"`
+	MountDirs     []mountLike       `yaml:"mount_dirs,omitempty"`
+	Extras        map[string]string `yaml:"extras,omitempty"`
+	Autostart     bool              `yaml:"autostart,omitempty"`
+	NormaliseUser *bool             `yaml:"normalise_user,omitempty"`
 }
 
 type tuneEnvLike struct {
@@ -48,6 +49,25 @@ func TestSetBoolField(t *testing.T) {
 	}
 	if v.Autostart {
 		t.Fatalf("autostart should be false")
+	}
+}
+
+// TestSetAndUnsetLeafPointerBool exercises a *bool field (the shape
+// `Tune.NormaliseUser` uses): set must materialise the pointer, unset
+// must clear it back to nil so YAML omitempty round-trips cleanly.
+func TestSetAndUnsetLeafPointerBool(t *testing.T) {
+	v := tuneLike{}
+	if err := Apply(&v, []Op{{Path: "normalise_user", Op: OpSet, Value: "false"}}); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if v.NormaliseUser == nil || *v.NormaliseUser != false {
+		t.Fatalf("normalise_user should be &false; got %+v", v.NormaliseUser)
+	}
+	if err := Apply(&v, []Op{{Path: "normalise_user", Op: OpUnset}}); err != nil {
+		t.Fatalf("unset: %v", err)
+	}
+	if v.NormaliseUser != nil {
+		t.Fatalf("normalise_user should be nil after unset; got %+v", *v.NormaliseUser)
 	}
 }
 
@@ -169,6 +189,7 @@ func TestKnownPathsEnumerates(t *testing.T) {
 		"env.build.<key>",
 		"env.workspace.<key>",
 		"extras.<key>",
+		"normalise_user",
 		"starter",
 	}
 	if !reflect.DeepEqual(got, want) {
