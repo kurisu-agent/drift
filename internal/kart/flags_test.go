@@ -353,12 +353,12 @@ func TestResolveMountsMerge(t *testing.T) {
 	}
 }
 
-// TestResolveMountsTildeRewrite confirms a leading `~/` in a bind
-// source is rewritten to the lakitu process's literal $HOME. devpod
-// v0.22 does not substitute devcontainer variables in overlay mounts,
-// so the expansion has to happen on this side.
-func TestResolveMountsTildeRewrite(t *testing.T) {
-	t.Setenv("HOME", "/home/circuit-user")
+// TestResolveMountsPreservesSourceTilde — `~/` on the source side is
+// preserved on resolved.Mounts so KartConfig.mount_dirs round-trips
+// the tune spec verbatim. Expansion to a literal host path happens
+// later at devcontainer-overlay splice time (see expandHomeTildeSource
+// used from mountToMap).
+func TestResolveMountsPreservesSourceTilde(t *testing.T) {
 	r := &Resolver{}
 	got, err := r.Resolve(Flags{
 		Name: "k",
@@ -371,14 +371,11 @@ func TestResolveMountsTildeRewrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Mounts[0].Source != "/home/circuit-user/.claude" {
-		t.Fatalf("`~/.claude` not rewritten: %q", got.Mounts[0].Source)
-	}
-	if got.Mounts[1].Source != "/home/circuit-user" {
-		t.Fatalf("bare `~` not rewritten: %q", got.Mounts[1].Source)
-	}
-	if got.Mounts[2].Source != "/etc/passwd" {
-		t.Fatalf("absolute path mutated: %q", got.Mounts[2].Source)
+	want := []string{"~/.claude", "~", "/etc/passwd"}
+	for i, w := range want {
+		if got.Mounts[i].Source != w {
+			t.Errorf("mounts[%d].Source = %q, want %q", i, got.Mounts[i].Source, w)
+		}
 	}
 }
 

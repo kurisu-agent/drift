@@ -191,52 +191,82 @@ func TestSpliceOverlayMountsDedupOnTarget(t *testing.T) {
 	}
 }
 
-// TestSpliceOverlayUserNormalisation covers remoteUser + onCreateCommand
-// splicing and the preservation of a project-authored onCreateCommand
-// under the "project" key.
-func TestSpliceOverlayUserNormalisation(t *testing.T) {
-	base := []byte(`{"image":"ubuntu","onCreateCommand":"echo project"}`)
-	out, err := spliceOverlay(base, Overlay{NormaliseUser: true, Character: "kurisu"})
+// TestSpliceOverlayRewritesHomeTarget covers the `~/X` → /mnt/lakitu-host/X
+// rewrite that happens at splice time only. resolved.Mounts keeps the
+// `~/` form (so drift-detection compares apples to apples with the
+// tune spec) and the post-up LinkHostMountsIntoHome helper symlinks
+// $HOME/X to the mounted path.
+func TestSpliceOverlayRewritesHomeTarget(t *testing.T) {
+	base := []byte(`{"image":"ubuntu"}`)
+	mounts := []model.Mount{
+		{Type: "bind", Source: "/home/dev/.claude", Target: "~/.claude"},
+		{Type: "bind", Source: "/opt/shared", Target: "/opt/shared"},
+	}
+	out, err := spliceOverlay(base, Overlay{Mounts: mounts})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var got map[string]any
 	if err := json.Unmarshal(out, &got); err != nil {
-		t.Fatalf("not valid JSON: %v", err)
+		t.Fatal(err)
 	}
-	if got["remoteUser"] != "kurisu" {
-		t.Fatalf("remoteUser not set: %v", got["remoteUser"])
+	gotMounts := got["mounts"].([]any)
+	if len(gotMounts) != 2 {
+		t.Fatalf("expected 2 mounts, got %d: %s", len(gotMounts), out)
 	}
-	cmd, ok := got["onCreateCommand"].(map[string]any)
-	if !ok {
-		t.Fatalf("onCreateCommand not an object: %T", got["onCreateCommand"])
+	if gotMounts[0].(map[string]any)["target"] != "/mnt/lakitu-host/.claude" {
+		t.Fatalf("~/ target not rewritten: %v", gotMounts[0])
 	}
-	if _, ok := cmd[normaliseUserOnCreateKey]; !ok {
-		t.Fatalf("lakitu onCreateCommand key missing: %v", cmd)
-	}
-	if cmd["project"] != "echo project" {
-		t.Fatalf("project onCreateCommand not preserved: %v", cmd["project"])
+	if gotMounts[1].(map[string]any)["target"] != "/opt/shared" {
+		t.Fatalf("absolute target should pass through: %v", gotMounts[1])
 	}
 }
 
-// TestSpliceOverlayUserNormalisationIdempotent re-runs the splice over
-// an already-spliced overlay and proves our key doesn't accumulate.
-func TestSpliceOverlayUserNormalisationIdempotent(t *testing.T) {
+// TestSpliceOverlayExpandsSourceTilde — the overlay splicer is the
+// point where source-side `~/` becomes an absolute host path (so
+// devpod hands a real directory to docker). resolved.Mounts (and
+// KartConfig.mount_dirs) keep the tilde form for drift-detection
+// parity with the tune spec.
+func TestSpliceOverlayExpandsSourceTilde(t *testing.T) {
+	t.Setenv("HOME", "/home/circuit-user")
 	base := []byte(`{"image":"ubuntu"}`)
-	once, err := spliceOverlay(base, Overlay{NormaliseUser: true, Character: "kurisu"})
-	if err != nil {
-		t.Fatal(err)
+	mounts := []model.Mount{
+		{Type: "bind", Source: "~/.claude", Target: "~/.claude"},
 	}
-	twice, err := spliceOverlay(once, Overlay{NormaliseUser: true, Character: "kurisu"})
+	out, err := spliceOverlay(base, Overlay{Mounts: mounts})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var got map[string]any
-	if err := json.Unmarshal(twice, &got); err != nil {
+	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatal(err)
 	}
-	cmd := got["onCreateCommand"].(map[string]any)
-	if len(cmd) != 1 {
-		t.Fatalf("expected 1 onCreateCommand entry after re-splice, got %d: %v", len(cmd), cmd)
+	m := got["mounts"].([]any)[0].(map[string]any)
+	if m["source"] != "/home/circuit-user/.claude" {
+		t.Fatalf("splice-time source expansion: got %v", m["source"])
+	}
+	if m["target"] != "/mnt/lakitu-host/.claude" {
+		t.Fatalf("splice-time target rewrite: got %v", m["target"])
+	}
+}
+
+func TestTargetInHome(t *testing.T) {
+	cases := []struct {
+		in     string
+		ok     bool
+		suffix string
+	}{
+		{"~/.claude", true, ".claude"},
+		{"~/a/b", true, "a/b"},
+		{"~", true, ""},
+		{"/abs/path", false, ""},
+		{"./rel", false, ""},
+		{"", false, ""},
+	}
+	for _, c := range cases {
+		suffix, ok := targetInHome(c.in)
+		if ok != c.ok || suffix != c.suffix {
+			t.Errorf("targetInHome(%q) = (%q, %v), want (%q, %v)", c.in, suffix, ok, c.suffix, c.ok)
+		}
 	}
 }

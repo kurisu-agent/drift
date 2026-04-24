@@ -92,23 +92,17 @@ func NormalizeDevcontainer(ctx context.Context, raw, tmpDir string, fetch Devcon
 // overlay (nothing to splice).
 type Overlay struct {
 	// Mounts is appended to the base devcontainer's `mounts` array,
-	// deduped by target inside this call.
+	// deduped by target inside this call. Targets with a leading
+	// `~/` rewrite to /mnt/lakitu-host/<rest> here; post-`devpod up`
+	// the container's $HOME is symlinked onto that tree.
 	Mounts []model.Mount
-	// NormaliseUser, when true, sets `remoteUser` to Character and
-	// splices an onCreateCommand that renames the image's default
-	// non-root user to Character (or creates one fresh). Requires
-	// Character to be set.
-	NormaliseUser bool
-	// Character is the kart's character name — used as the in-container
-	// username when NormaliseUser is true.
-	Character string
 }
 
 // empty reports whether the overlay adds nothing. Short-circuits the
 // file-write path so callers that pass a zero Overlay behave identically
 // to the no-overlay NormalizeDevcontainer path.
 func (o Overlay) empty() bool {
-	return len(o.Mounts) == 0 && !o.NormaliseUser
+	return len(o.Mounts) == 0
 }
 
 // NormalizeDevcontainerWithOverlay is NormalizeDevcontainer plus an
@@ -134,10 +128,6 @@ func NormalizeDevcontainerWithOverlay(
 	raw = strings.TrimSpace(raw)
 	if overlay.empty() {
 		return NormalizeDevcontainer(ctx, raw, tmpDir, fetch)
-	}
-	if overlay.NormaliseUser && overlay.Character == "" {
-		return "", cleanup, rpcerr.Internal(
-			"kart.new: overlay requests user normalisation without a character name")
 	}
 	if fetch == nil {
 		fetch = defaultDevcontainerFetcher
@@ -194,11 +184,6 @@ func spliceOverlay(body []byte, overlay Overlay) ([]byte, error) {
 	if len(overlay.Mounts) > 0 {
 		spliceMountsInto(root, overlay.Mounts)
 	}
-	if overlay.NormaliseUser {
-		if err := spliceUserNormalisation(root, overlay.Character); err != nil {
-			return nil, err
-		}
-	}
 
 	out, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {
@@ -211,8 +196,11 @@ func spliceMountsInto(root map[string]any, mounts []model.Mount) {
 	existing, _ := root["mounts"].([]any)
 	incomingTargets := make(map[string]bool, len(mounts))
 	for _, m := range mounts {
+		if isCopyMount(m) {
+			continue
+		}
 		if m.Target != "" {
-			incomingTargets[m.Target] = true
+			incomingTargets[rewriteTargetForSplice(m.Target)] = true
 		}
 	}
 	kept := existing[:0:0]
@@ -229,9 +217,47 @@ func spliceMountsInto(root map[string]any, mounts []model.Mount) {
 		kept = append(kept, raw)
 	}
 	for _, m := range mounts {
+		if isCopyMount(m) {
+			continue
+		}
 		kept = append(kept, mountToMap(m))
 	}
 	root["mounts"] = kept
+}
+
+// isCopyMount flags lakitu-only pseudo-mounts (`type: copy`), which
+// never reach docker — they become file drops via copyFragment.
+func isCopyMount(m model.Mount) bool { return m.Type == model.MountTypeCopy }
+
+// hostMountPrefix is the in-container path `~/`-targeted mounts land
+// at. Post-`devpod up` the image's default-user $HOME is symlinked
+// onto this tree, so agents running as the image's default user see
+// the host's content at `$HOME/<rest>`.
+const hostMountPrefix = "/mnt/lakitu-host/"
+
+// targetInHome reports whether the mount's target is a `~/`-form the
+// post-up helper should symlink into the container's $HOME.
+// Returns the suffix (e.g. ".claude" for target `~/.claude`). Bare
+// `~` has suffix "".
+func targetInHome(target string) (suffix string, ok bool) {
+	switch {
+	case target == "~":
+		return "", true
+	case strings.HasPrefix(target, "~/"):
+		return target[2:], true
+	default:
+		return "", false
+	}
+}
+
+// rewriteTargetForSplice expands a `~/<rest>` target to the lakitu
+// host-mount path; non-home-rooted targets pass through untouched.
+func rewriteTargetForSplice(target string) string {
+	suffix, ok := targetInHome(target)
+	if !ok {
+		return target
+	}
+	return hostMountPrefix + suffix
 }
 
 func mountToMap(m model.Mount) map[string]any {
@@ -240,10 +266,10 @@ func mountToMap(m model.Mount) map[string]any {
 		out["type"] = m.Type
 	}
 	if m.Source != "" {
-		out["source"] = m.Source
+		out["source"] = expandHomeTildeSource(m.Source)
 	}
 	if m.Target != "" {
-		out["target"] = m.Target
+		out["target"] = rewriteTargetForSplice(m.Target)
 	}
 	if m.External {
 		out["external"] = true

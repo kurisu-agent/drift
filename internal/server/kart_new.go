@@ -33,21 +33,17 @@ type KartNewDeps struct {
 // KartNewParams field names mirror `drift new` flags so drift and lakitu
 // schemas align without translation.
 type KartNewParams struct {
-	Name         string        `json:"name"`
-	Clone        string        `json:"clone,omitempty"`
-	Starter      string        `json:"starter,omitempty"`
-	Tune         string        `json:"tune,omitempty"`
-	Features     string        `json:"features,omitempty"`
-	Devcontainer string        `json:"devcontainer,omitempty"`
-	Dotfiles     string        `json:"dotfiles,omitempty"`
-	Character    string        `json:"character,omitempty"`
-	Autostart    bool          `json:"autostart,omitempty"`
-	Mounts       []model.Mount `json:"mounts,omitempty"`
-	// NormaliseUser overrides the tune's normalise_user setting when
-	// non-nil. *bool so omit on the wire means "inherit tune"; true /
-	// false are explicit overrides persisted on the kart.
-	NormaliseUser *bool               `json:"normalise_user,omitempty"`
-	MigratedFrom  *model.MigratedFrom `json:"migrated_from,omitempty"`
+	Name         string              `json:"name"`
+	Clone        string              `json:"clone,omitempty"`
+	Starter      string              `json:"starter,omitempty"`
+	Tune         string              `json:"tune,omitempty"`
+	Features     string              `json:"features,omitempty"`
+	Devcontainer string              `json:"devcontainer,omitempty"`
+	Dotfiles     string              `json:"dotfiles,omitempty"`
+	Character    string              `json:"character,omitempty"`
+	Autostart    bool                `json:"autostart,omitempty"`
+	Mounts       []model.Mount       `json:"mounts,omitempty"`
+	MigratedFrom *model.MigratedFrom `json:"migrated_from,omitempty"`
 }
 
 func RegisterKartNew(reg *rpc.Registry, kd KartNewDeps) {
@@ -114,17 +110,16 @@ func (kd KartNewDeps) kartNewHandler(ctx context.Context, params json.RawMessage
 	}
 
 	f := kart.Flags{
-		Name:          p.Name,
-		Clone:         p.Clone,
-		Starter:       p.Starter,
-		Tune:          p.Tune,
-		Features:      p.Features,
-		Devcontainer:  p.Devcontainer,
-		Dotfiles:      p.Dotfiles,
-		Character:     p.Character,
-		Autostart:     p.Autostart,
-		Mounts:        p.Mounts,
-		NormaliseUser: p.NormaliseUser,
+		Name:         p.Name,
+		Clone:        p.Clone,
+		Starter:      p.Starter,
+		Tune:         p.Tune,
+		Features:     p.Features,
+		Devcontainer: p.Devcontainer,
+		Dotfiles:     p.Dotfiles,
+		Character:    p.Character,
+		Autostart:    p.Autostart,
+		Mounts:       p.Mounts,
 	}
 	if p.MigratedFrom != nil {
 		f.MigratedFrom = *p.MigratedFrom
