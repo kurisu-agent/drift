@@ -63,7 +63,7 @@ func (s *fakeState) deps() Deps {
 			s.cfg = c
 			return nil
 		},
-		WriteSSHBlock: func(circuit, host, user string) error {
+		WriteSSHBlock: func(circuit, host, user string, _ map[string]string) error {
 			s.sshBlocks = append(s.sshBlocks, [3]string{circuit, host, user})
 			return nil
 		},

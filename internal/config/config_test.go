@@ -44,17 +44,15 @@ rogue_key: oops
 	}
 }
 
-func TestLoadClient_SSHArgsRoundTrip(t *testing.T) {
+func TestLoadClient_SSHRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	body := `default_circuit: lab
 circuits:
   lab:
     host: dev@lab.example.com
-    ssh_args:
-      - "-i"
-      - "~/.ssh/lab_ed25519"
-      - "-o"
-      - "IdentitiesOnly=yes"
+    ssh:
+      IdentityFile: "~/.ssh/lab_ed25519"
+      IdentitiesOnly: "yes"
   plain:
     host: dev@plain.example.com
 `
@@ -65,12 +63,15 @@ circuits:
 	if err != nil {
 		t.Fatalf("LoadClient: %v", err)
 	}
-	wantLab := []string{"-i", "~/.ssh/lab_ed25519", "-o", "IdentitiesOnly=yes"}
-	if diff := cmp.Diff(wantLab, c.Circuits["lab"].SSHArgs); diff != "" {
-		t.Errorf("lab ssh_args (-want +got):\n%s", diff)
+	wantLab := map[string]string{
+		"IdentityFile":   "~/.ssh/lab_ed25519",
+		"IdentitiesOnly": "yes",
 	}
-	if got := c.Circuits["plain"].SSHArgs; got != nil {
-		t.Errorf("plain ssh_args = %v, want nil (field omitted)", got)
+	if diff := cmp.Diff(wantLab, c.Circuits["lab"].SSH); diff != "" {
+		t.Errorf("lab ssh (-want +got):\n%s", diff)
+	}
+	if got := c.Circuits["plain"].SSH; got != nil {
+		t.Errorf("plain ssh = %v, want nil (field omitted)", got)
 	}
 }
 

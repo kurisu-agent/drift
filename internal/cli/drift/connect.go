@@ -52,28 +52,17 @@ func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps
 	// the flag-driven `-c <circuit>` override). The name path is identical
 	// to `drift kart connect <name>`.
 	if cmd.Name != "" {
-		cfg, circuit, err := resolveCircuit(root, deps)
+		_, circuit, err := resolveCircuit(root, deps)
 		if err != nil {
 			return errfmt.Emit(io.Stderr, err)
 		}
 		return doConnect(ctx, io, root, deps, circuit, cmd.Name, cmd.SSH, cmd.ForwardAgent,
-			mergeSSHArgs(cfg, circuit, cmd.SSHArgs))
+			expandCLISSHArgs(cmd.SSHArgs))
 	}
 
 	if !stdinIsTTY(io.Stdin) || !stdoutIsTTY(io.Stdout) || root.Output == "json" {
 		return errfmt.Emit(io.Stderr,
 			errors.New("drift connect requires a kart name (non-interactive)"))
-	}
-	// Load config up front so the picker result can look up per-circuit
-	// ssh_args. The picker itself re-reads cfg internally; the extra load
-	// here is one yaml parse on the happy path.
-	cfgPath, cErr := deps.clientConfigPath()
-	if cErr != nil {
-		return errfmt.Emit(io.Stderr, cErr)
-	}
-	cfg, cErr := config.LoadClient(cfgPath)
-	if cErr != nil {
-		return errfmt.Emit(io.Stderr, cErr)
 	}
 	choice, ok, pErr := pickConnectTarget(ctx, io, deps)
 	if pErr != nil {
@@ -84,10 +73,10 @@ func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps
 	}
 	if choice.Kart == "" {
 		return doCircuitConnect(ctx, io, root, choice.Circuit, cmd.SSH, cmd.ForwardAgent,
-			mergeSSHArgs(cfg, choice.Circuit, cmd.SSHArgs))
+			expandCLISSHArgs(cmd.SSHArgs))
 	}
 	return doConnect(ctx, io, root, deps, choice.Circuit, choice.Kart, cmd.SSH, cmd.ForwardAgent,
-		mergeSSHArgs(cfg, choice.Circuit, cmd.SSHArgs))
+		expandCLISSHArgs(cmd.SSHArgs))
 }
 
 // runKartConnect is the entry point for `drift kart connect [name]`. It
@@ -95,24 +84,16 @@ func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps
 // users who want a kart always get a kart.
 func runKartConnect(ctx context.Context, io IO, root *CLI, cmd kartConnectCmd, deps deps) int {
 	if cmd.Name != "" {
-		cfg, circuit, err := resolveCircuit(root, deps)
+		_, circuit, err := resolveCircuit(root, deps)
 		if err != nil {
 			return errfmt.Emit(io.Stderr, err)
 		}
 		return doConnect(ctx, io, root, deps, circuit, cmd.Name, cmd.SSH, cmd.ForwardAgent,
-			mergeSSHArgs(cfg, circuit, cmd.SSHArgs))
+			expandCLISSHArgs(cmd.SSHArgs))
 	}
 	if !stdinIsTTY(io.Stdin) || !stdoutIsTTY(io.Stdout) || root.Output == "json" {
 		return errfmt.Emit(io.Stderr,
 			errors.New("drift kart connect requires a kart name (non-interactive)"))
-	}
-	cfgPath, cErr := deps.clientConfigPath()
-	if cErr != nil {
-		return errfmt.Emit(io.Stderr, cErr)
-	}
-	cfg, cErr := config.LoadClient(cfgPath)
-	if cErr != nil {
-		return errfmt.Emit(io.Stderr, cErr)
 	}
 	pickedCircuit, pickedKart, ok, pErr := pickConnectKart(ctx, io, deps)
 	if pErr != nil {
@@ -122,7 +103,7 @@ func runKartConnect(ctx context.Context, io IO, root *CLI, cmd kartConnectCmd, d
 		return 0
 	}
 	return doConnect(ctx, io, root, deps, pickedCircuit, pickedKart, cmd.SSH, cmd.ForwardAgent,
-		mergeSSHArgs(cfg, pickedCircuit, cmd.SSHArgs))
+		expandCLISSHArgs(cmd.SSHArgs))
 }
 
 // runCircuitConnect is the entry point for `drift circuit connect [name]`
@@ -142,7 +123,7 @@ func runCircuitConnect(ctx context.Context, io IO, root *CLI, cmd circuitConnect
 			return errfmt.Emit(io.Stderr, fmt.Errorf("circuit %q not configured", cmd.Name))
 		}
 		return doCircuitConnect(ctx, io, root, cmd.Name, cmd.SSH, cmd.ForwardAgent,
-			mergeSSHArgs(cfg, cmd.Name, cmd.SSHArgs))
+			expandCLISSHArgs(cmd.SSHArgs))
 	}
 	if !stdinIsTTY(io.Stdin) || !stdoutIsTTY(io.Stdout) || root.Output == "json" {
 		return errfmt.Emit(io.Stderr,
@@ -156,7 +137,7 @@ func runCircuitConnect(ctx context.Context, io IO, root *CLI, cmd circuitConnect
 		return 0
 	}
 	return doCircuitConnect(ctx, io, root, picked, cmd.SSH, cmd.ForwardAgent,
-		mergeSSHArgs(cfg, picked, cmd.SSHArgs))
+		expandCLISSHArgs(cmd.SSHArgs))
 }
 
 // pickConnectKart fetches kart.list from every configured circuit in

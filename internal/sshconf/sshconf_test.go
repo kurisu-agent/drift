@@ -25,7 +25,7 @@ func newTestManager(t *testing.T, manage bool) (*Manager, Paths) {
 
 func TestWriteCircuitBlock_CreatesFileWithCanonicalFormat(t *testing.T) {
 	m, paths := newTestManager(t, true)
-	if err := m.WriteCircuitBlock("my-server", "my-server.example.com", "dev"); err != nil {
+	if err := m.WriteCircuitBlock("my-server", "my-server.example.com", "dev", nil); err != nil {
 		t.Fatalf("WriteCircuitBlock: %v", err)
 	}
 	got := readFile(t, paths.ManagedSSHConfig)
@@ -49,9 +49,46 @@ func TestWriteCircuitBlock_CreatesFileWithCanonicalFormat(t *testing.T) {
 	}
 }
 
+// TestWriteCircuitBlock_EmitsSSHMap locks in the client-config `ssh:`
+// map rendering. Each entry becomes a `<Key> <Value>` line in the
+// generated block, emitted in sorted key order so repeated reconciles
+// produce byte-identical output. Empty values are skipped.
+func TestWriteCircuitBlock_EmitsSSHMap(t *testing.T) {
+	m, paths := newTestManager(t, true)
+	ssh := map[string]string{
+		"IdentityFile":   "~/.ssh/lab_ed25519",
+		"Port":           "2222",
+		"ForwardAgent":   "yes",
+		"IdentitiesOnly": "yes",
+		"Empty":          "   ", // whitespace-only values are dropped
+	}
+	if err := m.WriteCircuitBlock("lab", "lab.example.com", "dev", ssh); err != nil {
+		t.Fatalf("WriteCircuitBlock: %v", err)
+	}
+	got := readFile(t, paths.ManagedSSHConfig)
+	want := strings.Join([]string{
+		"Host drift.lab",
+		"  HostName lab.example.com",
+		"  User dev",
+		"  ForwardAgent yes",
+		"  IdentitiesOnly yes",
+		"  IdentityFile ~/.ssh/lab_ed25519",
+		"  Port 2222",
+		"  ControlMaster auto",
+		"  ControlPath ~/.config/drift/sockets/cm-%r@%h:%p",
+		"  ControlPersist 10m",
+		"  ServerAliveInterval 30",
+		"  ServerAliveCountMax 3",
+		"",
+	}, "\n")
+	if got != want {
+		t.Fatalf("managed ssh_config mismatch.\n got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 func TestWriteCircuitBlock_OmitsUserWhenEmpty(t *testing.T) {
 	m, paths := newTestManager(t, true)
-	if err := m.WriteCircuitBlock("srv", "srv.example.com", ""); err != nil {
+	if err := m.WriteCircuitBlock("srv", "srv.example.com", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	got := readFile(t, paths.ManagedSSHConfig)
@@ -65,11 +102,11 @@ func TestWriteCircuitBlock_OmitsUserWhenEmpty(t *testing.T) {
 
 func TestWriteCircuitBlock_IdempotentReRun(t *testing.T) {
 	m, paths := newTestManager(t, true)
-	if err := m.WriteCircuitBlock("srv", "srv.example.com", "dev"); err != nil {
+	if err := m.WriteCircuitBlock("srv", "srv.example.com", "dev", nil); err != nil {
 		t.Fatal(err)
 	}
 	first := readFile(t, paths.ManagedSSHConfig)
-	if err := m.WriteCircuitBlock("srv", "srv.example.com", "dev"); err != nil {
+	if err := m.WriteCircuitBlock("srv", "srv.example.com", "dev", nil); err != nil {
 		t.Fatal(err)
 	}
 	second := readFile(t, paths.ManagedSSHConfig)
@@ -80,13 +117,13 @@ func TestWriteCircuitBlock_IdempotentReRun(t *testing.T) {
 
 func TestWriteCircuitBlock_ReplacesExistingBlockInPlace(t *testing.T) {
 	m, paths := newTestManager(t, true)
-	if err := m.WriteCircuitBlock("a", "a.example.com", "olduser"); err != nil {
+	if err := m.WriteCircuitBlock("a", "a.example.com", "olduser", nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.WriteCircuitBlock("b", "b.example.com", "bob"); err != nil {
+	if err := m.WriteCircuitBlock("b", "b.example.com", "bob", nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.WriteCircuitBlock("a", "a.example.com", "newuser"); err != nil {
+	if err := m.WriteCircuitBlock("a", "a.example.com", "newuser", nil); err != nil {
 		t.Fatal(err)
 	}
 	got := readFile(t, paths.ManagedSSHConfig)
@@ -109,7 +146,7 @@ func TestWriteCircuitBlock_KeepsWildcardAtEnd(t *testing.T) {
 	if err := m.EnsureWildcardBlock(); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.WriteCircuitBlock("srv", "srv.example.com", "dev"); err != nil {
+	if err := m.WriteCircuitBlock("srv", "srv.example.com", "dev", nil); err != nil {
 		t.Fatal(err)
 	}
 	got := readFile(t, paths.ManagedSSHConfig)
@@ -125,7 +162,7 @@ func TestWriteCircuitBlock_KeepsWildcardAtEnd(t *testing.T) {
 
 func TestRemoveCircuitBlock_Idempotent(t *testing.T) {
 	m, paths := newTestManager(t, true)
-	if err := m.WriteCircuitBlock("srv", "srv.example.com", "dev"); err != nil {
+	if err := m.WriteCircuitBlock("srv", "srv.example.com", "dev", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := m.RemoveCircuitBlock("srv"); err != nil {
@@ -171,10 +208,10 @@ func TestAddReAddRmRoundTrip(t *testing.T) {
 	baseline := readFile(t, paths.ManagedSSHConfig)
 
 	// Add → re-add → rm.
-	if err := m.WriteCircuitBlock("srv", "srv.example.com", "dev"); err != nil {
+	if err := m.WriteCircuitBlock("srv", "srv.example.com", "dev", nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.WriteCircuitBlock("srv", "srv.example.com", "dev"); err != nil {
+	if err := m.WriteCircuitBlock("srv", "srv.example.com", "dev", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := m.RemoveCircuitBlock("srv"); err != nil {
@@ -325,7 +362,7 @@ func TestManageFalse_ProducesZeroFilesystemWrites(t *testing.T) {
 	if err := m.EnsureSocketsDir(); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.WriteCircuitBlock("srv", "srv.example.com", "dev"); err != nil {
+	if err := m.WriteCircuitBlock("srv", "srv.example.com", "dev", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := m.RemoveCircuitBlock("srv"); err != nil {
@@ -395,10 +432,10 @@ func TestParseManaged_RoundTripsUserBlock(t *testing.T) {
 
 func TestListCircuits(t *testing.T) {
 	m, _ := newTestManager(t, true)
-	if err := m.WriteCircuitBlock("alpha", "a.example.com", "dev"); err != nil {
+	if err := m.WriteCircuitBlock("alpha", "a.example.com", "dev", nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.WriteCircuitBlock("beta", "b.example.com", "dev"); err != nil {
+	if err := m.WriteCircuitBlock("beta", "b.example.com", "dev", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := m.EnsureWildcardBlock(); err != nil {
@@ -436,10 +473,10 @@ func TestAddThenRmRestoresUserSSHConfigByteIdentical(t *testing.T) {
 	managedBaseline := readFile(t, paths.ManagedSSHConfig)
 
 	// add → re-add → rm
-	if err := m.WriteCircuitBlock("srv", "srv.example.com", "dev"); err != nil {
+	if err := m.WriteCircuitBlock("srv", "srv.example.com", "dev", nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.WriteCircuitBlock("srv", "srv.example.com", "dev"); err != nil {
+	if err := m.WriteCircuitBlock("srv", "srv.example.com", "dev", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := m.RemoveCircuitBlock("srv"); err != nil {
@@ -463,6 +500,102 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(data)
+}
+
+// TestReconcile_WritesMissingBlock covers the core hand-edit flow: a
+// circuit exists in config.yaml but the managed ssh_config has no
+// Host block for it yet. Reconcile must write the block on first
+// drift invocation.
+func TestReconcile_WritesMissingBlock(t *testing.T) {
+	m, paths := newTestManager(t, true)
+	err := m.Reconcile(paths.UserSSHConfig, []CircuitSpec{
+		{Circuit: "devprox", Host: "devprox", User: "dev", SSH: map[string]string{"IdentityFile": "~/.ssh/dob"}},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	got := readFile(t, paths.ManagedSSHConfig)
+	if !strings.Contains(got, "Host drift.devprox") {
+		t.Errorf("managed file missing circuit block:\n%s", got)
+	}
+	if !strings.Contains(got, "IdentityFile ~/.ssh/dob") {
+		t.Errorf("managed file missing IdentityFile directive:\n%s", got)
+	}
+	if !strings.Contains(got, "Host "+WildcardHost) {
+		t.Errorf("managed file missing wildcard block:\n%s", got)
+	}
+}
+
+// TestReconcile_UpdatesStaleBlock: user hand-edits ~/.config/drift/config.yaml
+// to add an IdentityFile under circuits.<name>.ssh. Reconcile must
+// rewrite the existing block to match — otherwise RPCs still fail.
+func TestReconcile_UpdatesStaleBlock(t *testing.T) {
+	m, paths := newTestManager(t, true)
+	// Seed an existing, stale block (no IdentityFile, wrong hostname).
+	if err := m.WriteCircuitBlock("devprox", "old.example.com", "dev", nil); err != nil {
+		t.Fatalf("seed WriteCircuitBlock: %v", err)
+	}
+	err := m.Reconcile(paths.UserSSHConfig, []CircuitSpec{
+		{Circuit: "devprox", Host: "devprox.new.example.com", User: "dev", SSH: map[string]string{"IdentityFile": "~/.ssh/dob"}},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	got := readFile(t, paths.ManagedSSHConfig)
+	if strings.Contains(got, "old.example.com") {
+		t.Errorf("stale HostName still present:\n%s", got)
+	}
+	if !strings.Contains(got, "HostName devprox.new.example.com") {
+		t.Errorf("new HostName missing:\n%s", got)
+	}
+	if !strings.Contains(got, "IdentityFile ~/.ssh/dob") {
+		t.Errorf("new IdentityFile missing:\n%s", got)
+	}
+}
+
+// TestReconcile_NoopOnMatch: when every circuit's block already
+// matches what config.yaml says, Reconcile must not rewrite the file.
+// Pre-mod mtime should survive.
+func TestReconcile_NoopOnMatch(t *testing.T) {
+	m, paths := newTestManager(t, true)
+	specs := []CircuitSpec{
+		{Circuit: "lab", Host: "lab.example.com", User: "dev", SSH: map[string]string{"Port": "2222"}},
+	}
+	// Seed via Reconcile so block matches exactly.
+	if err := m.Reconcile(paths.UserSSHConfig, specs); err != nil {
+		t.Fatalf("seed Reconcile: %v", err)
+	}
+	beforeStat, err := os.Stat(paths.ManagedSSHConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Second Reconcile with identical specs: should be a no-op.
+	if err := m.Reconcile(paths.UserSSHConfig, specs); err != nil {
+		t.Fatalf("Reconcile again: %v", err)
+	}
+	afterStat, err := os.Stat(paths.ManagedSSHConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !afterStat.ModTime().Equal(beforeStat.ModTime()) {
+		t.Errorf("managed file rewritten despite match: before=%v after=%v",
+			beforeStat.ModTime(), afterStat.ModTime())
+	}
+}
+
+// TestReconcile_NoopWhenManageFalse: Options.Manage=false short-circuits
+// before any file touch.
+func TestReconcile_NoopWhenManageFalse(t *testing.T) {
+	m, paths := newTestManager(t, false)
+	err := m.Reconcile(paths.UserSSHConfig, []CircuitSpec{
+		{Circuit: "lab", Host: "lab.example.com", User: "dev"},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if _, err := os.Stat(paths.ManagedSSHConfig); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("managed file exists despite Manage=false: err=%v", err)
+	}
 }
 
 func writeFileHelper(t *testing.T, path, content string, mode os.FileMode) {

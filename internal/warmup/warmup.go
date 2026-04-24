@@ -46,7 +46,7 @@ type Deps struct {
 	SaveClientConfig func(*config.Client) error
 
 	// WriteSSHBlock: nil skips SSH integration (the --no-ssh-config case).
-	WriteSSHBlock func(circuit, hostPart, userPart string) error
+	WriteSSHBlock func(circuit, hostPart, userPart string, ssh map[string]string) error
 
 	// Probe is the cheap post-add health probe used in the summary phase;
 	// shares the signature with cli/drift.defaultProbe. ProbeInfo is the
@@ -221,7 +221,7 @@ func addOneCircuit(ctx context.Context, opts Options, deps Deps, br *bufio.Reade
 		return err
 	}
 	if deps.WriteSSHBlock != nil && cfg.ManagesSSHConfig() {
-		if err := deps.WriteSSHBlock(circuitName, hostPart, userPart); err != nil {
+		if err := deps.WriteSSHBlock(circuitName, hostPart, userPart, nil); err != nil {
 			return err
 		}
 		fmt.Fprintf(w, "  wrote SSH config block drift.%s\n", circuitName)
