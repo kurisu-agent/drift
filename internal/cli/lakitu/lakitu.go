@@ -145,7 +145,7 @@ func runVersion(io IO, cmd versionCmd) int {
 		}
 		fmt.Fprintln(io.Stdout, string(buf))
 	default:
-		fmt.Fprintf(io.Stdout, "lakitu %s\n", info.Version)
+		fmt.Fprintln(io.Stdout, info.Format("lakitu"))
 	}
 	return 0
 }
