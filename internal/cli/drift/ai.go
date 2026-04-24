@@ -22,9 +22,10 @@ type aiCmd struct {
 	ForwardAgent bool `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
 }
 
-// bareClaudeCommand is the remote shell snippet `drift ai` hands to
-// ssh/mosh. Kept client-side — no RPC round-trip is needed because the
-// command is fixed and the server has no say in the shape.
+// bareClaudeCommand is the inner remote shell snippet `drift ai` hands
+// to ssh/mosh (before the shared zellij wrap is applied). Kept client-
+// side — no RPC round-trip is needed because the command is fixed and
+// the server has no say in the shape.
 const bareClaudeCommand = `cd "$HOME/.drift" && exec claude --dangerously-skip-permissions`
 
 func runAIExec(ctx context.Context, io IO, root *CLI, cmd aiCmd, deps deps) int {
@@ -34,7 +35,7 @@ func runAIExec(ctx context.Context, io IO, root *CLI, cmd aiCmd, deps deps) int 
 	}
 
 	useMosh := !cmd.SSH && moshOnPath()
-	bin, argv := buildRunArgv(wire.RunModeInteractive, useMosh, circuit, cmd.ForwardAgent, bareClaudeCommand)
+	bin, argv := buildRunArgv(wire.RunModeInteractive, useMosh, circuit, cmd.ForwardAgent, wrapWithZellij(bareClaudeCommand))
 
 	p := style.For(io.Stderr, root.Output == "json")
 	if p.Enabled {
