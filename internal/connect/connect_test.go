@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,10 +14,50 @@ import (
 )
 
 // serverArgv is what a modern lakitu returns from kart.connect: the
-// actual remote-command token stream including a DEVPOD_HOME env prefix
-// and an absolute devpod path. The client splices this into the ssh/mosh
-// argv verbatim, so the test fixtures assert on the exact sequence.
-var serverArgv = []string{"env", "DEVPOD_HOME=/h/.drift/devpod", "/bin/devpod", "ssh", "k"}
+// actual remote-command token stream including a DEVPOD_HOME env prefix,
+// an absolute devpod path, and the pinned --agent-forwarding=false flag.
+// The client splices this into the ssh argv verbatim, and wraps it in a
+// `script -qfc …` shell token on the mosh argv.
+var serverArgv = []string{
+	"env", "DEVPOD_HOME=/h/.drift/devpod",
+	"/bin/devpod", "ssh", "k",
+	"--agent-forwarding=false",
+}
+
+// moshLocalePrefix mirrors the `env -u …` prefix buildConnectArgv emits
+// on the mosh path to strip locale forwarding. Kept in lockstep with
+// connect.go's moshLocaleStrip — if that list changes, this does too.
+var moshLocalePrefix = []string{
+	"-u", "LANG", "-u", "LANGUAGE",
+	"-u", "LC_ALL", "-u", "LC_CTYPE", "-u", "LC_NUMERIC", "-u", "LC_TIME",
+	"-u", "LC_COLLATE", "-u", "LC_MONETARY", "-u", "LC_MESSAGES",
+	"-u", "LC_PAPER", "-u", "LC_NAME", "-u", "LC_ADDRESS",
+	"-u", "LC_TELEPHONE", "-u", "LC_MEASUREMENT", "-u", "LC_IDENTIFICATION",
+}
+
+// moshExpected assembles the argv the mosh path produces: env-unset
+// prefix + mosh-args + the remote wrapped in `script -qfc '<quoted>'
+// /dev/null`. Tests pass the mosh-specific middle (e.g. `drift.c --`)
+// and the serverArgv-equivalent remote.
+func moshExpected(moshMid []string, remote []string) []string {
+	out := make([]string, 0, len(moshLocalePrefix)+1+len(moshMid)+4)
+	out = append(out, moshLocalePrefix...)
+	out = append(out, "mosh")
+	out = append(out, moshMid...)
+	out = append(out, "script", "-qfc", connectShellQuote(remote), "/dev/null")
+	return out
+}
+
+// connectShellQuote mirrors connect.posixQuote / shellQuoteArgs — the
+// tests can't reach the unexported helper, so reimplement it here with
+// the same escaping rules.
+func connectShellQuote(args []string) string {
+	parts := make([]string, 0, len(args))
+	for _, a := range args {
+		parts = append(parts, "'"+strings.ReplaceAll(a, "'", `'\''`)+"'")
+	}
+	return strings.Join(parts, " ")
+}
 
 type fakeServer struct {
 	statuses    []string // queued responses for successive kart.info calls
@@ -124,10 +165,10 @@ func TestRunStoppedKartTriggersStart(t *testing.T) {
 	if f.starts != 1 {
 		t.Errorf("starts = %d, want 1", f.starts)
 	}
-	if rec.bin != "mosh" {
-		t.Errorf("bin = %q, want mosh", rec.bin)
+	if rec.bin != "env" {
+		t.Errorf("bin = %q, want env (mosh invocation is locale-stripped)", rec.bin)
 	}
-	wantArgv := append([]string{"drift.c", "--"}, serverArgv...)
+	wantArgv := moshExpected([]string{"drift.c", "--"}, serverArgv)
 	if !equal(rec.argv, wantArgv) {
 		t.Errorf("argv = %v, want %v", rec.argv, wantArgv)
 	}
@@ -224,14 +265,11 @@ func TestRunSSHArgsForwardsThroughMosh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if rec.bin != "mosh" {
-		t.Errorf("bin = %q, want mosh", rec.bin)
+	if rec.bin != "env" {
+		t.Errorf("bin = %q, want env (mosh invocation is locale-stripped)", rec.bin)
 	}
 	wantOverride := `--ssh=ssh '-i' '/k/has space/id' '-o' 'Foo='\''bar'\'''`
-	wantArgv := append(
-		[]string{wantOverride, "drift.c", "--"},
-		serverArgv...,
-	)
+	wantArgv := moshExpected([]string{wantOverride, "drift.c", "--"}, serverArgv)
 	if !equal(rec.argv, wantArgv) {
 		t.Errorf("argv = %v\n want %v", rec.argv, wantArgv)
 	}

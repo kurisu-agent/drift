@@ -181,17 +181,34 @@ func buildConnectArgv(useMosh bool, opts Options, remote []string) (string, []st
 	// + --set-env pairs) or the legacy hand-built one. Either way we
 	// only have to splice it into the transport argv here.
 	if useMosh {
-		var argv []string
+		// Build the mosh argv, then wrap the whole thing in `env -u LANG
+		// -u LC_...` so mosh's perl wrapper sees no locale env vars and
+		// doesn't forward them to the circuit via `-l KEY=VALUE`. The
+		// forwarded locales are typically absent from the circuit's
+		// glibc and produce `setlocale: cannot change locale (...)` noise
+		// without adding value — the circuit's own defaults are what we
+		// want anyway.
+		moshArgv := []string{"mosh"}
 		if len(opts.SSHArgs) > 0 {
 			// mosh uses ssh to bootstrap mosh-server on the remote end;
 			// --ssh="ssh <args>" swaps in our flag-ladened ssh invocation
 			// for that bootstrap. mosh shell-splits the value, so each arg
 			// is POSIX-single-quoted to survive paths with spaces or '.
-			argv = append(argv, "--ssh="+BuildMoshSSHOverride(opts.SSHArgs))
+			moshArgv = append(moshArgv, "--ssh="+BuildMoshSSHOverride(opts.SSHArgs))
 		}
-		argv = append(argv, target, "--")
-		argv = append(argv, remote...)
-		return "mosh", argv
+		moshArgv = append(moshArgv, target, "--")
+		// Wrap `remote` in `script -qfc '<shell-quoted cmd>' /dev/null`.
+		// mosh-server gives its child stdin=PTY but stdout/stderr=pipes
+		// (so it can multiplex output over UDP); `devpod ssh` sees the
+		// asymmetric fd state and declines to request a remote PTY,
+		// leaving the container shell running on pipes (non-interactive
+		// → zshrc's `[[ ! -o interactive ]]` guard returns → blank
+		// screen). `script` allocates a real PTY across all three fds
+		// before devpod inspects them, which propagates through to the
+		// container shell.
+		moshArgv = append(moshArgv, "script", "-qfc", shellQuoteArgs(remote), "/dev/null")
+
+		return WrapMoshForLocaleStrip(moshArgv)
 	}
 	sshArgs := []string{"-t"}
 	if opts.ForwardAgent {
@@ -207,6 +224,34 @@ func buildConnectArgv(useMosh bool, opts Options, remote []string) (string, []st
 	return "ssh", sshArgs
 }
 
+// moshLocaleStrip names the env vars mosh's perl wrapper would otherwise
+// forward to the circuit via `-l KEY=VALUE` flags. Forwarding them is
+// lossy (the server often lacks the locale and glibc complains) and
+// provides no value over the circuit's own defaults, so the mosh
+// invocation is prefixed with `env -u <each>` to drop them.
+var moshLocaleStrip = []string{
+	"LANG", "LANGUAGE",
+	"LC_ALL", "LC_CTYPE", "LC_NUMERIC", "LC_TIME",
+	"LC_COLLATE", "LC_MONETARY", "LC_MESSAGES",
+	"LC_PAPER", "LC_NAME", "LC_ADDRESS",
+	"LC_TELEPHONE", "LC_MEASUREMENT", "LC_IDENTIFICATION",
+}
+
+// WrapMoshForLocaleStrip wraps a full `mosh <args>` argv so the process
+// runs under `env -u LANG -u LC_…` and mosh's perl wrapper sees no
+// locale env vars to forward. Callers pass the mosh argv with "mosh" as
+// its first element; the helper returns (bin="env", argv=["-u", LANG,
+// …, "mosh", …caller args]). Shared between the kart-connect path and
+// the circuit-shell path so both exhibit the same locale behaviour.
+func WrapMoshForLocaleStrip(moshArgv []string) (string, []string) {
+	argv := make([]string, 0, 2*len(moshLocaleStrip)+len(moshArgv))
+	for _, v := range moshLocaleStrip {
+		argv = append(argv, "-u", v)
+	}
+	argv = append(argv, moshArgv...)
+	return "env", argv
+}
+
 // BuildMoshSSHOverride assembles the value for mosh's --ssh=... flag:
 // `ssh <arg1> <arg2> …`, each arg POSIX-single-quoted. Single quotes
 // inside an arg close-escape-reopen via the standard `'\”` idiom.
@@ -214,9 +259,26 @@ func BuildMoshSSHOverride(args []string) string {
 	parts := make([]string, 0, 1+len(args))
 	parts = append(parts, "ssh")
 	for _, a := range args {
-		parts = append(parts, "'"+strings.ReplaceAll(a, "'", `'\''`)+"'")
+		parts = append(parts, posixQuote(a))
 	}
 	return strings.Join(parts, " ")
+}
+
+// shellQuoteArgs joins args with POSIX single-quoting so the result is
+// safe to hand to `sh -c` / `script -c`. Mirrors the quoting in
+// BuildMoshSSHOverride but without the leading "ssh" token.
+func shellQuoteArgs(args []string) string {
+	parts := make([]string, 0, len(args))
+	for _, a := range args {
+		parts = append(parts, posixQuote(a))
+	}
+	return strings.Join(parts, " ")
+}
+
+// posixQuote wraps a single arg in POSIX single quotes, using the
+// standard `'\”` idiom to embed literal single quotes.
+func posixQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func ensureRunning(ctx context.Context, d Deps, opts Options) error {

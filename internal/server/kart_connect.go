@@ -69,10 +69,19 @@ func (d KartDeps) kartConnectHandler(ctx context.Context, params json.RawMessage
 }
 
 // buildKartConnectArgv produces the bare `env DEVPOD_HOME=... devpod ssh
-// <kart>` prefix. Split out so the test can pin the exact shape without
-// spinning up a full KartDeps fixture. DevpodHome empty means "don't
-// inject" — covers the fallback for tests / zero-value clients; in
-// production lakitu always sets it.
+// <kart> --agent-forwarding=false` prefix. Split out so the test can pin
+// the exact shape without spinning up a full KartDeps fixture. DevpodHome
+// empty means "don't inject" — covers the fallback for tests / zero-value
+// clients; in production lakitu always sets it.
+//
+// `--agent-forwarding=false` is pinned because drift's model puts
+// credentials on the server (characters + chest), so forwarding the
+// workstation's ssh-agent into the container is both unnecessary and
+// actively harmful: devpod inherits SSH_AUTH_SOCK from the outer
+// transport, and under mosh that socket is always stale by the time
+// devpod dials it (mosh-server detaches, outer ssh closes, sshd unlinks
+// the socket), causing `devpod ssh` to exit fatal before the session
+// starts.
 func buildKartConnectArgv(c *devpod.Client, kart string) []string {
 	binary := devpod.DefaultBinary
 	if c != nil && c.Binary != "" {
@@ -82,7 +91,7 @@ func buildKartConnectArgv(c *devpod.Client, kart string) []string {
 	if c != nil && c.DevpodHome != "" {
 		argv = append(argv, "env", "DEVPOD_HOME="+c.DevpodHome)
 	}
-	argv = append(argv, binary, "ssh", kart)
+	argv = append(argv, binary, "ssh", kart, "--agent-forwarding=false")
 	return argv
 }
 

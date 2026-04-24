@@ -63,7 +63,7 @@ func TestKartConnectReturnsEnvPrefixedArgv(t *testing.T) {
 	want := []string{
 		"env", "DEVPOD_HOME=/home/u/.drift/devpod",
 		"/home/u/.drift/bin/devpod",
-		"ssh", "alpha",
+		"ssh", "alpha", "--agent-forwarding=false",
 	}
 	if len(got.Argv) != len(want) {
 		t.Fatalf("argv = %v, want %v", got.Argv, want)
@@ -112,7 +112,7 @@ func TestKartConnectOmitsEnvPrefixWhenDevpodHomeUnset(t *testing.T) {
 	if err := json.Unmarshal(resp.Result, &got); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"/bin/devpod", "ssh", "beta"}
+	want := []string{"/bin/devpod", "ssh", "beta", "--agent-forwarding=false"}
 	if len(got.Argv) != len(want) {
 		t.Fatalf("argv = %v, want %v", got.Argv, want)
 	}
