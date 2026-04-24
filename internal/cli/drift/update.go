@@ -28,6 +28,15 @@ import (
 const maxUpdateTarEntry = 200 << 20
 
 type updateCmd struct {
+	// Source is an optional positional arg. When set, drift self-replaces
+	// from the given source instead of the latest GitHub release. Accepted
+	// forms:
+	//   - `user@host:path` or `host:path` — pulled via scp.
+	//   - `http://…` / `https://…` — direct download (raw binary, not a tarball).
+	//   - `/abs/path` or `./rel/path` or `~/path` — copied from the local disk.
+	// Handy for iterating on drift from a feature branch: build on a
+	// sandbox host, `drift update host:path/to/drift` from your workstation.
+	Source  string `arg:"" optional:"" name:"source" help:"Dev override: pull the drift binary from an scp path, URL, or local file instead of fetching the latest GitHub release."`
 	Check   bool   `help:"Check for an update without downloading."`
 	Repo    string `name:"repo" hidden:"" default:"kurisu-agent/drift"`
 	APIBase string `name:"api-base" hidden:"" default:"https://api.github.com"`
@@ -46,6 +55,9 @@ type ghAsset struct {
 }
 
 func runUpdate(ctx context.Context, ioStreams IO, cmd updateCmd) int {
+	if cmd.Source != "" {
+		return runUpdateFromSource(ctx, ioStreams, cmd.Source)
+	}
 	cur := version.Get().Version
 	fmt.Fprintln(ioStreams.Stderr, "→ checking latest release")
 	latest, err := fetchLatestRelease(ctx, cmd.APIBase, cmd.Repo)
@@ -289,6 +301,120 @@ func (pr *progressReader) draw(final bool) {
 	if final {
 		fmt.Fprintln(pr.out)
 	}
+}
+
+// runUpdateFromSource self-replaces from an scp target / URL / local
+// path instead of the GitHub release channel. Source is treated as a
+// raw binary — no tarball unwrap — so the host side is just a
+// `go build -o drift ./cmd/drift` output, nothing more. No version
+// check (dev builds are the expected caller here) and no `--check`
+// support: if you passed a source, you want that source installed.
+func runUpdateFromSource(ctx context.Context, ioStreams IO, source string) int {
+	exe, err := resolveSelfPath()
+	if err != nil {
+		return errfmt.Emit(ioStreams.Stderr, err)
+	}
+	fmt.Fprintf(ioStreams.Stderr, "→ pulling drift from %s\n", source)
+	data, err := readBinarySource(ctx, source, ioStreams.Stderr)
+	if err != nil {
+		return errfmt.Emit(ioStreams.Stderr, err)
+	}
+	if len(data) < 1024 {
+		return errfmt.Emit(ioStreams.Stderr,
+			fmt.Errorf("source %s is %d bytes — too small to be a drift binary; refusing to install", source, len(data)))
+	}
+	fmt.Fprintf(ioStreams.Stderr, "→ writing %s (%s)\n", exe, humanBytes(int64(len(data))))
+	if err := config.WriteFileAtomic(exe, data, 0o755); err != nil {
+		return errfmt.Emit(ioStreams.Stderr, err)
+	}
+	fmt.Fprintf(ioStreams.Stdout, "replaced %s from %s\n", exe, source)
+	return 0
+}
+
+func readBinarySource(ctx context.Context, source string, progress io.Writer) ([]byte, error) {
+	switch {
+	case strings.HasPrefix(source, "http://"), strings.HasPrefix(source, "https://"):
+		return downloadRaw(ctx, source, progress)
+	case looksLikeSCPTarget(source):
+		return fetchViaSCP(ctx, source, progress)
+	default:
+		path, err := expandLocalPath(source)
+		if err != nil {
+			return nil, err
+		}
+		return os.ReadFile(path)
+	}
+}
+
+// looksLikeSCPTarget returns true for `host:path` or `user@host:path`
+// shapes — the `host` portion has to be something an ssh client would
+// accept, so we reject anything that looks like a filesystem path (has
+// a `/` before the first `:`) or a URL scheme.
+func looksLikeSCPTarget(s string) bool {
+	if strings.HasPrefix(s, "/") || strings.HasPrefix(s, "./") || strings.HasPrefix(s, "../") || strings.HasPrefix(s, "~") {
+		return false
+	}
+	idx := strings.Index(s, ":")
+	if idx <= 0 || idx == len(s)-1 {
+		return false
+	}
+	host := s[:idx]
+	// `://` means URL, not scp.
+	if strings.HasPrefix(s[idx:], "://") {
+		return false
+	}
+	// A plausible scp target's `host` segment has no slashes or spaces.
+	return !strings.ContainsAny(host, "/ ")
+}
+
+func fetchViaSCP(ctx context.Context, source string, progress io.Writer) ([]byte, error) {
+	tmp, err := os.CreateTemp("", "drift-update-scp-*")
+	if err != nil {
+		return nil, err
+	}
+	_ = tmp.Close()
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	cmd := osexec.CommandContext(ctx, "scp", "-q", source, tmp.Name())
+	cmd.Stdout = progress
+	cmd.Stderr = progress
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("scp %s: %w", source, err)
+	}
+	return os.ReadFile(tmp.Name())
+}
+
+func downloadRaw(ctx context.Context, url string, progress io.Writer) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("download %s: %s", url, resp.Status)
+	}
+	body := io.Reader(resp.Body)
+	if progress != nil {
+		body = newProgressReader(resp.Body, resp.ContentLength, progress)
+	}
+	return io.ReadAll(body)
+}
+
+func expandLocalPath(p string) (string, error) {
+	if strings.HasPrefix(p, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, p[2:]), nil
+	}
+	if p == "~" {
+		return os.UserHomeDir()
+	}
+	return p, nil
 }
 
 // humanBytes renders sizes in IEC units (KiB/MiB/GiB) since CDN downloads
