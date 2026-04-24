@@ -224,30 +224,46 @@ func buildConnectArgv(useMosh bool, opts Options, remote []string) (string, []st
 	return "ssh", sshArgs
 }
 
-// moshLocaleStrip names the env vars mosh's perl wrapper would otherwise
-// forward to the circuit via `-l KEY=VALUE` flags. Forwarding them is
-// lossy (the server often lacks the locale and glibc complains) and
-// provides no value over the circuit's own defaults, so the mosh
-// invocation is prefixed with `env -u <each>` to drop them.
+// moshLocaleStrip names the per-category locale vars to drop before
+// exec-ing mosh so the perl wrapper doesn't forward a workstation-local
+// value (e.g. `ja_JP.UTF-8`) the circuit's glibc probably lacks. LANG
+// and LC_ALL are NOT on this list — those are force-set to `C.UTF-8`
+// below, because mosh-client itself reads them to pick its terminal
+// charset and falls back to US-ASCII (and refuses to run) when the
+// only visible LC_* is the POSIX default.
 var moshLocaleStrip = []string{
-	"LANG", "LANGUAGE",
-	"LC_ALL", "LC_CTYPE", "LC_NUMERIC", "LC_TIME",
+	"LANGUAGE",
+	"LC_CTYPE", "LC_NUMERIC", "LC_TIME",
 	"LC_COLLATE", "LC_MONETARY", "LC_MESSAGES",
 	"LC_PAPER", "LC_NAME", "LC_ADDRESS",
 	"LC_TELEPHONE", "LC_MEASUREMENT", "LC_IDENTIFICATION",
 }
 
+// moshLocaleForce names the locale vars we set on the mosh invocation.
+// `C.UTF-8` is the most universally-available UTF-8 locale on modern
+// glibc — mosh-client is happy (UTF-8 native), and on the server side
+// LC_ALL takes precedence over any stragglers so the user doesn't see
+// `setlocale: cannot change locale` spam even if workstation LC_*
+// slipped through.
+var moshLocaleForce = []string{
+	"LANG=C.UTF-8",
+	"LC_ALL=C.UTF-8",
+}
+
 // WrapMoshForLocaleStrip wraps a full `mosh <args>` argv so the process
-// runs under `env -u LANG -u LC_…` and mosh's perl wrapper sees no
-// locale env vars to forward. Callers pass the mosh argv with "mosh" as
-// its first element; the helper returns (bin="env", argv=["-u", LANG,
-// …, "mosh", …caller args]). Shared between the kart-connect path and
-// the circuit-shell path so both exhibit the same locale behaviour.
+// runs under `env -u <per-category LC_*> LANG=C.UTF-8 LC_ALL=C.UTF-8`.
+// That neutralises the workstation's locale without leaving mosh-client
+// in a POSIX/US-ASCII environment it refuses to run under. Callers pass
+// the mosh argv with "mosh" as its first element; the helper returns
+// (bin="env", argv=[…strip+force…, "mosh", …caller args]). Shared
+// between the kart-connect path and the circuit-shell path so both
+// exhibit the same locale behaviour.
 func WrapMoshForLocaleStrip(moshArgv []string) (string, []string) {
-	argv := make([]string, 0, 2*len(moshLocaleStrip)+len(moshArgv))
+	argv := make([]string, 0, 2*len(moshLocaleStrip)+len(moshLocaleForce)+len(moshArgv))
 	for _, v := range moshLocaleStrip {
 		argv = append(argv, "-u", v)
 	}
+	argv = append(argv, moshLocaleForce...)
 	argv = append(argv, moshArgv...)
 	return "env", argv
 }
