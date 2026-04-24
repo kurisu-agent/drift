@@ -525,11 +525,15 @@ func doCircuitConnect(ctx context.Context, io IO, root *CLI, circuit string, for
 	bin := "ssh"
 	var argv []string
 	if transport == "mosh" {
-		bin = "mosh"
+		moshArgv := []string{"mosh"}
 		if len(sshArgs) > 0 {
-			argv = append(argv, "--ssh="+connect.BuildMoshSSHOverride(sshArgs))
+			moshArgv = append(moshArgv, "--ssh="+connect.BuildMoshSSHOverride(sshArgs))
 		}
-		argv = append(argv, target)
+		moshArgv = append(moshArgv, target)
+		// Locale-strip the mosh invocation so the perl wrapper doesn't
+		// forward LANG/LC_* to the circuit (typically absent locales,
+		// glibc noise; the circuit's own defaults are what we want).
+		bin, argv = connect.WrapMoshForLocaleStrip(moshArgv)
 	} else {
 		argv = []string{"-t"}
 		if forwardAgent {
