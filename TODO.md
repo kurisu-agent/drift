@@ -1,30 +1,18 @@
-# drift — MVP development plan
+# drift — TODOs
 
-Execution checklist derived from [`plans/archive/01-original-plan.md`](./plans/archive/01-original-plan.md). The original plan remains the contract/spec; this file is the ordered punch list to MVP.
-
-**MVP definition.** A user can: install lakitu on a Linux circuit, install drift on a workstation, run `drift init` to register the circuit + a character, run `drift new <name> --clone <url>`, and `drift connect <name>` into a devcontainer over mosh. All commands in [CLI design](./plans/archive/01-original-plan.md#cli-design) work end-to-end. Everything in [Future](./plans/archive/01-original-plan.md#future) is explicitly out of scope.
-
-Legend: `[x]` done · `[ ]` open · `[~]` partial.
-
-When a phase goes fully `[x]`, move it to [plans/DONE.md](./plans/DONE.md) so this file only tracks open work.
-
-All phases 0–17 are fully done — see [plans/DONE.md](./plans/DONE.md) for the historical record. No open MVP work remains in this file.
-
----
-
-## Explicitly out of MVP scope
-
-Tracked here for "no, that's later" answers. See [§ Future](./plans/archive/01-original-plan.md#future).
-
-- Ports management (`drift ports`, conflict detection, per-workstation remap persistence)
-- `lakitu serve` long-lived stdin/stdout RPC with batching/streaming notifications
-- Cross-circuit sync of characters/tunes/chest
-- Chest backends beyond `yamlfile` (age, 1Password, Vault, SOPS)
-- IDE integration via devpod's `--ide`
-- Auto port detection
-- Log breadcrumbs on RPC errors — teach handlers to tee slog records into a request-scoped ring buffer and flush on error into `rpcerr.Error.Data["recent_logs"]`. `errfmt` + `slogfmt` already render them if present. See `plans/archive/04-nicer-logs.md` step 5 for the original design.
-- `drift provision <host>` — one-shot circuit bootstrap over SSH. Default to the static-binary path: detect remote `uname -s -m`, pull matching `lakitu` + `devpod` assets from the latest drift release, install to `/usr/local/bin`, drop `packaging/systemd/lakitu-kart@.service` into `~/.config/systemd/user/`, `loginctl enable-linger`, run `lakitu init`. If `ssh host command -v nix` succeeds and flakes are enabled, prefer `nix profile install github:kurisu-agent/drift#lakitu`. Flags: `--no-nix` to force binary path, `--install-dir`, `--dry-run`.
-- `drift migrate` cross-circuit — extend migrate beyond adopting a local devpod workspace into the current circuit. Move a kart from one registered circuit to another: snapshot the source kart (repo state, uncommitted changes, character binding, tune, chest refs), recreate it on the target circuit via `kart.new`, replay state, then optionally delete the source. Useful when a circuit is going away (attic box retired, VPS swap) or when latency shifts (Osaka ↔ London trip). Open questions: how to handle in-flight chest secrets that differ per-circuit, whether to stream the docker volume or re-clone from upstream, and whether to keep the source as a fallback until the user confirms the new kart works.
-- Kart-config idempotency vs tune drift — edits to a tune's `devcontainer`, `mount_dirs`, `features`, or `dotfiles_repo` don't propagate to karts created before the edit. Resolver captures the tune at `kart.new` and persists the resolved shape on `garage/karts/<name>/config.yaml`; lifecycle ops (`kart.start` / `kart.restart`) replay that captured config, not the live tune. Safe on purpose (mounts and base image are container-creation-time anyway), but surprising when a user expects `drift tune set` to retroactively reshape existing karts. Options when we revisit: (a) a `drift kart sync <name>` verb that re-resolves from the current tune and recreates the container, (b) a passive drift-detection that flags stale karts on `drift list`, (c) opt-in `refresh_on_restart: true` per-kart. Pick one after we see which one users actually ask for.
-- Zellij (or other multiplexer) auto-attach for `drift run` on the circuit — `drift connect <kart>` picks up Zellij because sshd hands off to an interactive login shell (which runs the circuit's `programs.zsh.interactiveShellInit` auto-attach block), but `drift run` passes a remote command, so zsh runs non-interactive and the init block is skipped. Fix without baking circuit-environment assumptions into the client: add an optional `wrap:` field on the registry entry (e.g. `wrap: zellij` → server renders `zellij attach -c <name> --force-run-commands -- sh -c '<cmd>'`). Circuits without Zellij leave it blank and nothing changes. Out of scope for the initial `drift run` polish — revisit when someone actually runs `drift run ai` on a Zellij-enabled box and wants the same UX as `drift connect`.
-- Zellij as a first-class feature — promote multiplexer integration from an opt-in shell hack to something drift manages. The NixOS module installs Zellij alongside lakitu/devpod, lakitu ships an opinionated layout config (default per-kart session name, sensible keybinds, drift-branded tab/status bar), and connect / run default to attaching (override via `--no-mux` or a config flag). Covers the `wrap:` item above as an implementation detail and removes the "works on my Nix circuit, breaks on tarball installs" split. Open questions: whether to pin a Zellij version in the flake and in the release scripts, whether session naming should be kart-scoped or circuit-scoped, how to behave when Zellij isn't on PATH on a tarball-install circuit (graceful fallback vs install prompt).
+- Ports management (`drift ports`, conflict detection, per-workstation remap persistence).
+- `lakitu serve` long-lived stdin/stdout RPC with batching/streaming notifications.
+- Cross-circuit sync of characters/tunes/chest.
+- Chest backends beyond `yamlfile` (age, 1Password, Vault, SOPS).
+- IDE integration via devpod's `--ide`.
+- Auto port detection.
+- Log breadcrumbs on RPC errors — surface recent per-request log lines in the error payload so clients see context on failure. See `plans/archive/04-nicer-logs.md` step 5.
+- `drift provision <host>` — one-shot circuit bootstrap over SSH that installs `lakitu` + `devpod`, wires up the systemd user template, and runs `lakitu init`.
+- `drift migrate` cross-circuit — designed in [plans/09-migrate-cross-circuit.md](plans/09-migrate-cross-circuit.md). Move a kart's config from one circuit to another and recreate it there.
+- Kart-config idempotency vs tune drift — edits to a tune don't propagate to karts created before the edit. Surface the staleness (or offer a refresh verb) when users expect retroactive reshaping.
+- Zellij auto-attach for `drift run` — `drift connect` picks up Zellij via the interactive login shell, but `drift run` passes a remote command and skips it. Add a server-side wrap so `drift run` gets the same session UX.
+- Zellij as a first-class feature — ship it alongside lakitu/devpod with an opinionated layout and have connect/run attach by default.
+- Auto-mount `~/.claude` into karts — when the workstation has `~/.claude/` populated, `drift new` should splice a bind mount automatically so AI-skill workflows just work.
+- Sidecar SSH tunnel for mosh port forwards — mosh can't carry TCP forwards, so devpod's forwards collapse under mosh. Hold a parallel `ssh -N -L` for each `forwardPorts` entry alongside the mosh session.
+- Port-forward opt-in for mosh (interim) — until the sidecar lands, prompt or require a flag before attempting forwards on mosh so users don't see spurious `use of closed network connection` errors.
+- drift features — bundle the devcontainer-feature blobs we keep hand-passing into `tune --features` (claude-code, zellij, etc.) into named presets, so a tune can declare `features: [ours/claude, ours/zellij]` instead of pasting JSON.
