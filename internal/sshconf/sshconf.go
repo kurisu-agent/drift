@@ -396,10 +396,12 @@ func (m *Manager) Reconcile(userSSHConfigPath string, specs []CircuitSpec) error
 	if !changed {
 		return nil
 	}
+	// Deliberately do NOT call EnsureInclude here: wiring up the user's
+	// ~/.ssh/config is `drift circuit add`'s / `drift init`'s job (via
+	// InstallCircuit). Reconcile only keeps the drift-managed file in
+	// sync with the yaml; touching the user's ssh_config on every
+	// invocation would undo hand-removal of the Include line.
 	if err := m.EnsureSocketsDir(); err != nil {
-		return err
-	}
-	if err := m.EnsureInclude(userSSHConfigPath); err != nil {
 		return err
 	}
 	return config.WriteFileAtomic(m.Paths.ManagedSSHConfig, mf.bytes(), 0o600)
