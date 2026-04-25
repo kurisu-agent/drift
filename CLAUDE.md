@@ -45,7 +45,9 @@ Worktrees live under `.claude/worktrees/` (already gitignored). One feature per 
 
 **Enable the pre-commit hook once per clone** with `make install-hooks` (sets `core.hooksPath = .githooks`, so every worktree inherits it). The hook runs `gofmt -w` and the full `golangci-lint run --fix` on staged Go packages, re-stages anything it rewrites, and fails only when issues remain after auto-fix. Full lint parity with CI is deliberate — an earlier `--fast-only` variant was faster but let errorlint-class issues sail through to CI and cost a round trip per miss.
 
-**Run `make ci` before every code push.** The pre-commit hook only runs gofmt + golangci-lint on staged packages; `make ci` expands to `tidy vet test-race lint vuln` — the full CI-parity suite in under a minute. It catches race-detector bugs, `govulncheck` flags, and `go mod tidy` churn that the hook can't see; each miss is a round trip to GitHub CI. `make ci` auto-reenters `nix develop` when called from a bare shell so the flake-pinned `golangci-lint` / `govulncheck` / `gcc` (for `-race`) are on PATH — no prefix required, one command from anywhere. Also run `make integration` when touching anything SSH/devpod/transport-shaped: ~2 min with docker, gated behind the `integration` build tag, so `make ci` deliberately skips it.
+**Run `make ci` before every code push.** The pre-commit hook only runs gofmt + golangci-lint on staged packages; `make ci` expands to `tidy vet test-race lint vuln` — the full CI-parity suite. It catches race-detector bugs, `govulncheck` flags, and `go mod tidy` churn that the hook can't see; each miss is a round trip to GitHub CI. `make ci` auto-reenters `nix develop` when called from a bare shell so the flake-pinned `golangci-lint` / `govulncheck` / `gcc` (for `-race`) are on PATH — no prefix required, one command from anywhere. Also run `make integration` when touching anything SSH/devpod/transport-shaped: ~2-3 min with docker, gated behind the `integration` build tag, so `make ci` deliberately skips it.
+
+`make ci` and `make integration` both blow past the default 2-minute Bash timeout in agent harnesses. The cliscript suite alone is ~9 min under `-race`; integration is ~3 min including docker. Always run these with `run_in_background: true` (and read the output file when notified) or set an explicit 10-minute timeout — never rely on the default. Per-package fast iteration (`go test ./internal/seed/...` etc.) stays well under the default and is the right tool when you're not gating a push.
 
 Doc-only pushes skip `make ci`: if the diff is all `*.md` / `plans/**` / `TODO.md` / `.gitignore` / comments under `docs/` — nothing that feeds into `go build` / `go test` / `golangci-lint` / `govulncheck` — push directly. The local `make ci` exists to pre-empt GitHub-CI round trips on code changes; for docs the round trip doesn't exist (CI doesn't lint markdown). If you're unsure whether an edit is code-affecting, run it.
 
@@ -73,9 +75,19 @@ nixos-rebuild switch --flake /path/to/consumer#<hostname>
 
 Verify with `grep -ao '<some-new-string>' "$(which lakitu)"` — the rebuilt binary should contain any new flag or identifier added by the release.
 
+# Backwards compatibility
+
+Drift is pre-1.0 (currently v0.n). Don't write backwards-compat shims, migration paths, or deprecation stubs for internal shape changes — tune fields, kart config keys, RPC payloads, on-disk garage layout, flag names. Change the shape, update the callers, move on. No `omitempty` gymnastics to preserve old files, no "if field is missing, fall back to old behaviour" branches, no renames that keep the old name as an alias. The only exception is user-facing CLI surface that people have muscle memory for (`drift new`, `drift connect`), and even then only when the user explicitly flags it.
+
+Revisit this rule when tagging v1.0.
+
 # External repo references
 
 Never reference other repositories, organisations, or user handles in anything that lands in this repo — commits, code, docs, plans, commit messages, tests, examples. Only this repo (`kurisu-agent/drift`) and its dependencies may appear. Unless the user explicitly requires it in the current turn, use generic placeholders (`example-org`, `<your-org>`, etc.) in examples and documentation.
+
+# Markdown style
+
+Don't hard-wrap markdown. Write each paragraph as a single long line and let the editor or viewer soft-wrap it. Hard-wrapped markdown produces noisy diffs when a single word changes (every line below the edit reflows), is awkward to edit (the wrap point is wrong as soon as you add or remove text), and is invisible at render time anyway. This applies to every markdown file in the repo: `CLAUDE.md`, `README`, `plans/**`, `TODO.md`, anything under `docs/`. Lists, code blocks, and tables follow normal markdown rules; the no-hard-wrap rule is only about prose paragraphs.
 
 # Termux/Android is a supported `drift` target
 

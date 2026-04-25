@@ -369,6 +369,69 @@ func TestFeaturesAdditiveMerge(t *testing.T) {
 	}
 }
 
+// TestTuneSeedRoundtrip verifies the `seed:` field accepts a list of
+// template names, persists to YAML, and surfaces back through tune.show.
+// Doesn't run devpod — tune.new + tune.show is enough to assert the
+// shape survives the RPC param marshal, the on-disk YAML, and the
+// response struct.
+func TestTuneSeedRoundtrip(t *testing.T) {
+	ctx := integration.TestCtx(t, 2*time.Minute)
+
+	c, _ := integration.StartReadyCircuit(ctx, t, false)
+
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]any{
+		"name": "seedtune",
+		"seed": []string{"claudeCode"},
+	}); err != nil {
+		t.Fatalf("tune.new: %v", err)
+	}
+
+	raw, err := c.LakituRPC(ctx, wire.MethodTuneShow, map[string]string{"name": "seedtune"})
+	if err != nil {
+		t.Fatalf("tune.show: %v", err)
+	}
+	var got struct {
+		Name string   `json:"name"`
+		Seed []string `json:"seed"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("decode tune.show: %v\nraw=%s", err, raw)
+	}
+	if got.Name != "seedtune" {
+		t.Errorf("name = %q, want seedtune", got.Name)
+	}
+	if len(got.Seed) != 1 || got.Seed[0] != "claudeCode" {
+		t.Errorf("seed = %v, want [claudeCode]", got.Seed)
+	}
+}
+
+// TestKartNewSeedNotFound: a tune that lists a non-existent seed
+// template name should fail kart.new with the structured
+// `seed_not_found` error rather than crashing post-`devpod up`. We use
+// the recorder shim — devpod is never invoked because resolution
+// fails first.
+func TestKartNewSeedNotFound(t *testing.T) {
+	ctx := integration.TestCtx(t, 2*time.Minute)
+
+	c, _ := integration.StartReadyCircuit(ctx, t, true)
+
+	if _, err := c.LakituRPC(ctx, wire.MethodTuneNew, map[string]any{
+		"name": "badseedtune",
+		"seed": []string{"doesNotExist"},
+	}); err != nil {
+		t.Fatalf("tune.new: %v", err)
+	}
+
+	kart := c.KartName("badseed")
+	_, stderr, code := c.Drift(ctx, "new", kart, "--tune", "badseedtune")
+	if code == 0 {
+		t.Fatalf("drift new with missing seed unexpectedly succeeded\nstderr=%s", stderr)
+	}
+	if !strings.Contains(stderr, "doesNotExist") {
+		t.Errorf("stderr missing offending seed name: %s", stderr)
+	}
+}
+
 // assertJSONEqual compares two JSON strings structurally so ordering of
 // object keys doesn't cause false failures. Returns nil on a match.
 func assertJSONEqual(got, want string) error {

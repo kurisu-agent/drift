@@ -94,6 +94,7 @@ func (kd KartNewDeps) kartNewHandler(ctx context.Context, params json.RawMessage
 		},
 		ResolveEnv:      kd.resolveTuneEnv,
 		ResolveChestRef: kd.resolveChestRef,
+		LoadSeed:        kd.Deps.loadSeed,
 		Verbose:         kd.Verbose,
 	}
 
