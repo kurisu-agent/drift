@@ -7,7 +7,7 @@ import (
 
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/cli/progress"
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
@@ -68,7 +68,7 @@ func writeLifecyclePreflight(w interface{ Write(p []byte) (int, error) }, jsonMo
 	if jsonMode {
 		return
 	}
-	p := style.For(w, false)
+	p := ui.NewTheme(w, false)
 	fmt.Fprintln(w, p.Dim(fmt.Sprintf("→ %s on circuit %q", method, circuit)))
 	fmt.Fprintln(w, p.Dim(fmt.Sprintf("  name: %s", name)))
 }

@@ -11,7 +11,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/cli/progress"
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	"github.com/kurisu-agent/drift/internal/kart"
 	"github.com/kurisu-agent/drift/internal/model"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
@@ -263,7 +263,7 @@ func writeNewPreflight(w interface{ Write(p []byte) (int, error) }, jsonMode boo
 		}
 		return
 	}
-	p := style.For(w, false)
+	p := ui.NewTheme(w, false)
 	fmt.Fprintln(w, p.Dim(fmt.Sprintf("→ kart.new on circuit %q", circuit)))
 	fmt.Fprintln(w, p.Dim(fmt.Sprintf("  name:         %s", cmd.Name)))
 	if cmd.Clone != "" {
@@ -366,7 +366,7 @@ func buildNewConfirmSummary(cmd newCmd) string {
 // via huh, matching the other interactive prompts. Blank input cancels
 // (returns ""); ctrl-C / esc also cancels via huh.ErrUserAborted.
 func promptNewKartName(io IO, taken string) (string, error) {
-	p := style.For(io.Stderr, false)
+	p := ui.NewTheme(io.Stderr, false)
 	fmt.Fprintf(io.Stderr, "%s kart %q already exists on this circuit.\n", p.Warn("!"), taken)
 	var val string
 	input := huh.NewInput().

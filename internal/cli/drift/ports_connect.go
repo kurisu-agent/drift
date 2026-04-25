@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/ports"
 )
@@ -60,7 +60,7 @@ func makeBeforeExecPortsHook(io IO, root *CLI, circuit, kart string, noForwards 
 		}
 		summary := summarizeForwards(state.Get(circuit, kart))
 		if summary != "" {
-			p := style.For(io.Stderr, root.Output == "json")
+			p := ui.NewTheme(io.Stderr, root.Output == "json")
 			if p.Enabled {
 				fmt.Fprintln(io.Stderr, p.Dim("forwards: "+summary))
 			}

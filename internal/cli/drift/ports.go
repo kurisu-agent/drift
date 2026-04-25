@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/ports"
 	"github.com/kurisu-agent/drift/internal/wire"
@@ -152,7 +152,7 @@ func runPortsList(ctx context.Context, io IO, root *CLI, cmd portsListCmd, deps 
 		fmt.Fprintln(io.Stdout, "no forwards configured")
 		return 0
 	}
-	p := style.For(io.Stdout, false)
+	p := ui.NewTheme(io.Stdout, false)
 	for i, r := range rows {
 		if i > 0 {
 			fmt.Fprintln(io.Stdout)
@@ -411,7 +411,7 @@ func runReconcile(ctx context.Context, io IO, root *CLI, opts ports.ReconcileOpt
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
-	p := style.For(io.Stderr, root.Output == "json")
+	p := ui.NewTheme(io.Stderr, root.Output == "json")
 	for _, change := range report.Changes {
 		if p.Enabled {
 			fmt.Fprintln(io.Stderr, p.Dim(change))

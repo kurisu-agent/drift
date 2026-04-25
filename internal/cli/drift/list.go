@@ -7,7 +7,7 @@ import (
 	"io"
 
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
@@ -64,7 +64,7 @@ func fetchKartList(ctx context.Context, deps deps, circuit string) ([]listEntry,
 
 // writeKartListTable renders a text-mode kart table. Shared between
 // `drift connect -l` and the per-circuit kart blocks in `drift status`.
-func writeKartListTable(w io.Writer, p *style.Palette, entries []listEntry) {
+func writeKartListTable(w io.Writer, p *ui.Theme, entries []listEntry) {
 	rows := make([][]string, 0, len(entries))
 	staleRows := make([]bool, 0, len(entries))
 	for _, k := range entries {
@@ -188,7 +188,7 @@ func runKartsCrossCircuit(ctx context.Context, io IO, root *CLI, deps deps) int 
 		fmt.Fprintln(io.Stdout, "no karts found on any configured circuit")
 		return 0
 	}
-	writeCrossCircuitKartTable(io.Stdout, style.For(io.Stdout, false), karts)
+	writeCrossCircuitKartTable(io.Stdout, ui.NewTheme(io.Stdout, false), karts)
 	return 0
 }
 
@@ -204,7 +204,7 @@ type circuitKartJSON struct {
 // CIRCUIT column prepended. Shares status colour rules with
 // writeKartListTable so the two views look consistent in `drift status`
 // right next to `drift karts`.
-func writeCrossCircuitKartTable(w io.Writer, p *style.Palette, karts []circuitKart) {
+func writeCrossCircuitKartTable(w io.Writer, p *ui.Theme, karts []circuitKart) {
 	rows := make([][]string, 0, len(karts))
 	staleRows := make([]bool, 0, len(karts))
 	for _, ck := range karts {
@@ -263,7 +263,7 @@ func runKartListForCircuit(ctx context.Context, io IO, root *CLI, deps deps) int
 		fmt.Fprintln(io.Stdout, "no karts on this circuit")
 		return 0
 	}
-	writeKartListTable(io.Stdout, style.For(io.Stdout, false), entries)
+	writeKartListTable(io.Stdout, ui.NewTheme(io.Stdout, false), entries)
 	return 0
 }
 
@@ -296,7 +296,7 @@ func runKartInfo(ctx context.Context, io IO, root *CLI, cmd infoCmd, deps deps) 
 // is rendered compact at the bottom via json.MarshalIndent so users still
 // see it on `--output text`.
 func renderInfoText(io IO, raw json.RawMessage) int {
-	p := style.For(io.Stdout, false)
+	p := ui.NewTheme(io.Stdout, false)
 	var info struct {
 		Name      string `json:"name"`
 		Status    string `json:"status"`

@@ -10,7 +10,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	"github.com/kurisu-agent/drift/internal/connect"
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/wire"
@@ -76,7 +76,7 @@ func runSkillExec(ctx context.Context, io IO, root *CLI, cmd skillCmd, deps deps
 	// stanza; same zellij UX rationale as drift ai.
 	bin, argv := buildRunArgv(wire.RunModeInteractive, useMosh, circuit, cmd.ForwardAgent, wrapWithZellij(res.Command))
 
-	p := style.For(io.Stderr, root.Output == "json")
+	p := ui.NewTheme(io.Stderr, root.Output == "json")
 	if p.Enabled {
 		transport := "ssh"
 		if useMosh {
@@ -141,7 +141,7 @@ func renderSkillsOutput(io IO, root *CLI, list wire.SkillListResult) int {
 		fmt.Fprintln(io.Stdout, "  drop SKILL.md files into ~/.claude/skills/<name>/ on the circuit")
 		return 0
 	}
-	p := style.For(io.Stdout, false)
+	p := ui.NewTheme(io.Stdout, false)
 	rows := make([][]string, 0, len(list.Skills))
 	for _, s := range list.Skills {
 		rows = append(rows, []string{s.Name, s.Description})

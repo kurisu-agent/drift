@@ -12,7 +12,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/cli/progress"
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/connect"
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
@@ -544,7 +544,7 @@ func doCircuitConnect(ctx context.Context, io IO, root *CLI, circuit string, for
 		argv = append(argv, target)
 	}
 
-	p := style.For(io.Stderr, root.Output == "json")
+	p := ui.NewTheme(io.Stderr, root.Output == "json")
 	if p.Enabled {
 		fmt.Fprintln(io.Stderr, p.Dim(fmt.Sprintf("→ circuit %s (shell, via %s)", circuit, transport)))
 	}
@@ -595,7 +595,7 @@ func doConnect(ctx context.Context, io IO, root *CLI, deps deps, circuit, name s
 
 	// Transport hint to stderr so stdout stays clean for the remote
 	// session. Silenced in JSON mode / non-TTY via palette gating.
-	p := style.For(io.Stderr, root.Output == "json")
+	p := ui.NewTheme(io.Stderr, root.Output == "json")
 	if p.Enabled {
 		fmt.Fprintln(io.Stderr, p.Dim("via "+transport))
 	}

@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 )
 
@@ -24,8 +24,7 @@ const (
 )
 
 // ansiRE matches SGR / CSI escape sequences. Only errfmt needs to scrub
-// devpod's own colored output before re-emitting it through our styler;
-// promote back to `internal/cli/style` if a second caller appears.
+// devpod's own colored output before re-emitting it through our styler.
 var ansiRE = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]`)
 
 func stripANSI(s string) string { return ansiRE.ReplaceAllString(s, "") }
@@ -44,7 +43,7 @@ func Emit(w io.Writer, err error) int {
 	if err == nil {
 		return int(rpcerr.CodeOK)
 	}
-	p := style.For(w, false)
+	p := ui.NewTheme(w, false)
 	var re *rpcerr.Error
 	if errors.As(err, &re) && re != nil {
 		fmt.Fprintf(w, "%s %s\n", p.Error("error:"), re.Message)
@@ -88,7 +87,7 @@ func Emit(w io.Writer, err error) int {
 // dim block, ANSI stripped. Blank trailing lines are dropped so the block
 // sits flush against the next piece of output. label is the header (e.g.
 // "devpod stderr:" / "devpod stdout:") so multiple streams can stack.
-func writeDevpodTail(w io.Writer, p *style.Palette, label, tail string) {
+func writeDevpodTail(w io.Writer, p *ui.Theme, label, tail string) {
 	cleaned := strings.TrimRight(stripANSI(tail), "\n")
 	if cleaned == "" {
 		return

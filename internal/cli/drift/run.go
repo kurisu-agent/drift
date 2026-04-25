@@ -9,7 +9,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	"github.com/kurisu-agent/drift/internal/connect"
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/wire"
@@ -52,7 +52,7 @@ func runRunsList(ctx context.Context, io IO, root *CLI, deps deps) int {
 		fmt.Fprintln(io.Stdout, "  edit ~/.drift/runs.yaml on the circuit to add entries")
 		return 0
 	}
-	p := style.For(io.Stdout, false)
+	p := ui.NewTheme(io.Stdout, false)
 	rows := make([][]string, 0, len(res.Entries))
 	for _, e := range res.Entries {
 		rows = append(rows, []string{e.Name, string(e.Mode), e.Description})
@@ -105,7 +105,7 @@ func runRunExec(ctx context.Context, io IO, root *CLI, cmd runCmd, deps deps) in
 	useMosh := res.Mode == wire.RunModeInteractive && !cmd.SSH && moshOnPath()
 	bin, argv := buildRunArgv(res.Mode, useMosh, circuit, cmd.ForwardAgent, res.Command)
 
-	p := style.For(io.Stderr, root.Output == "json")
+	p := ui.NewTheme(io.Stderr, root.Output == "json")
 	if p.Enabled {
 		transport := "ssh"
 		if useMosh {

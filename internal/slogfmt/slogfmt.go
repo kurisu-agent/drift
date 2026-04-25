@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 )
 
 type Record struct {
@@ -86,7 +86,7 @@ func Emit(w io.Writer, rec Record, min slog.Level) bool {
 	if !rec.Time.IsZero() {
 		stamp = rec.Time.Format("15:04:05")
 	}
-	p := style.For(w, false)
+	p := ui.NewTheme(w, false)
 	// Pad the level tag before styling so widths (5 chars) stay consistent
 	// whether or not ANSI is emitted.
 	paddedLevel := fmt.Sprintf("%-5s", level)
@@ -105,7 +105,7 @@ func Emit(w io.Writer, rec Record, min slog.Level) bool {
 	return true
 }
 
-func styleLevel(p *style.Palette, level, padded string) string {
+func styleLevel(p *ui.Theme, level, padded string) string {
 	switch level {
 	case "DEBUG":
 		return p.Dim(padded)

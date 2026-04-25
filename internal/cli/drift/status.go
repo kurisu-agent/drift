@@ -7,7 +7,7 @@ import (
 	"sort"
 
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/version"
 	"golang.org/x/sync/errgroup"
@@ -98,7 +98,7 @@ func runStatus(ctx context.Context, io IO, root *CLI, cmd statusCmd, deps deps) 
 		return emitJSON(io, res)
 	}
 
-	p := style.For(io.Stdout, false)
+	p := ui.NewTheme(io.Stdout, false)
 	fmt.Fprintf(io.Stdout, "%s %s\n", p.Bold("drift"), res.Drift)
 	if len(res.Circuits) == 0 {
 		fmt.Fprintln(io.Stdout, p.Dim("no circuits configured (try `drift init` or `drift circuit add`)"))

@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/briandowns/spinner"
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 )
 
 // showTimerAfter hides the elapsed-time suffix until the op has been
@@ -22,7 +22,7 @@ const showTimerAfter = 10 * time.Second
 
 type Phase struct {
 	w         io.Writer
-	p         *style.Palette
+	p         *ui.Theme
 	message   string
 	transport string
 	start     time.Time
@@ -42,7 +42,7 @@ type Phase struct {
 // Pass transport == "" to suppress the hint. jsonMode and non-TTY writers
 // short-circuit to a no-op Phase — the returned pointer is always usable.
 func Start(w io.Writer, jsonMode bool, message, transport string) *Phase {
-	p := style.For(w, jsonMode)
+	p := ui.NewTheme(w, jsonMode)
 	ph := &Phase{
 		w:         w,
 		p:         p,
