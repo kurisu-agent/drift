@@ -53,6 +53,9 @@ const (
 	MethodConfigShow = "config.show"
 	MethodConfigSet  = "config.set"
 
+	MethodCircuitBrowseStart = "circuit.browse_start"
+	MethodCircuitBrowseStop  = "circuit.browse_stop"
+
 	MethodSkillList    = "skill.list"
 	MethodSkillResolve = "skill.resolve"
 
@@ -80,6 +83,7 @@ func Methods() []string {
 		MethodTuneNew, MethodTunePatch, MethodTuneReplace,
 		MethodTuneList, MethodTuneShow, MethodTuneRemove,
 		MethodConfigShow, MethodConfigSet,
+		MethodCircuitBrowseStart, MethodCircuitBrowseStop,
 		MethodSkillList, MethodSkillResolve,
 		MethodRunList, MethodRunResolve,
 	}

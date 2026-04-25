@@ -198,7 +198,9 @@ func buildRegistry(ctx context.Context, withDevpod, debug bool) (*rpc.Registry, 
 // DriftHomeDir lookup that isn't part of the generic server.Deps bundle.
 func registerNonDevpod(reg *rpc.Registry) {
 	reg.Register(wire.MethodServerInit, serverInitHandler)
-	server.RegisterServer(reg, &server.Deps{})
+	deps := &server.Deps{}
+	server.RegisterServer(reg, deps)
+	server.RegisterCircuitBrowse(reg, deps)
 }
 
 // registerDevpodBacked wires the kart-lifecycle handlers. Materializes
