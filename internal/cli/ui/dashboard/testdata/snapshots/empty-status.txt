@@ -1,8 +1,30 @@
-[1m▸ 1 status ◂[m  2 karts    3 circuits    4 chest    5 characters    6 tunes    7 ports    8 logs                          
+  [1;4;4ms[m[1;4;4mt[m[1;4;4ma[m[1;4;4mt[m[1;4;4mu[m[1;4;4ms[m  ·  karts  ·  circuits  ·  chest  ·  characters  ·  tunes  ·  ports  ·  logs                                   
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-drift test                                                                                            0 / 0   circuits  
-devpods for drifters                                                                                     0 / 0   karts  
-                                                                                                             0   ports  
+ [1mdrift test[m                                                                                           [1m0 / 0[m  circuits   
+ devpods for drifters                                                                                    [1m0 / 0[m  karts   
+                                                                                                             [1m0[m  ports   
                                                                                                                         
-(no recent activity)                                                                                                    
-[tab] next  [1-8] jump  [r] refresh  [?] help  [q] quit                                                                 
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                no recent activity yet.                                                 
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+tab next tab • r refresh • ? help • q quit                                                                              

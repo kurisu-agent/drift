@@ -86,13 +86,13 @@ func runCmd(c tea.Cmd, d time.Duration) tea.Msg {
 // render the empty-state copy.
 type emptyDS struct{}
 
-func (emptyDS) Status(_ context.Context) (StatusSnapshot, error)         { return StatusSnapshot{}, nil }
-func (emptyDS) Karts(_ context.Context, _ string) ([]KartRow, error)     { return nil, nil }
-func (emptyDS) Circuits(_ context.Context) ([]CircuitRow, error)         { return nil, nil }
-func (emptyDS) Chest(_ context.Context) ([]ResourceRow, error)           { return nil, nil }
-func (emptyDS) Characters(_ context.Context) ([]ResourceRow, error)      { return nil, nil }
-func (emptyDS) Tunes(_ context.Context) ([]ResourceRow, error)           { return nil, nil }
-func (emptyDS) Ports(_ context.Context) ([]PortRow, error)               { return nil, nil }
+func (emptyDS) Status(_ context.Context) (StatusSnapshot, error)     { return StatusSnapshot{}, nil }
+func (emptyDS) Karts(_ context.Context, _ string) ([]KartRow, error) { return nil, nil }
+func (emptyDS) Circuits(_ context.Context) ([]CircuitRow, error)     { return nil, nil }
+func (emptyDS) Chest(_ context.Context) ([]ResourceRow, error)       { return nil, nil }
+func (emptyDS) Characters(_ context.Context) ([]ResourceRow, error)  { return nil, nil }
+func (emptyDS) Tunes(_ context.Context) ([]ResourceRow, error)       { return nil, nil }
+func (emptyDS) Ports(_ context.Context) ([]PortRow, error)           { return nil, nil }
 
 // fixtureDS is a small inline fixture so the snapshot tests never
 // depend on internal/demo (avoiding the dashboard <-> demo import

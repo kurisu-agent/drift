@@ -3,23 +3,41 @@ package dashboard
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 	"github.com/kurisu-agent/drift/internal/cli/ui"
 )
 
 type circuitsPanel struct {
-	o    Options
-	t    *ui.Theme
-	rows []CircuitRow
-	err  string
+	o     Options
+	t     *ui.Theme
+	tbl   table.Model
+	rows  []CircuitRow
+	err   string
+	ready bool
 }
 
-func newCircuitsPanel(o Options) Panel { return &circuitsPanel{o: o, t: o.Theme} }
+func newCircuitsPanel(o Options) Panel {
+	cols := []table.Column{
+		{Title: "name", Width: 14},
+		{Title: "host", Width: 28},
+		{Title: "default", Width: 8},
+		{Title: "lakitu", Width: 10},
+		{Title: "latency", Width: 10},
+		{Title: "state", Width: 12},
+	}
+	tbl := table.New(table.WithColumns(cols), table.WithFocused(true))
+	tbl.SetStyles(tableStyles(o.Theme))
+	return &circuitsPanel{o: o, t: o.Theme, tbl: tbl}
+}
 
 func (p *circuitsPanel) Title() string { return "circuits" }
+func (p *circuitsPanel) ShortHelp() []key.Binding {
+	return []key.Binding{ui.Keys.Up, ui.Keys.Down}
+}
 
 func (p *circuitsPanel) Init() tea.Cmd { return p.refreshCmd() }
 
@@ -42,44 +60,64 @@ func (p *circuitsPanel) Update(msg tea.Msg) (Panel, tea.Cmd) {
 	switch m := msg.(type) {
 	case circuitsLoadedMsg:
 		p.rows = m.rows
+		p.tbl.SetRows(toCircuitTableRows(m.rows, p.t))
 		p.err = ""
+		p.ready = true
+		return p, nil
 	case circuitsErrMsg:
 		p.err = m.err
+		return p, nil
 	case tickMsg:
 		return p, p.refreshCmd()
+	case tea.KeyPressMsg:
+		if m.String() == "r" {
+			return p, p.refreshCmd()
+		}
 	}
-	return p, nil
+	var cmd tea.Cmd
+	p.tbl, cmd = p.tbl.Update(msg)
+	return p, cmd
 }
 
 func (p *circuitsPanel) View(width, height int) string {
 	if p.err != "" {
-		return p.t.ErrorStyle.Render("error: ") + p.err
+		return panelError(p.t, p.err, width, height)
+	}
+	if !p.ready {
+		return panelEmpty(p.t, "loading circuits...", width, height)
 	}
 	if len(p.rows) == 0 {
-		return p.t.DimStyle.Render("(no circuits configured; try `drift circuit add user@host`)")
+		return panelEmpty(p.t, "no circuits configured. try `drift circuit add user@host`.", width, height)
 	}
-	var b strings.Builder
-	b.WriteString(p.t.BoldStyle.Render(fmt.Sprintf("%-18s %-30s %-12s %-10s %s",
-		"NAME", "HOST", "LAKITU", "LATENCY", "STATE")))
-	b.WriteString("\n")
-	b.WriteString(p.t.DimStyle.Render(strings.Repeat("─", maxInt(20, width-2))))
-	b.WriteString("\n")
-	for _, r := range p.rows {
-		state := p.t.SuccessStyle.Render("reachable")
-		if !r.Reachable {
-			state = p.t.ErrorStyle.Render("unreachable")
+	p.tbl.SetWidth(width)
+	p.tbl.SetHeight(maxInt(3, height-2))
+	return p.tbl.View()
+}
+
+func toCircuitTableRows(rs []CircuitRow, t *ui.Theme) []table.Row {
+	out := make([]table.Row, len(rs))
+	for i, r := range rs {
+		state := "unreachable"
+		if r.Reachable {
+			state = "reachable"
 		}
-		def := ""
+		def := "—"
 		if r.Default {
-			def = p.t.AccentStyle.Render(" *default")
+			def = "*"
 		}
 		latency := "—"
 		if r.LatencyMS > 0 {
 			latency = fmt.Sprintf("%dms", r.LatencyMS)
 		}
-		fmt.Fprintf(&b, "%-18s %-30s %-12s %-10s %s%s\n",
-			r.Name, r.Host, dashIfEmpty(r.Lakitu), latency, state, def)
+		styledState := state
+		if t != nil && t.Enabled {
+			if r.Reachable {
+				styledState = t.SuccessStyle.Render(state)
+			} else {
+				styledState = t.ErrorStyle.Render(state)
+			}
+		}
+		out[i] = table.Row{r.Name, r.Host, def, dashIfEmpty(r.Lakitu), latency, styledState}
 	}
-	_ = height
-	return b.String()
+	return out
 }

@@ -2,28 +2,42 @@ package dashboard
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 	"github.com/kurisu-agent/drift/internal/cli/ui"
 )
 
 type kartsPanel struct {
-	o    Options
-	t    *ui.Theme
-	rows []KartRow
-	err  string
-	cur  int
-	last time.Time
+	o     Options
+	t     *ui.Theme
+	tbl   table.Model
+	rows  []KartRow
+	err   string
+	ready bool
 }
 
 func newKartsPanel(o Options) Panel {
-	return &kartsPanel{o: o, t: o.Theme}
+	cols := []table.Column{
+		{Title: "circuit", Width: 12},
+		{Title: "name", Width: 20},
+		{Title: "status", Width: 10},
+		{Title: "tune", Width: 12},
+		{Title: "source", Width: 10},
+		{Title: "autostart", Width: 9},
+	}
+	tbl := table.New(table.WithColumns(cols), table.WithFocused(true))
+	tbl.SetStyles(tableStyles(o.Theme))
+	return &kartsPanel{o: o, t: o.Theme, tbl: tbl}
 }
 
 func (p *kartsPanel) Title() string { return "karts" }
+
+func (p *kartsPanel) ShortHelp() []key.Binding {
+	return []key.Binding{ui.Keys.Up, ui.Keys.Down}
+}
 
 func (p *kartsPanel) Init() tea.Cmd { return p.refreshCmd() }
 
@@ -46,66 +60,74 @@ func (p *kartsPanel) Update(msg tea.Msg) (Panel, tea.Cmd) {
 	switch m := msg.(type) {
 	case kartsLoadedMsg:
 		p.rows = m.rows
-		if p.cur >= len(p.rows) {
-			p.cur = 0
-		}
+		p.tbl.SetRows(toKartTableRows(m.rows, p.t))
 		p.err = ""
-		p.last = time.Now()
+		p.ready = true
+		return p, nil
 	case kartsErrMsg:
 		p.err = m.err
+		return p, nil
 	case tickMsg:
 		return p, p.refreshCmd()
-	case tea.KeyMsg:
-		switch m.String() {
-		case "j", "down":
-			if p.cur+1 < len(p.rows) {
-				p.cur++
-			}
-		case "k", "up":
-			if p.cur > 0 {
-				p.cur--
-			}
-		case "r":
+	case tea.KeyPressMsg:
+		if m.String() == "r" {
 			return p, p.refreshCmd()
 		}
 	}
-	return p, nil
+	var cmd tea.Cmd
+	p.tbl, cmd = p.tbl.Update(msg)
+	return p, cmd
 }
 
 func (p *kartsPanel) View(width, height int) string {
 	if p.err != "" {
-		return p.t.ErrorStyle.Render("error: ") + p.err
+		return panelError(p.t, p.err, width, height)
+	}
+	if !p.ready {
+		return panelEmpty(p.t, "loading karts...", width, height)
 	}
 	if len(p.rows) == 0 {
-		return p.t.DimStyle.Render("(no karts on any configured circuit)")
+		return panelEmpty(p.t, "no karts on any configured circuit", width, height)
 	}
-	var b strings.Builder
-	b.WriteString(p.t.BoldStyle.Render(fmt.Sprintf("%-14s %-22s %-10s %-12s %s",
-		"CIRCUIT", "NAME", "STATUS", "TUNE", "SOURCE")))
-	b.WriteString("\n")
-	b.WriteString(p.t.DimStyle.Render(strings.Repeat("─", maxInt(20, width-2))))
-	b.WriteString("\n")
-	for i, r := range p.rows {
-		marker := "  "
-		if i == p.cur {
-			marker = p.t.AccentStyle.Render(ui.Icon(ui.IconArrow)) + " "
+	p.tbl.SetWidth(width)
+	p.tbl.SetHeight(maxInt(3, height-2))
+	return p.tbl.View()
+}
+
+func toKartTableRows(rs []KartRow, t *ui.Theme) []table.Row {
+	out := make([]table.Row, len(rs))
+	for i, r := range rs {
+		auto := "—"
+		if r.Autostart {
+			auto = "yes"
 		}
-		status := r.Status
-		switch r.Status {
-		case "running":
-			status = p.t.SuccessStyle.Render(r.Status)
-		case "stopped":
-			status = p.t.DimStyle.Render(r.Status)
-		case "stale":
-			status = p.t.WarnStyle.Render(r.Status)
-		case "error", "unreachable":
-			status = p.t.ErrorStyle.Render(r.Status)
+		out[i] = table.Row{
+			r.Circuit,
+			r.Name,
+			styleStatus(t, r.Status),
+			dashIfEmpty(r.Tune),
+			dashIfEmpty(r.Source),
+			auto,
 		}
-		fmt.Fprintf(&b, "%s%-14s %-22s %-10s %-12s %s\n",
-			marker, r.Circuit, r.Name, status, dashIfEmpty(r.Tune), dashIfEmpty(r.Source))
 	}
-	_ = height
-	return b.String()
+	return out
+}
+
+func styleStatus(t *ui.Theme, status string) string {
+	if t == nil || !t.Enabled {
+		return status
+	}
+	switch status {
+	case "running":
+		return t.SuccessStyle.Render(status)
+	case "stopped":
+		return t.DimStyle.Render(status)
+	case "stale":
+		return t.WarnStyle.Render(status)
+	case "error", "unreachable":
+		return t.ErrorStyle.Render(status)
+	}
+	return status
 }
 
 func dashIfEmpty(s string) string {

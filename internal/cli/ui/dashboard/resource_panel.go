@@ -3,31 +3,45 @@ package dashboard
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 	"github.com/kurisu-agent/drift/internal/cli/ui"
 )
 
 // resourcePanel renders chest / characters / tunes — three read-only
-// per-circuit resource lists that share the same shape.
+// per-circuit resource lists that share the same shape (name, detail,
+// used-by). One implementation, three identical wirings.
 type resourcePanel struct {
-	o      Options
-	t      *ui.Theme
-	title  string
-	header string
-	fetch  func(context.Context) ([]ResourceRow, error)
-	rows   []ResourceRow
-	err    string
+	o     Options
+	t     *ui.Theme
+	title string
+	fetch func(context.Context) ([]ResourceRow, error)
+	tbl   table.Model
+	rows  []ResourceRow
+	err   string
+	ready bool
 }
 
-func newResourcePanel(o Options, title, header string,
+func newResourcePanel(o Options, title string,
 	fetch func(context.Context) ([]ResourceRow, error)) Panel {
-	return &resourcePanel{o: o, t: o.Theme, title: title, header: header, fetch: fetch}
+	cols := []table.Column{
+		{Title: "circuit", Width: 12},
+		{Title: "name", Width: 22},
+		{Title: "detail", Width: 36},
+		{Title: "used by", Width: 22},
+	}
+	tbl := table.New(table.WithColumns(cols), table.WithFocused(true))
+	tbl.SetStyles(tableStyles(o.Theme))
+	return &resourcePanel{o: o, t: o.Theme, title: title, fetch: fetch, tbl: tbl}
 }
 
 func (p *resourcePanel) Title() string { return p.title }
+func (p *resourcePanel) ShortHelp() []key.Binding {
+	return []key.Binding{ui.Keys.Up, ui.Keys.Down}
+}
 
 func (p *resourcePanel) Init() tea.Cmd { return p.refreshCmd() }
 
@@ -36,13 +50,11 @@ type resourceLoadedMsg struct {
 	rows  []ResourceRow
 }
 type resourceErrMsg struct {
-	title string
-	err   string
+	title, err string
 }
 
 func (p *resourcePanel) refreshCmd() tea.Cmd {
-	title := p.title
-	fetch := p.fetch
+	title, fetch := p.title, p.fetch
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -57,39 +69,53 @@ func (p *resourcePanel) refreshCmd() tea.Cmd {
 func (p *resourcePanel) Update(msg tea.Msg) (Panel, tea.Cmd) {
 	switch m := msg.(type) {
 	case resourceLoadedMsg:
-		if m.title == p.title {
-			p.rows = m.rows
-			p.err = ""
+		if m.title != p.title {
+			break
 		}
+		p.rows = m.rows
+		p.tbl.SetRows(toResourceTableRows(m.rows))
+		p.err = ""
+		p.ready = true
+		return p, nil
 	case resourceErrMsg:
-		if m.title == p.title {
-			p.err = m.err
+		if m.title != p.title {
+			break
 		}
+		p.err = m.err
+		return p, nil
 	case tickMsg:
 		return p, p.refreshCmd()
+	case tea.KeyPressMsg:
+		if m.String() == "r" {
+			return p, p.refreshCmd()
+		}
 	}
-	return p, nil
+	var cmd tea.Cmd
+	p.tbl, cmd = p.tbl.Update(msg)
+	return p, cmd
 }
 
 func (p *resourcePanel) View(width, height int) string {
 	if p.err != "" {
-		return p.t.ErrorStyle.Render("error: ") + p.err
+		return panelError(p.t, p.err, width, height)
+	}
+	if !p.ready {
+		return panelEmpty(p.t, fmt.Sprintf("loading %s...", p.title), width, height)
 	}
 	if len(p.rows) == 0 {
-		return p.t.DimStyle.Render(fmt.Sprintf("(no %s defined on any configured circuit)", p.title))
+		return panelEmpty(p.t, fmt.Sprintf("no %s defined on any configured circuit", p.title), width, height)
 	}
-	var b strings.Builder
-	b.WriteString(p.t.BoldStyle.Render(fmt.Sprintf("%-14s %-22s %-40s %s",
-		"CIRCUIT", "NAME", "DETAIL", "USED-BY")))
-	b.WriteString("\n")
-	b.WriteString(p.t.DimStyle.Render(strings.Repeat("─", maxInt(20, width-2))))
-	b.WriteString("\n")
-	for _, r := range p.rows {
-		fmt.Fprintf(&b, "%-14s %-22s %-40s %s\n",
-			r.Circuit, r.Name, truncate(r.Description, 40), p.t.DimStyle.Render(r.UsedBy))
+	p.tbl.SetWidth(width)
+	p.tbl.SetHeight(maxInt(3, height-2))
+	return p.tbl.View()
+}
+
+func toResourceTableRows(rs []ResourceRow) []table.Row {
+	out := make([]table.Row, len(rs))
+	for i, r := range rs {
+		out[i] = table.Row{r.Circuit, r.Name, truncate(r.Description, 36), r.UsedBy}
 	}
-	_ = height
-	return b.String()
+	return out
 }
 
 func truncate(s string, max int) string {

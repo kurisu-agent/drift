@@ -1,7 +1,30 @@
-  1 status    2 karts    3 circuits  [1m▸ 4 chest ◂[m  5 characters    6 tunes    7 ports    8 logs                          
+  status  ·  karts  ·  circuits  ·  [1;4;4mc[m[1;4;4mh[m[1;4;4me[m[1;4;4ms[m[1;4;4mt[m  ·  characters  ·  tunes  ·  ports  ·  logs                                   
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-CIRCUIT        NAME                   DETAIL                                   USED-BY                                  
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
-alpha          OPENAI_API_KEY         1password://drift/openai                 api, web                                 
+[1mcircuit     [m[1mname                  [m[1mdetail                              [m[1mused by               [m                            
+alpha       OPENAI_API_KEY        1password://drift/openai            api, web                                          
                                                                                                                         
-[tab] next  [1-8] jump  [r] refresh  [?] help  [q] quit                                                                 
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+↑/k up • ↓/j down • tab next tab • r refresh • ? help • q quit                                                          

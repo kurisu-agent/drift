@@ -56,9 +56,31 @@ func TestDashboardViewIncludesTabBar(t *testing.T) {
 	})
 	m.width, m.height = 120, 40
 	v := m.View()
+	plain := stripANSI(v.Content)
 	for _, want := range []string{"status", "karts", "circuits", "ports", "logs"} {
-		if !strings.Contains(v.Content, want) {
+		if !strings.Contains(plain, want) {
 			t.Errorf("tab bar missing %q", want)
 		}
 	}
+}
+
+// stripANSI removes SGR escape sequences from s so substring assertions
+// don't have to mirror lipgloss's per-grapheme styling output.
+func stripANSI(s string) string {
+	var b strings.Builder
+	in := false
+	for _, r := range s {
+		if r == 0x1b {
+			in = true
+			continue
+		}
+		if in {
+			if r == 'm' || r == 'K' || r == 'J' {
+				in = false
+			}
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }

@@ -3,26 +3,44 @@ package dashboard
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 	"github.com/kurisu-agent/drift/internal/cli/ui"
 )
 
-// portsPanel renders the workstation-side port forwards. Plan 13 already
-// owns the data layer (`drift ports`); this panel just shows it. The
-// authoring half (add / remove flow) is intentionally not in this PR.
+// portsPanel renders the workstation-side port forwards. Plan 13 owns
+// the data layer (`drift ports`); this panel reads from it via the
+// shared DataSource. The authoring half (add / remove flow) lands in a
+// follow-up.
 type portsPanel struct {
-	o    Options
-	t    *ui.Theme
-	rows []PortRow
-	err  string
+	o     Options
+	t     *ui.Theme
+	tbl   table.Model
+	rows  []PortRow
+	err   string
+	ready bool
 }
 
-func newPortsPanel(o Options) Panel { return &portsPanel{o: o, t: o.Theme} }
+func newPortsPanel(o Options) Panel {
+	cols := []table.Column{
+		{Title: "local", Width: 8},
+		{Title: "remote", Width: 8},
+		{Title: "circuit", Width: 12},
+		{Title: "kart", Width: 22},
+		{Title: "state", Width: 12},
+	}
+	tbl := table.New(table.WithColumns(cols), table.WithFocused(true))
+	tbl.SetStyles(tableStyles(o.Theme))
+	return &portsPanel{o: o, t: o.Theme, tbl: tbl}
+}
 
 func (p *portsPanel) Title() string { return "ports" }
+func (p *portsPanel) ShortHelp() []key.Binding {
+	return []key.Binding{ui.Keys.Up, ui.Keys.Down}
+}
 
 func (p *portsPanel) Init() tea.Cmd { return p.refreshCmd() }
 
@@ -45,36 +63,62 @@ func (p *portsPanel) Update(msg tea.Msg) (Panel, tea.Cmd) {
 	switch m := msg.(type) {
 	case portsLoadedMsg:
 		p.rows = m.rows
+		p.tbl.SetRows(toPortTableRows(m.rows, p.t))
 		p.err = ""
+		p.ready = true
+		return p, nil
 	case portsErrMsg:
 		p.err = m.err
+		return p, nil
 	case tickMsg:
 		return p, p.refreshCmd()
+	case tea.KeyPressMsg:
+		if m.String() == "r" {
+			return p, p.refreshCmd()
+		}
 	}
-	return p, nil
+	var cmd tea.Cmd
+	p.tbl, cmd = p.tbl.Update(msg)
+	return p, cmd
 }
 
 func (p *portsPanel) View(width, height int) string {
 	if p.err != "" {
-		return p.t.ErrorStyle.Render("error: ") + p.err
+		return panelError(p.t, p.err, width, height)
+	}
+	if !p.ready {
+		return panelEmpty(p.t, "loading ports...", width, height)
 	}
 	if len(p.rows) == 0 {
-		return p.t.DimStyle.Render("(no port forwards configured; see `drift ports`)")
+		return panelEmpty(p.t, "no port forwards configured. see `drift ports`.", width, height)
 	}
-	var b strings.Builder
-	b.WriteString(p.t.BoldStyle.Render(fmt.Sprintf("%-7s %-7s %-14s %-22s %s",
-		"LOCAL", "REMOTE", "CIRCUIT", "KART", "STATE")))
-	b.WriteString("\n")
-	b.WriteString(p.t.DimStyle.Render(strings.Repeat("─", maxInt(20, width-2))))
-	b.WriteString("\n")
-	for _, r := range p.rows {
-		state := p.t.DimStyle.Render("idle")
+	p.tbl.SetWidth(width)
+	p.tbl.SetHeight(maxInt(3, height-2))
+	return p.tbl.View()
+}
+
+func toPortTableRows(rs []PortRow, t *ui.Theme) []table.Row {
+	out := make([]table.Row, len(rs))
+	for i, r := range rs {
+		state := "idle"
 		if r.Active {
-			state = p.t.SuccessStyle.Render("forwarding")
+			state = "forwarding"
 		}
-		fmt.Fprintf(&b, "%-7d %-7d %-14s %-22s %s\n",
-			r.Local, r.Remote, r.Circuit, r.Kart, state)
+		styled := state
+		if t != nil && t.Enabled {
+			if r.Active {
+				styled = t.SuccessStyle.Render(state)
+			} else {
+				styled = t.DimStyle.Render(state)
+			}
+		}
+		out[i] = table.Row{
+			fmt.Sprintf("%d", r.Local),
+			fmt.Sprintf("%d", r.Remote),
+			r.Circuit,
+			r.Kart,
+			styled,
+		}
 	}
-	_ = height
-	return b.String()
+	return out
 }
