@@ -8,11 +8,10 @@ import (
 	"os"
 	"sort"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/kurisu-agent/drift/internal/chest"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/devpod"
+	"github.com/kurisu-agent/drift/internal/docker"
 	"github.com/kurisu-agent/drift/internal/model"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
@@ -20,8 +19,19 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
+// devcontainerIDLabel is the docker label devpod's devcontainer
+// integration sets to the workspace UID. Lakitu reads it back via
+// `docker ps` to fan in container state for every workspace in one
+// round-trip — see KartDeps.Docker and BuildKartList.
+const devcontainerIDLabel = "dev.containers.id"
+
 type KartDeps struct {
-	Devpod    *devpod.Client
+	Devpod *devpod.Client
+	// Docker queries container state for every workspace UID in a single
+	// `docker ps` so kart.list and server.status answer in O(1) instead
+	// of O(N) `devpod status` shells. Optional only in tests — production
+	// always wires this.
+	Docker    *docker.Client
 	GarageDir string
 	// OpenChest lets the lifecycle handlers re-resolve persisted env refs
 	// on start/restart. Production binds this to server.Deps.openChest so
@@ -103,7 +113,23 @@ func (d KartDeps) kartListHandler(ctx context.Context, params json.RawMessage) (
 	if err := rpc.BindParams(params, &p); err != nil {
 		return nil, err
 	}
+	karts, err := d.BuildKartList(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return KartListResult{Karts: karts}, nil
+}
 
+// BuildKartList assembles the merged garage+devpod kart roster with
+// container state already filled in. Exported so server.status can fold
+// the same data into its single-round-trip response without duplicating
+// the merge logic.
+//
+// Status is resolved in one `docker ps` call (see KartDeps.Docker),
+// keyed off each workspace's UID. When Docker is unset (test paths), we
+// fall back to per-kart `devpod status` calls so existing fakes keep
+// working — production always wires Docker.
+func (d KartDeps) BuildKartList(ctx context.Context) ([]KartInfo, error) {
 	workspaces, err := d.listWorkspaces(ctx)
 	if err != nil {
 		return nil, err
@@ -133,25 +159,40 @@ func (d KartDeps) kartListHandler(ctx context.Context, params json.RawMessage) (
 	}
 	sort.Strings(ordered)
 
-	// Fan out buildInfo across karts so each kart's devpod status probe
-	// doesn't serialize behind the previous one's SSH handshake. Ordering
-	// is preserved via pre-indexed slots; the limit caps concurrent devpod
-	// subprocesses so a 50-kart circuit doesn't launch 50 child processes.
+	// One `docker ps` covers every workspace's container state. Falling
+	// out of this path before iterating karts means the per-kart status
+	// branch can be a pure map lookup.
+	statusByUID, err := d.dockerStatusMap(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	karts := make([]KartInfo, len(ordered))
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(4)
 	for i, name := range ordered {
 		ws, inDevpod := wsByID[name]
 		cfg, inGarage := garage[name]
-		g.Go(func() error {
-			karts[i] = d.buildInfo(gctx, name, cfg, ws, inDevpod, inGarage)
-			return nil
-		})
+		karts[i] = d.buildInfo(ctx, name, cfg, ws, inDevpod, inGarage, statusByUID)
 	}
-	if err := g.Wait(); err != nil {
-		return nil, err
+	return karts, nil
+}
+
+// dockerStatusMap returns a UID→devpod.Status map sourced from one
+// `docker ps`. Returns nil (the "fall back to devpod status" sentinel)
+// when KartDeps.Docker isn't wired — only test paths take that branch.
+func (d KartDeps) dockerStatusMap(ctx context.Context) (map[string]devpod.Status, error) {
+	if d.Docker == nil {
+		return nil, nil
 	}
-	return KartListResult{Karts: karts}, nil
+	raw, err := d.Docker.StatusByLabel(ctx, devcontainerIDLabel)
+	if err != nil {
+		return nil, rpcerr.New(rpcerr.CodeDevpod, rpcerr.TypeDevpodUnreachable,
+			"docker ps failed: %v", err).Wrap(err)
+	}
+	out := make(map[string]devpod.Status, len(raw))
+	for uid, state := range raw {
+		out[uid] = devpod.FromDockerState(state)
+	}
+	return out, nil
 }
 
 func (d KartDeps) kartInfoHandler(ctx context.Context, params json.RawMessage) (any, error) {
@@ -185,18 +226,26 @@ func (d KartDeps) kartInfoHandler(ctx context.Context, params json.RawMessage) (
 				fmt.Sprintf("drift kart delete %s to clean up, then drift new %s", p.Name, p.Name))
 	}
 
-	info := d.buildInfo(ctx, p.Name, cfg, ws, inDevpod, inGarage)
+	// Single-kart info stays on the per-workspace `devpod status` path —
+	// nothing to fan in for one kart, and this preserves the exact status
+	// codes devpod itself reports (StatusBusy mid-up, etc.) which the
+	// docker batch can't always distinguish.
+	info := d.buildInfo(ctx, p.Name, cfg, ws, inDevpod, inGarage, nil)
 	return info, nil
 }
 
 // buildInfo is the single place that assembles KartInfo so list and info
-// stay in sync.
+// stay in sync. statusByUID, when non-nil, short-circuits the per-
+// workspace `devpod status` shell and resolves status from a precomputed
+// docker batch keyed by workspace UID — the kart.list / server.status
+// hot path. nil means "fall back to devpod status" (kart.info, tests).
 func (d KartDeps) buildInfo(
 	ctx context.Context,
 	name string,
 	cfg KartConfig,
 	ws devpod.Workspace,
 	inDevpod, inGarage bool,
+	statusByUID map[string]devpod.Status,
 ) KartInfo {
 	info := KartInfo{
 		Name:      name,
@@ -227,12 +276,37 @@ func (d KartDeps) buildInfo(
 			info.CreatedAt = ws.Created
 		}
 		info.LastUsed = ws.LastUsed
-		info.Status = d.statusFor(ctx, name)
+		info.Status = d.resolveStatus(ctx, name, ws, statusByUID)
 		if info.Status == devpod.StatusRunning {
 			info.Container = containerFromConfig(cfg)
 		}
 	}
 	return info
+}
+
+// resolveStatus picks the cheapest available status source. With a
+// precomputed docker map we look up by UID (and fall through to "no
+// container = stopped" when the workspace's UID isn't in the map);
+// without one we shell `devpod status`.
+func (d KartDeps) resolveStatus(
+	ctx context.Context,
+	name string,
+	ws devpod.Workspace,
+	statusByUID map[string]devpod.Status,
+) devpod.Status {
+	if statusByUID == nil {
+		return d.statusFor(ctx, name)
+	}
+	if ws.UID == "" {
+		// Older devpod versions or in-flight workspaces may not have a
+		// UID yet; fall back to the per-workspace probe so we don't
+		// silently misreport "stopped".
+		return d.statusFor(ctx, name)
+	}
+	if st, ok := statusByUID[ws.UID]; ok {
+		return st
+	}
+	return devpod.StatusStopped
 }
 
 // envFromConfig lifts persisted env refs into the info response. Empty
