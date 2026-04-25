@@ -101,8 +101,8 @@ func (p *kartsPanel) View(width, height int) string {
 		case "error", "unreachable":
 			status = p.t.ErrorStyle.Render(r.Status)
 		}
-		b.WriteString(fmt.Sprintf("%s%-14s %-22s %-10s %-12s %s\n",
-			marker, r.Circuit, r.Name, status, dashIfEmpty(r.Tune), dashIfEmpty(r.Source)))
+		fmt.Fprintf(&b, "%s%-14s %-22s %-10s %-12s %s\n",
+			marker, r.Circuit, r.Name, status, dashIfEmpty(r.Tune), dashIfEmpty(r.Source))
 	}
 	_ = height
 	return b.String()

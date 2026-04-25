@@ -6,16 +6,16 @@ import "charm.land/bubbles/v2/key"
 // interactive surface. Footers and help modals render from these so the
 // strings shown to the user can never drift from the keys they bind.
 var Keys = struct {
-	Quit, ForceQuit              key.Binding
-	Help                         key.Binding
-	Filter                       key.Binding
-	Refresh                      key.Binding
-	Up, Down, Left, Right        key.Binding
-	Tab, ShiftTab                key.Binding
-	Enter, Escape                key.Binding
-	Tab1, Tab2, Tab3, Tab4       key.Binding
-	Tab5, Tab6, Tab7, Tab8       key.Binding
-	Palette                      key.Binding
+	Quit, ForceQuit        key.Binding
+	Help                   key.Binding
+	Filter                 key.Binding
+	Refresh                key.Binding
+	Up, Down, Left, Right  key.Binding
+	Tab, ShiftTab          key.Binding
+	Enter, Escape          key.Binding
+	Tab1, Tab2, Tab3, Tab4 key.Binding
+	Tab5, Tab6, Tab7, Tab8 key.Binding
+	Palette                key.Binding
 }{
 	Quit:      key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit")),
 	ForceQuit: key.NewBinding(key.WithKeys("Q", "ctrl+c"), key.WithHelp("Q", "force quit")),

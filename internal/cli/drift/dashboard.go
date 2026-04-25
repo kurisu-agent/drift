@@ -4,17 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/cli/ui"
 	"github.com/kurisu-agent/drift/internal/cli/ui/dashboard"
 	"github.com/kurisu-agent/drift/internal/config"
+	"github.com/kurisu-agent/drift/internal/demo"
 	"github.com/kurisu-agent/drift/internal/version"
 )
 
 type dashboardCmd struct {
-	Tab string `name:"tab" help:"Initial tab (status|karts|circuits|chest|characters|tunes|ports|logs)."`
+	Tab  string `name:"tab" help:"Initial tab (status|karts|circuits|chest|characters|tunes|ports|logs)."`
+	Demo bool   `name:"demo" hidden:"" help:"Render against canned fixtures instead of live RPCs (used for the README GIF)."`
 }
 
 func runDashboard(ctx context.Context, io IO, root *CLI, cmd dashboardCmd, deps deps) int {
@@ -27,11 +30,17 @@ func runDashboard(ctx context.Context, io IO, root *CLI, cmd dashboardCmd, deps 
 		return errfmt.Emit(io.Stderr, err)
 	}
 	t := ui.NewTheme(io.Stdout, false)
-	ds := newLiveDataSource(deps, root)
+	var ds dashboard.DataSource
+	if cmd.Demo || os.Getenv("DRIFT_DEMO") != "" {
+		ds = demo.New()
+	} else {
+		ds = newLiveDataSource(deps, root)
+	}
 	opts := dashboard.Options{
 		InitialTab:    tab,
 		CircuitFilter: root.Circuit,
 		Theme:         t,
+		Demo:          cmd.Demo,
 		DriftVersion:  version.Get().Version,
 		DataSource:    ds,
 	}

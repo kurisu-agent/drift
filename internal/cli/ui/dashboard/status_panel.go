@@ -128,8 +128,8 @@ func (p *statusPanel) activityTable(width, height int) string {
 		if kart == "" {
 			kart = "—"
 		}
-		b.WriteString(fmt.Sprintf("%-10s %-18s %-22s %s\n",
-			p.t.DimStyle.Render(when), e.Action, kart, p.t.DimStyle.Render(e.Detail)))
+		fmt.Fprintf(&b, "%-10s %-18s %-22s %s\n",
+			p.t.DimStyle.Render(when), e.Action, kart, p.t.DimStyle.Render(e.Detail))
 	}
 	return b.String()
 }

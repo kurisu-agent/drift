@@ -72,8 +72,8 @@ func (p *portsPanel) View(width, height int) string {
 		if r.Active {
 			state = p.t.SuccessStyle.Render("forwarding")
 		}
-		b.WriteString(fmt.Sprintf("%-7d %-7d %-14s %-22s %s\n",
-			r.Local, r.Remote, r.Circuit, r.Kart, state))
+		fmt.Fprintf(&b, "%-7d %-7d %-14s %-22s %s\n",
+			r.Local, r.Remote, r.Circuit, r.Kart, state)
 	}
 	_ = height
 	return b.String()

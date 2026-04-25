@@ -85,8 +85,8 @@ func (p *resourcePanel) View(width, height int) string {
 	b.WriteString(p.t.DimStyle.Render(strings.Repeat("─", maxInt(20, width-2))))
 	b.WriteString("\n")
 	for _, r := range p.rows {
-		b.WriteString(fmt.Sprintf("%-14s %-22s %-40s %s\n",
-			r.Circuit, r.Name, truncate(r.Description, 40), p.t.DimStyle.Render(r.UsedBy)))
+		fmt.Fprintf(&b, "%-14s %-22s %-40s %s\n",
+			r.Circuit, r.Name, truncate(r.Description, 40), p.t.DimStyle.Render(r.UsedBy))
 	}
 	_ = height
 	return b.String()

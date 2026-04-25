@@ -17,7 +17,7 @@ const showTimerAfter = 10 * time.Second
 // SpinnerOptions controls a single spinner phase.
 type SpinnerOptions struct {
 	Message   string
-	Transport string  // optional: rendered as " via <transport>" dim suffix.
+	Transport string   // optional: rendered as " via <transport>" dim suffix.
 	Frames    []string // override the default frame set (defaults to spinner.Dot).
 	FPS       time.Duration
 }

@@ -12,11 +12,10 @@ import (
 // checkmark. Used by drift new (clone, up, dotfiles, finalize) and drift
 // kart rebuild. No-op when the theme is disabled.
 type PhaseTracker struct {
-	w        io.Writer
-	t        *Theme
-	phases   []string
-	startIdx int
-	enabled  bool
+	w       io.Writer
+	t       *Theme
+	phases  []string
+	enabled bool
 
 	mu      sync.Mutex
 	current int

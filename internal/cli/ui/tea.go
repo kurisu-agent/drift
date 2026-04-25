@@ -13,8 +13,8 @@ import (
 
 // RunProgramOptions configures RunProgram.
 type RunProgramOptions struct {
-	Input   io.Reader   // defaults to os.Stdin
-	Output  io.Writer   // defaults to os.Stdout
+	Input   io.Reader // defaults to os.Stdin
+	Output  io.Writer // defaults to os.Stdout
 	Context context.Context
 }
 

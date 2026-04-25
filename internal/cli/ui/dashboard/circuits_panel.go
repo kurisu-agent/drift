@@ -77,8 +77,8 @@ func (p *circuitsPanel) View(width, height int) string {
 		if r.LatencyMS > 0 {
 			latency = fmt.Sprintf("%dms", r.LatencyMS)
 		}
-		b.WriteString(fmt.Sprintf("%-18s %-30s %-12s %-10s %s%s\n",
-			r.Name, r.Host, dashIfEmpty(r.Lakitu), latency, state, def))
+		fmt.Fprintf(&b, "%-18s %-30s %-12s %-10s %s%s\n",
+			r.Name, r.Host, dashIfEmpty(r.Lakitu), latency, state, def)
 	}
 	_ = height
 	return b.String()

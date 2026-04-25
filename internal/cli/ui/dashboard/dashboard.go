@@ -103,8 +103,6 @@ type model struct {
 
 	tab    Tab
 	panels [tabCount]Panel
-
-	tickPaused bool
 }
 
 func newModel(o Options) *model {

@@ -6,13 +6,13 @@ import "time"
 // and demo data sources both produce this shape so panel rendering has
 // one input format.
 type StatusSnapshot struct {
-	DriftVersion     string
-	CircuitsTotal    int
+	DriftVersion      string
+	CircuitsTotal     int
 	CircuitsReachable int
-	KartsTotal       int
-	KartsRunning     int
-	PortsActive      int
-	Activity         []ActivityEntry
+	KartsTotal        int
+	KartsRunning      int
+	PortsActive       int
+	Activity          []ActivityEntry
 }
 
 // ActivityEntry is one row of the status tab's recent-activity table.
@@ -56,9 +56,9 @@ type ResourceRow struct {
 
 // PortRow describes one workstation port forward.
 type PortRow struct {
-	Local      int
-	Remote     int
-	Circuit    string
-	Kart       string
-	Active     bool
+	Local   int
+	Remote  int
+	Circuit string
+	Kart    string
+	Active  bool
 }
