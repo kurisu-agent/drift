@@ -1,0 +1,4 @@
+  1 status  [1m▸ 2 karts ◂[m  3 circuits    4 chest    5 characters    6 tunes    7 ports    8 logs                          
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+(no karts on any configured circuit)                                                                                    
+[tab] next  [1-8] jump  [r] refresh  [?] help  [q] quit                                                                 

@@ -1,0 +1,4 @@
+  1 status    2 karts  [1m▸ 3 circuits ◂[m  4 chest    5 characters    6 tunes    7 ports    8 logs                          
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+(no circuits configured; try `drift circuit add user@host`)                                                             
+[tab] next  [1-8] jump  [r] refresh  [?] help  [q] quit                                                                 

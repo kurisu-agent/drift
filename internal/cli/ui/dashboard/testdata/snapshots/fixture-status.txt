@@ -1,0 +1,14 @@
+[1m▸ 1 status ◂[m  2 karts    3 circuits    4 chest    5 characters    6 tunes    7 ports    8 logs                          
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+drift 0.4.3                                                                                           3 / 3   circuits  
+devpods for drifters                                                                                     7 / 9   karts  
+                                                                                                             4   ports  
+                                                                                                                        
+TIME       ACTION             KART                   DETAIL                                                             
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
+3m ago     drift new          alpha.plan-14          from example-org/template                                          
+12m ago    kart restart       alpha.api                                                                                 
+1h ago     port add           alpha.web              :3000 -> :3000                                                     
+2h ago     drift status       —                                                                                         
+                                                                                                                        
+[tab] next  [1-8] jump  [r] refresh  [?] help  [q] quit                                                                 

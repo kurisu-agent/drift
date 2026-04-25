@@ -1,0 +1,7 @@
+  1 status    2 karts    3 circuits  [1m▸ 4 chest ◂[m  5 characters    6 tunes    7 ports    8 logs                          
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+CIRCUIT        NAME                   DETAIL                                   USED-BY                                  
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
+alpha          OPENAI_API_KEY         1password://drift/openai                 api, web                                 
+                                                                                                                        
+[tab] next  [1-8] jump  [r] refresh  [?] help  [q] quit                                                                 

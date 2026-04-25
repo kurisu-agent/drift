@@ -1,0 +1,7 @@
+  1 status    2 karts    3 circuits    4 chest    5 characters    6 tunes    7 ports  [1m▸ 8 logs ◂[m                        
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+logs                                                                                                                    
+                                                                                                                        
+interactive log tail not yet wired in this view.                                                                        
+for now, run `drift logs <kart>` from a shell.                                                                          
+[tab] next  [1-8] jump  [r] refresh  [?] help  [q] quit                                                                 

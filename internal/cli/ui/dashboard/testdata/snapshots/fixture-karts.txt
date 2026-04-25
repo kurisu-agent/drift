@@ -1,0 +1,11 @@
+  1 status  [1m▸ 2 karts ◂[m  3 circuits    4 chest    5 characters    6 tunes    7 ports    8 logs                          
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+CIRCUIT        NAME                   STATUS     TUNE         SOURCE                                                    
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
+> alpha          api                    running    go-stack     clone                                                   
+  alpha          web                    running    ts-stack     clone                                                   
+  alpha          db                     stopped    py-stack     starter                                                 
+  beta           experiments            running    py-stack     clone                                                   
+  beta           scratch                stale      —            —                                                       
+                                                                                                                        
+[tab] next  [1-8] jump  [r] refresh  [?] help  [q] quit                                                                 
