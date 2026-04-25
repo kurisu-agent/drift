@@ -1,5 +1,7 @@
 # Plan 14 progress
 
+**Status: closed out, superseded by `plans/16-dashboard-rebrand.md` for the dashboard rebrand work.** The foundation (`internal/cli/ui` package, mode/theme/surface, eight-tab dashboard skeleton, harmonica entrance animation, snapshot tests, demo mode, `make eval-frames`) is landed and stays. Remaining items in the "Still to do" section below are re-bucketed by plan 16 into either (a) folded into the rebrand, or (b) deferred to follow-up plans (lifecycle action wiring, `drift new` wizard, glamour help, etc.). Continue work on `feat/plan-14-fresh`; no new worktree.
+
 Current branch: `feat/plan-14-fresh` in `.claude/worktrees/plan-14-fresh`. Last `make ci` was green; the dashboard renders end-to-end against demo and live data sources, debug logs no longer punch through the alt-screen, and the status panel has the harmonica-driven entrance animation.
 
 ## Done
