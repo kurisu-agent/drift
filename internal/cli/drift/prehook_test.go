@@ -120,6 +120,79 @@ func TestUpdateBannerLine(t *testing.T) {
 	}
 }
 
+func TestShowUpdateBanner_SnoozesForADay(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	prevVer := currentVersionFn
+	t.Cleanup(func() { currentVersionFn = prevVer })
+	currentVersionFn = func() string { return "0.1.0" }
+
+	if err := saveClientState(clientState{LatestVersion: "9.9.9"}); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+
+	var first bytes.Buffer
+	showUpdateBanner(IO{Stderr: &first})
+	if !strings.Contains(first.String(), "9.9.9") {
+		t.Fatalf("first invocation should print the banner; got %q", first.String())
+	}
+
+	st := loadClientState()
+	if st.BannerVersion != "9.9.9" || st.LastBannerShown.IsZero() {
+		t.Fatalf("banner state not persisted: %+v", st)
+	}
+
+	var second bytes.Buffer
+	showUpdateBanner(IO{Stderr: &second})
+	if second.Len() != 0 {
+		t.Errorf("second invocation within 24h should be silent; got %q", second.String())
+	}
+}
+
+func TestShowUpdateBanner_RefiresAfterWindow(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	prevVer := currentVersionFn
+	t.Cleanup(func() { currentVersionFn = prevVer })
+	currentVersionFn = func() string { return "0.1.0" }
+
+	if err := saveClientState(clientState{
+		LatestVersion:   "9.9.9",
+		BannerVersion:   "9.9.9",
+		LastBannerShown: time.Now().Add(-25 * time.Hour),
+	}); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+
+	var buf bytes.Buffer
+	showUpdateBanner(IO{Stderr: &buf})
+	if !strings.Contains(buf.String(), "9.9.9") {
+		t.Errorf("expired snooze should re-fire the banner; got %q", buf.String())
+	}
+}
+
+func TestShowUpdateBanner_NewerVersionBypassesSnooze(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	prevVer := currentVersionFn
+	t.Cleanup(func() { currentVersionFn = prevVer })
+	currentVersionFn = func() string { return "0.1.0" }
+
+	// Snoozed against 9.9.8 minutes ago, but state.json now advertises
+	// 9.9.9 — a release shipped inside the snooze window must still
+	// surface.
+	if err := saveClientState(clientState{
+		LatestVersion:   "9.9.9",
+		BannerVersion:   "9.9.8",
+		LastBannerShown: time.Now().Add(-1 * time.Minute),
+	}); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+
+	var buf bytes.Buffer
+	showUpdateBanner(IO{Stderr: &buf})
+	if !strings.Contains(buf.String(), "9.9.9") {
+		t.Errorf("newer version should bypass snooze; got %q", buf.String())
+	}
+}
+
 func TestUpdateCheckEnabled(t *testing.T) {
 	prev := isTTYFn
 	t.Cleanup(func() { isTTYFn = prev })

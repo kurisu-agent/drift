@@ -20,6 +20,12 @@ import (
 type clientState struct {
 	LastUpdateCheck time.Time `json:"last_update_check,omitempty"`
 	LatestVersion   string    `json:"latest_version,omitempty"`
+	// LastBannerShown / BannerVersion gate how often the "update available"
+	// banner prints. Storing the version we showed for lets a *new* release
+	// land within the snooze window without being silenced — we only stay
+	// quiet for a given (version, day) pair.
+	LastBannerShown time.Time `json:"last_banner_shown,omitempty"`
+	BannerVersion   string    `json:"banner_version,omitempty"`
 }
 
 func clientStatePath() (string, error) {

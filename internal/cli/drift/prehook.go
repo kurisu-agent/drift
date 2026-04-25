@@ -30,6 +30,11 @@ const updateCheckTimeout = 10 * time.Second
 // the background check without touching the network.
 var fetchLatestReleaseFn = fetchLatestRelease
 
+// currentVersionFn is the indirection point tests swap out to pretend
+// the binary is running at a specific version. version.Get() caches via
+// sync.OnceValue, so it can't be perturbed at runtime.
+var currentVersionFn = func() string { return version.Get().Version }
+
 // updateCheckRepo / updateCheckAPIBase mirror the defaults on updateCmd
 // so the background check targets the same release feed as `drift
 // update`. Kept as vars so tests can point both at a mock.
@@ -150,9 +155,22 @@ func updateBannerLine(cur, latest string, p *style.Palette) string {
 func showUpdateBanner(io IO) {
 	st := loadClientState()
 	p := style.For(io.Stderr, false)
-	if line := updateBannerLine(version.Get().Version, st.LatestVersion, p); line != "" {
-		fmt.Fprintln(io.Stderr, line)
+	line := updateBannerLine(currentVersionFn(), st.LatestVersion, p)
+	if line == "" {
+		return
 	}
+	// Snooze the banner for updateCheckInterval per detected version. Once
+	// shown for a given LatestVersion, stay quiet until the window expires
+	// *or* a newer release appears in state.json. A bare 24h timer would
+	// silence the banner across two releases shipped within a day; keying
+	// on the version we last shouted about fixes that without re-nagging.
+	if st.BannerVersion == st.LatestVersion && time.Since(st.LastBannerShown) < updateCheckInterval {
+		return
+	}
+	fmt.Fprintln(io.Stderr, line)
+	st.LastBannerShown = time.Now()
+	st.BannerVersion = st.LatestVersion
+	_ = saveClientState(st)
 }
 
 func scheduleUpdateCheck() {
