@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/key"
@@ -18,6 +19,9 @@ type statusPanel struct {
 	tbl  table.Model
 	snap StatusSnapshot
 	err  string
+
+	width int
+	entr  *entrance
 }
 
 func newStatusPanel(o Options) Panel {
@@ -34,7 +38,13 @@ func newStatusPanel(o Options) Panel {
 
 func (p *statusPanel) Title() string            { return "status" }
 func (p *statusPanel) ShortHelp() []key.Binding { return nil }
-func (p *statusPanel) Init() tea.Cmd            { return p.refreshCmd() }
+
+func (p *statusPanel) Init() tea.Cmd {
+	// The frame loop kicks off here. The entrance object itself is
+	// created lazily on the first WindowSizeMsg so we know the layout
+	// width — the spring targets are width-relative.
+	return tea.Batch(p.refreshCmd(), animFrameCmd())
+}
 
 func (p *statusPanel) refreshCmd() tea.Cmd {
 	return func() tea.Msg {
@@ -59,6 +69,19 @@ func (p *statusPanel) Update(msg tea.Msg) (Panel, tea.Cmd) {
 		p.tbl.SetRows(activityRows(m.snap.Activity, time.Now(), p.t))
 	case statusErrMsg:
 		p.err = m.err
+	case tea.WindowSizeMsg:
+		p.width = m.Width
+		if p.entr == nil {
+			motionOff := p.t == nil || !p.t.Enabled || p.o.MotionDisabled
+			p.entr = newEntrance(m.Width, motionOff)
+		}
+	case animFrameMsg:
+		if p.entr == nil {
+			return p, nil
+		}
+		if p.entr.tick() {
+			return p, animFrameCmd()
+		}
 	case tickMsg:
 		return p, p.refreshCmd()
 	case tea.KeyPressMsg:
@@ -84,24 +107,96 @@ func (p *statusPanel) View(width, height int) string {
 	body := p.tbl.View()
 	if len(p.snap.Activity) == 0 {
 		body = panelEmpty(p.t, "no recent activity yet.", width, tableHeight)
+	} else if p.entr != nil {
+		body = applyFade(body, p.entr.activity.pos, p.t)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, header, body)
 }
 
-// headerRow lays out the banner block (left) + stats block (right) on
-// one row, sized to fit width.
+// headerRow lays out banner (left, slides in from -bannerWidth to 0)
+// and lockup + stats (right, slide in from +width). Stats columns are
+// individual elements with staggered delays so the row "catches up"
+// rather than entering as a single slab.
 func (p *statusPanel) headerRow(width int) string {
+	banner := renderWordmark(p.t)
+	lockup := p.lockup()
 	stats := p.statsBlock()
-	statsW := lipgloss.Width(stats)
-	leftW := maxInt(0, width-statsW-2)
 
-	bannerStyle := lipgloss.NewStyle().Width(leftW).Padding(0, 1)
-	banner := bannerStyle.Render(p.banner())
+	bx := 0
+	lx, sx := 0, 0
+	l1off, l2off, l3off := 0, 0, 0
+	if p.entr != nil {
+		bx = offsetLeft(p.entr.banner)
+		l1off = int(p.entr.lockup1.pos + 0.5)
+		l2off = int(p.entr.lockup2.pos + 0.5)
+		l3off = int(p.entr.lockup3.pos + 0.5)
+		sx = int(p.entr.stats.pos + 0.5)
+		_ = lx
+	}
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, banner, stats)
+	bannerCol := slideHorizontal(banner, bx)
+	lockupLines := strings.Split(lockup, "\n")
+	if len(lockupLines) >= 1 {
+		lockupLines[0] = padLeftLine(lockupLines[0], maxInt(0, l1off))
+	}
+	if len(lockupLines) >= 2 {
+		lockupLines[1] = padLeftLine(lockupLines[1], maxInt(0, l2off))
+	}
+	if len(lockupLines) >= 3 {
+		lockupLines[2] = padLeftLine(lockupLines[2], maxInt(0, l3off))
+	}
+	lockupCol := strings.Join(lockupLines, "\n")
+	statsCol := slideHorizontal(stats, sx)
+
+	bannerW := lipgloss.Width(bannerCol)
+	statsW := lipgloss.Width(statsCol)
+	lockupW := maxInt(0, width-bannerW-statsW-4)
+
+	left := lipgloss.NewStyle().Width(bannerW).Render(bannerCol)
+	mid := lipgloss.NewStyle().Width(lockupW).PaddingLeft(2).Render(lockupCol)
+	right := lipgloss.NewStyle().Width(statsW).Render(statsCol)
+	return lipgloss.JoinHorizontal(lipgloss.Top, left, mid, right)
 }
 
-func (p *statusPanel) banner() string {
+// slideHorizontal pads each line of s with leading spaces equal to
+// max(0, offset). Used to hold an element off-screen during the
+// entrance and slide it into place as the spring resolves.
+func slideHorizontal(s string, offset int) string {
+	if offset <= 0 {
+		return s
+	}
+	return padLeft(s, offset)
+}
+
+// padLeftLine pads a single line; preserves embedded ANSI by treating
+// the prefix as raw spaces (lipgloss measurement still works because
+// the prefix is plain ASCII).
+func padLeftLine(s string, n int) string {
+	if n <= 0 {
+		return s
+	}
+	return strings.Repeat(" ", n) + s
+}
+
+// applyFade dims the body during the activity-fade window. opacity in
+// [0,1]; 0 = fully dim, 1 = full theme. We approximate alpha by
+// switching between dim and normal styles based on a threshold — cheap
+// and avoids per-character color blending.
+func applyFade(body string, opacity float64, t *ui.Theme) string {
+	if t == nil || !t.Enabled || opacity >= 1 {
+		return body
+	}
+	if opacity <= 0 {
+		return t.DimStyle.Render(body)
+	}
+	// At opacity 0..0.5 keep dim; 0.5..1 reveal.
+	if opacity < 0.5 {
+		return t.DimStyle.Render(body)
+	}
+	return body
+}
+
+func (p *statusPanel) lockup() string {
 	v := p.snap.DriftVersion
 	if v == "" {
 		v = p.o.DriftVersion
@@ -111,7 +206,7 @@ func (p *statusPanel) banner() string {
 	return lipgloss.JoinVertical(lipgloss.Left,
 		bold.Render(fmt.Sprintf("drift %s", v)),
 		dim.Render("devpods for drifters"),
-		"",
+		dim.Render(""),
 	)
 }
 

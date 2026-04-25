@@ -50,12 +50,13 @@ type Panel interface {
 
 // Options configures a dashboard run.
 type Options struct {
-	InitialTab    Tab
-	CircuitFilter string
-	Theme         *ui.Theme
-	Demo          bool
-	DriftVersion  string
-	DataSource    DataSource
+	InitialTab     Tab
+	CircuitFilter  string
+	Theme          *ui.Theme
+	Demo           bool
+	DriftVersion   string
+	DataSource     DataSource
+	MotionDisabled bool // true skips the entrance animation; mirrors --no-motion / DRIFT_NO_MOTION.
 }
 
 // DataSource is the small surface every panel calls into. Implementations

@@ -16,8 +16,9 @@ import (
 )
 
 type dashboardCmd struct {
-	Tab  string `name:"tab" help:"Initial tab (status|karts|circuits|chest|characters|tunes|ports|logs)."`
-	Demo bool   `name:"demo" hidden:"" help:"Render against canned fixtures instead of live RPCs (used for the README GIF)."`
+	Tab      string `name:"tab" help:"Initial tab (status|karts|circuits|chest|characters|tunes|ports|logs)."`
+	Demo     bool   `name:"demo" hidden:"" help:"Render against canned fixtures instead of live RPCs (used for the README GIF)."`
+	NoMotion bool   `name:"no-motion" env:"DRIFT_NO_MOTION" help:"Skip the entrance animation; same shape as prefers-reduced-motion."`
 }
 
 func runDashboard(ctx context.Context, io IO, root *CLI, cmd dashboardCmd, deps deps) int {
@@ -46,12 +47,13 @@ func runDashboard(ctx context.Context, io IO, root *CLI, cmd dashboardCmd, deps 
 		ds = newLiveDataSource(deps, root)
 	}
 	opts := dashboard.Options{
-		InitialTab:    tab,
-		CircuitFilter: root.Circuit,
-		Theme:         t,
-		Demo:          cmd.Demo,
-		DriftVersion:  version.Get().Version,
-		DataSource:    ds,
+		InitialTab:     tab,
+		CircuitFilter:  root.Circuit,
+		Theme:          t,
+		Demo:           cmd.Demo,
+		DriftVersion:   version.Get().Version,
+		DataSource:     ds,
+		MotionDisabled: cmd.NoMotion,
 	}
 	if err := dashboard.Run(ctx, io.Stdin, io.Stdout, opts); err != nil {
 		return errfmt.Emit(io.Stderr, err)
