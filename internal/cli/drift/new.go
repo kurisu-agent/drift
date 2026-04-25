@@ -10,7 +10,6 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
-	"github.com/kurisu-agent/drift/internal/cli/progress"
 	"github.com/kurisu-agent/drift/internal/cli/ui"
 	"github.com/kurisu-agent/drift/internal/kart"
 	"github.com/kurisu-agent/drift/internal/model"
@@ -89,15 +88,16 @@ func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 		// output streaming back over the SSH transport's stderr.
 		msg := fmt.Sprintf("creating kart %q", cmd.Name)
 		quiet := root.Output == "json" || root.Debug
-		ph := progress.Start(io.Stderr, quiet, msg, "ssh")
+		t := ui.NewTheme(io.Stderr, quiet)
+		sp := t.NewSpinner(io.Stderr, ui.SpinnerOptions{Message: msg, Transport: "ssh"})
 		start := time.Now()
 		callErr := deps.call(ctx, circuit, wire.MethodKartNew, params, &result)
 		elapsed := time.Since(start).Round(time.Second)
 		if callErr == nil {
-			ph.Succeed(fmt.Sprintf("created kart %q in %s", result.Name, elapsed))
+			sp.Succeed(fmt.Sprintf("created kart %q in %s", result.Name, elapsed))
 			break
 		}
-		ph.Fail()
+		sp.Fail()
 		// In-place retry when the server reports a name collision and
 		// we're on a real TTY — prompt for a new name and resend.
 		// Scripted callers keep the existing error contract.
