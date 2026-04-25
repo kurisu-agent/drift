@@ -25,6 +25,7 @@ type connectCmd struct {
 	SSH          bool     `name:"ssh" help:"Force plain SSH (skip mosh)."`
 	ForwardAgent bool     `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
 	NoForwards   bool     `name:"no-forwards" help:"Skip the workstation-side ports reconcile for this session only."`
+	KeepForwards bool     `name:"keep-forwards" help:"Don't tear down forwards on session exit (persist past disconnect)."`
 }
 
 // circuitKart pairs a listEntry with the circuit it was fetched from, so
@@ -57,8 +58,13 @@ func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps
 		if err != nil {
 			return errfmt.Emit(io.Stderr, err)
 		}
-		return doConnect(ctx, io, root, deps, circuit, cmd.Name, cmd.SSH, cmd.ForwardAgent, cmd.NoForwards,
-			expandCLISSHArgs(cmd.SSHArgs))
+		return doConnect(ctx, io, root, deps, circuit, cmd.Name, doConnectOptions{
+			ForceSSH:     cmd.SSH,
+			ForwardAgent: cmd.ForwardAgent,
+			NoForwards:   cmd.NoForwards,
+			KeepForwards: cmd.KeepForwards,
+			SSHArgs:      expandCLISSHArgs(cmd.SSHArgs),
+		})
 	}
 
 	if !stdinIsTTY(io.Stdin) || !stdoutIsTTY(io.Stdout) || root.Output == "json" {
@@ -76,8 +82,13 @@ func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps
 		return doCircuitConnect(ctx, io, root, choice.Circuit, cmd.SSH, cmd.ForwardAgent,
 			expandCLISSHArgs(cmd.SSHArgs))
 	}
-	return doConnect(ctx, io, root, deps, choice.Circuit, choice.Kart, cmd.SSH, cmd.ForwardAgent, cmd.NoForwards,
-		expandCLISSHArgs(cmd.SSHArgs))
+	return doConnect(ctx, io, root, deps, choice.Circuit, choice.Kart, doConnectOptions{
+		ForceSSH:     cmd.SSH,
+		ForwardAgent: cmd.ForwardAgent,
+		NoForwards:   cmd.NoForwards,
+		KeepForwards: cmd.KeepForwards,
+		SSHArgs:      expandCLISSHArgs(cmd.SSHArgs),
+	})
 }
 
 // runKartConnect is the entry point for `drift kart connect [name]`. It
@@ -89,8 +100,13 @@ func runKartConnect(ctx context.Context, io IO, root *CLI, cmd kartConnectCmd, d
 		if err != nil {
 			return errfmt.Emit(io.Stderr, err)
 		}
-		return doConnect(ctx, io, root, deps, circuit, cmd.Name, cmd.SSH, cmd.ForwardAgent, cmd.NoForwards,
-			expandCLISSHArgs(cmd.SSHArgs))
+		return doConnect(ctx, io, root, deps, circuit, cmd.Name, doConnectOptions{
+			ForceSSH:     cmd.SSH,
+			ForwardAgent: cmd.ForwardAgent,
+			NoForwards:   cmd.NoForwards,
+			KeepForwards: cmd.KeepForwards,
+			SSHArgs:      expandCLISSHArgs(cmd.SSHArgs),
+		})
 	}
 	if !stdinIsTTY(io.Stdin) || !stdoutIsTTY(io.Stdout) || root.Output == "json" {
 		return errfmt.Emit(io.Stderr,
@@ -103,8 +119,13 @@ func runKartConnect(ctx context.Context, io IO, root *CLI, cmd kartConnectCmd, d
 	if !ok {
 		return 0
 	}
-	return doConnect(ctx, io, root, deps, pickedCircuit, pickedKart, cmd.SSH, cmd.ForwardAgent, cmd.NoForwards,
-		expandCLISSHArgs(cmd.SSHArgs))
+	return doConnect(ctx, io, root, deps, pickedCircuit, pickedKart, doConnectOptions{
+		ForceSSH:     cmd.SSH,
+		ForwardAgent: cmd.ForwardAgent,
+		NoForwards:   cmd.NoForwards,
+		KeepForwards: cmd.KeepForwards,
+		SSHArgs:      expandCLISSHArgs(cmd.SSHArgs),
+	})
 }
 
 // runCircuitConnect is the entry point for `drift circuit connect [name]`
@@ -560,11 +581,21 @@ func doCircuitConnect(ctx context.Context, io IO, root *CLI, circuit string, for
 	return errfmt.Emit(io.Stderr, err)
 }
 
+// doConnectOptions bundles the connect knobs so we don't grow a giant
+// positional bool list. Zero-value is fine: every field is opt-in.
+type doConnectOptions struct {
+	ForceSSH     bool
+	ForwardAgent bool
+	NoForwards   bool
+	KeepForwards bool
+	SSHArgs      []string
+}
+
 // doConnect is the shared body behind `drift connect` and the post-create
 // auto-connect path of `drift new`. Both paths have already resolved the
 // circuit, so the helper takes it as a parameter instead of re-resolving.
-// sshArgs holds the already-merged (config + CLI passthrough) flag list.
-func doConnect(ctx context.Context, io IO, root *CLI, deps deps, circuit, name string, forceSSH, forwardAgent, noForwards bool, sshArgs []string) int {
+// SSHArgs holds the already-merged (config + CLI passthrough) flag list.
+func doConnect(ctx context.Context, io IO, root *CLI, deps deps, circuit, name string, dopts doConnectOptions) int {
 	// Drift-check preamble: if the kart's tune has changed since the
 	// container was built, give the user a chance to rebuild before
 	// connecting. Non-TTY or json paths print a warning and proceed.
@@ -574,7 +605,18 @@ func doConnect(ctx context.Context, io IO, root *CLI, deps deps, circuit, name s
 		return errfmt.Emit(io.Stderr, err)
 	}
 
-	transport := connect.Transport(osexec.LookPath, forceSSH)
+	// Resolve the auto-forward toggle from config. Falling back to true
+	// keeps the feature on for users who never edited their config; only
+	// an explicit `auto_forward_ports: false` disables it.
+	autoForward := true
+	if cfgPath, err := deps.clientConfigPath(); err == nil {
+		if cfg, err := config.LoadClient(cfgPath); err == nil {
+			autoForward = cfg.AutoForwardsPorts()
+		}
+	}
+	disableForwards := dopts.NoForwards || !autoForward
+
+	transport := connect.Transport(osexec.LookPath, dopts.ForceSSH)
 	ph := progress.Start(io.Stderr, root.Output == "json",
 		"connecting to kart \""+name+"\"", transport)
 	d := connect.Deps{
@@ -582,14 +624,15 @@ func doConnect(ctx context.Context, io IO, root *CLI, deps deps, circuit, name s
 		// Stop the spinner right before Exec takes the TTY so it doesn't
 		// race the interactive child for cursor control.
 		OnReady:    ph.Stop,
-		BeforeExec: makeBeforeExecPortsHook(io, root, circuit, name, noForwards),
+		BeforeExec: makeBeforeExecPortsHook(io, root, circuit, name, disableForwards),
+		AfterExec:  makeAfterExecPortsHook(io, root, circuit, name, disableForwards || dopts.KeepForwards),
 	}
 	opts := connect.Options{
 		Circuit:      circuit,
 		Kart:         name,
-		ForceSSH:     forceSSH,
-		ForwardAgent: forwardAgent,
-		SSHArgs:      sshArgs,
+		ForceSSH:     dopts.ForceSSH,
+		ForwardAgent: dopts.ForwardAgent,
+		SSHArgs:      dopts.SSHArgs,
 	}
 	stdio := connect.Stdio{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
 

@@ -59,6 +59,7 @@ type kartConnectCmd struct {
 	SSH          bool     `name:"ssh" help:"Force plain SSH (skip mosh)."`
 	ForwardAgent bool     `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
 	NoForwards   bool     `name:"no-forwards" help:"Skip the workstation-side ports reconcile for this session only."`
+	KeepForwards bool     `name:"keep-forwards" help:"Don't tear down forwards on session exit (persist past disconnect)."`
 }
 
 // emitKartResult: terse text so stdout stays scriptable; JSON passes

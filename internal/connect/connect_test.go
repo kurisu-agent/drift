@@ -358,6 +358,59 @@ func TestRunAutostartTimeout(t *testing.T) {
 	}
 }
 
+// AfterExec must fire after Exec returns regardless of exit code, so
+// teardown can run even when the user's shell exited non-zero or Exec
+// itself errored. The plan-15 ports teardown depends on this.
+func TestRunAfterExecFires(t *testing.T) {
+	cases := []struct {
+		name    string
+		execErr error
+	}{
+		{name: "success", execErr: nil},
+		{name: "shell error", execErr: errors.New("rc=1")},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := &fakeServer{statuses: []string{"running"}}
+			afterFired := false
+			d := connect.Deps{
+				LookPath: func(s string) (string, error) { return "", errors.New("no mosh") },
+				Call:     f.call,
+				Exec: func(context.Context, string, []string, connect.Stdio) error {
+					return c.execErr
+				},
+				AfterExec: func(context.Context) { afterFired = true },
+				Now:       time.Now,
+				Sleep:     func(time.Duration) {},
+			}
+			_ = connect.Run(context.Background(), d, connect.Options{Circuit: "c", Kart: "k"}, connect.Stdio{})
+			if !afterFired {
+				t.Errorf("AfterExec did not fire (%s case)", c.name)
+			}
+		})
+	}
+}
+
+// AfterExec must NOT fire when Run aborts before reaching Exec — e.g.
+// the kart.connect RPC errors out, or BeforeExec returns non-nil.
+// Otherwise teardown would run on connects that never happened.
+func TestRunAfterExecSkippedOnPreExecError(t *testing.T) {
+	f := &fakeServer{statuses: []string{"stale_kart"}}
+	afterFired := false
+	d := connect.Deps{
+		LookPath:  func(s string) (string, error) { return "", errors.New("") },
+		Call:      f.call,
+		Exec:      func(context.Context, string, []string, connect.Stdio) error { return nil },
+		AfterExec: func(context.Context) { afterFired = true },
+		Now:       time.Now,
+		Sleep:     func(time.Duration) {},
+	}
+	_ = connect.Run(context.Background(), d, connect.Options{Circuit: "c", Kart: "k"}, connect.Stdio{})
+	if afterFired {
+		t.Errorf("AfterExec fired even though Run aborted before Exec")
+	}
+}
+
 func TestTransport(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

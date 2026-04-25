@@ -23,6 +23,36 @@ func TestLoadClient_MissingFileIsZero(t *testing.T) {
 	if !c.ManagesSSHConfig() {
 		t.Error("manage_ssh_config should default to true when field is absent")
 	}
+	if !c.AutoForwardsPorts() {
+		t.Error("auto_forward_ports should default to true when field is absent")
+	}
+}
+
+func TestLoadClient_AutoForwardPortsTriState(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{name: "absent defaults true", body: `default_circuit: ""` + "\n", want: true},
+		{name: "explicit true", body: "auto_forward_ports: true\n", want: true},
+		{name: "explicit false", body: "auto_forward_ports: false\n", want: false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte(c.body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := config.LoadClient(path)
+			if err != nil {
+				t.Fatalf("LoadClient: %v", err)
+			}
+			if got := cfg.AutoForwardsPorts(); got != c.want {
+				t.Errorf("AutoForwardsPorts() = %v, want %v", got, c.want)
+			}
+		})
+	}
 }
 
 func TestLoadClient_RejectsUnknownKeys(t *testing.T) {
