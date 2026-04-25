@@ -1,11 +1,10 @@
 # drift — TODOs
 
-- Ports management (`drift ports`, conflict detection, per-workstation remap persistence).
+- `drift ports` bubbletea TUI — browse/edit all forwards across karts, with auto-detect via `ss -tlnp` over the existing master. Layout + behaviour is fully spec'd in `plans/13-drift-ports-sidecar.md` §TUI; just needs implementing in a follow-up PR.
 - `lakitu serve` long-lived stdin/stdout RPC with batching/streaming notifications.
 - Cross-circuit sync of characters/tunes/chest.
 - Chest backends beyond `yamlfile` (age, 1Password, Vault, SOPS).
 - IDE integration via devpod's `--ide`.
-- Auto port detection.
 - Log breadcrumbs on RPC errors — surface recent per-request log lines in the error payload so clients see context on failure. See `plans/archive/04-nicer-logs.md` step 5.
 - `drift provision <host>` — one-shot circuit bootstrap over SSH that installs `lakitu` + `devpod`, wires up the systemd user template, and runs `lakitu init`.
 - `drift migrate` cross-circuit — designed in [plans/09-migrate-cross-circuit.md](plans/09-migrate-cross-circuit.md). Move a kart's config from one circuit to another and recreate it there.
@@ -13,8 +12,6 @@
 - Zellij auto-attach for `drift run` — `drift connect` picks up Zellij via the interactive login shell, but `drift run` passes a remote command and skips it. Add a server-side wrap so `drift run` gets the same session UX.
 - Zellij as a first-class feature — ship it alongside lakitu/devpod with an opinionated layout and have connect/run attach by default.
 - Auto-mount `~/.claude` into karts — when the workstation has `~/.claude/` populated, `drift new` should splice a bind mount automatically so AI-skill workflows just work.
-- Sidecar SSH tunnel for mosh port forwards — mosh can't carry TCP forwards, so devpod's forwards collapse under mosh. Hold a parallel `ssh -N -L` for each `forwardPorts` entry alongside the mosh session.
-- Port-forward opt-in for mosh (interim) — until the sidecar lands, prompt or require a flag before attempting forwards on mosh so users don't see spurious `use of closed network connection` errors.
 - drift features — bundle the devcontainer-feature blobs we keep hand-passing into `tune --features` (claude-code, zellij, etc.) into named presets, so a tune can declare `features: [ours/claude, ours/zellij]` instead of pasting JSON.
 - Tune mounts overlap with feature-provided artifacts — e.g. the default tune copies `~/.claude/statusline.sh` from the host, but the `devtools:2` feature now ships the same file from inside the kart. The host-side copy is redundant once the feature is wired. Either (a) let features declare what they provide so tune mounts can be deduped/warned-on, or (b) ship a `drift tune lint` that flags overlap. Until then: drop the `statusline.sh` mount from `~/.drift/garage/tunes/default.yaml` on dev-proxmox after confirming the feature's copy still lands correctly.
 - Starter karts land with an empty `/workspaces/<name>/` — repro: `lakitu kart new <n> --tune default --starter https://github.com/kurisu-agent/drift`, kart reaches `running`, but inside the workspace container the project dir is empty (`ls /workspaces/<n>` shows zero entries, link count 0). `drift connect` lands the user in a cwd that vanishes, zellij panics on `Unable to read current working directory`. Clone karts are unaffected — the starter-source staging step (clone → strip history → re-init) seems to land somewhere devpod isn't picking up. Investigate whether the staging tmpdir is reachable from the agent context at devpod-up time, and whether the starter source argument is being passed through correctly under recent devpod fork builds.

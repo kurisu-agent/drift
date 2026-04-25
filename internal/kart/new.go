@@ -224,6 +224,13 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 		return nil, kartErrCleanup(rpcerr.Internal("kart.new: render seeds: %v", cerr).Wrap(cerr))
 	}
 	script.Append(seedFrag)
+	// SSH login alias: adds a same-UID `/etc/passwd` entry named
+	// DriftSSHAlias pointing at the primary user's home. Once installed,
+	// workstation ssh can use a stable `User drifter` against any kart
+	// regardless of the upstream image's user (node/vscode/ubuntu/…),
+	// which is what makes plan 13's wildcard `Host drift.<c>.*` and the
+	// ports-reconcile master actually work in production.
+	script.Append(sshLoginAliasFragment(DriftSSHAlias))
 	if !script.Empty() {
 		d.phase("finalising kart (symlinks, copies, seeds)")
 		if err := script.Run(ctx, d.Devpod, resolved.Name); err != nil {

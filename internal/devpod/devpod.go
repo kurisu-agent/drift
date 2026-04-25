@@ -303,6 +303,16 @@ type SSHOpts struct {
 	// Stdio: used by `drift ssh-proxy` to pipe the outer OpenSSH handshake
 	// straight through to devpod's injected SSH server.
 	Stdio bool
+	// NoStartServices passes `--start-services=false`, suppressing
+	// devpod's auto-forward of the kart's declared `forwardPorts`
+	// (and its git/docker credentials helper). Set this for any
+	// `--command` invocation that doesn't need the side helpers —
+	// otherwise devpod tries to bind workstation-side ports on the
+	// circuit (where lakitu runs), which collides with whatever is
+	// already there and dumps `bind: address already in use` into
+	// stderr. drift's ports reconcile owns forwards explicitly, so
+	// devpod's auto-forward is just noise we'd rather not propagate.
+	NoStartServices bool
 }
 
 func (o SSHOpts) args() ([]string, error) {
@@ -330,6 +340,9 @@ func (o SSHOpts) args() ([]string, error) {
 	}
 	if o.Stdio {
 		args = append(args, "--stdio")
+	}
+	if o.NoStartServices {
+		args = append(args, "--start-services=false")
 	}
 	return args, nil
 }

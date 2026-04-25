@@ -58,6 +58,7 @@ type kartConnectCmd struct {
 	SSHArgs      []string `arg:"" optional:"" passthrough:"" help:"Extra flags forwarded to ssh (e.g. -- -i ~/.ssh/id_lab). Under mosh, wrapped into --ssh=\"ssh …\" for the bootstrap."`
 	SSH          bool     `name:"ssh" help:"Force plain SSH (skip mosh)."`
 	ForwardAgent bool     `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
+	NoForwards   bool     `name:"no-forwards" help:"Skip the workstation-side ports reconcile for this session only."`
 }
 
 // emitKartResult: terse text so stdout stays scriptable; JSON passes

@@ -202,8 +202,10 @@ func (m *Manager) WriteCircuitBlock(name, host, user string, ssh map[string]stri
 	}
 
 	block := circuitBlock(name, host, user, ssh)
-	// Keep the wildcard block at the end so OpenSSH's first-match rule
-	// favors the literal Host drift.<name>.
+	kartBlock := kartWildcardBlock(name, ssh)
+	// Keep the global wildcard block at the end so OpenSSH's first-match
+	// rule favors the literal Host drift.<name> and the per-circuit kart
+	// wildcard Host drift.<name>.* before the catchall drift.*.*.
 	var wildcard *HostBlock
 	if found := mf.findBlock(WildcardHost); found != nil {
 		dup := HostBlock{
@@ -214,6 +216,7 @@ func (m *Manager) WriteCircuitBlock(name, host, user string, ssh map[string]stri
 	}
 	mf.removeBlock(WildcardHost)
 	mf.upsertBlock(block)
+	mf.upsertBlock(kartBlock)
 	if wildcard != nil {
 		mf.Blocks = append(mf.Blocks, *wildcard)
 	}
@@ -231,7 +234,11 @@ func (m *Manager) RemoveCircuitBlock(name string) error {
 	if err != nil {
 		return err
 	}
-	if !mf.removeBlock(CircuitHostName(name)) {
+	removed := mf.removeBlock(CircuitHostName(name))
+	if mf.removeBlock(KartWildcardHost(name)) {
+		removed = true
+	}
+	if !removed {
 		return nil
 	}
 	return config.WriteFileAtomic(m.Paths.ManagedSSHConfig, mf.bytes(), 0o600)
@@ -269,6 +276,12 @@ func (m *Manager) ListCircuits() ([]string, error) {
 	var out []string
 	for _, b := range mf.Blocks {
 		if b.Name == WildcardHost {
+			continue
+		}
+		// Per-circuit kart wildcards (Host drift.<c>.*) are not
+		// circuits themselves — skip them so callers that do
+		// "configured circuits" don't double-count.
+		if strings.HasSuffix(b.Name, ".*") {
 			continue
 		}
 		if strings.HasPrefix(b.Name, "drift.") {
@@ -379,11 +392,17 @@ func (m *Manager) Reconcile(userSSHConfigPath string, specs []CircuitSpec) error
 			continue
 		}
 		block := circuitBlock(s.Circuit, s.Host, s.User, s.SSH)
-		if existing := mf.findBlock(block.Name); existing != nil && blocksEqual(*existing, block) {
-			continue
+		if existing := mf.findBlock(block.Name); existing == nil || !blocksEqual(*existing, block) {
+			mf.upsertBlock(block)
+			changed = true
 		}
-		mf.upsertBlock(block)
-		changed = true
+		// Per-circuit kart wildcard: `Host drift.<c>.*` with User drifter
+		// and the circuit's authentication-relevant ssh map entries.
+		kartBlock := kartWildcardBlock(s.Circuit, s.SSH)
+		if existing := mf.findBlock(kartBlock.Name); existing == nil || !blocksEqual(*existing, kartBlock) {
+			mf.upsertBlock(kartBlock)
+			changed = true
+		}
 	}
 	if wildcard != nil {
 		mf.Blocks = append(mf.Blocks, *wildcard)
@@ -528,6 +547,80 @@ func wildcardBlock() HostBlock {
 			"  ControlPersist 10m",
 		},
 	}
+}
+
+// DriftSSHAlias is the stable login name every `Host drift.<c>.<k>`
+// block uses. Must match internal/kart's DriftSSHAlias — lakitu
+// installs the same-UID /etc/passwd alias inside each kart, and the
+// workstation's ssh auths as this name. Duplicated here so sshconf
+// has no dependency on the larger kart package.
+const DriftSSHAlias = "drifter"
+
+// KartWildcardHost is the per-circuit kart wildcard pattern. One
+// `Host drift.<circuit>.*` block per configured circuit lets ssh
+// inherit the right IdentityFile (and any other per-circuit ssh map
+// keys) without forcing callers to hand-write a block per kart.
+func KartWildcardHost(circuit string) string { return "drift." + circuit + ".*" }
+
+// kartWildcardBlock builds the `Host drift.<circuit>.*` block that
+// fronts every kart on the circuit. It pins User=drifter so ssh auth
+// lands on the lakitu-installed login alias regardless of which
+// upstream image the kart uses, carries the circuit's
+// authentication-relevant ssh map entries (IdentityFile,
+// IdentitiesOnly, CertificateFile, PreferredAuthentications) so the
+// same key that works for the circuit block works here too, and
+// routes through drift ssh-proxy so the stdio tunnel is established
+// the same way drift connect does it.
+func kartWildcardBlock(circuitName string, ssh map[string]string) HostBlock {
+	body := []string{
+		"  User " + DriftSSHAlias,
+		"  ProxyCommand drift ssh-proxy %h %p",
+	}
+	// Only forward authentication-relevant ssh map entries. Host /
+	// HostName / Port are per-circuit (the proxy command reaches the
+	// kart, not the circuit) and would produce wrong behaviour here.
+	for _, k := range sortedKeys(ssh) {
+		if !isAuthDirective(k) {
+			continue
+		}
+		if v := strings.TrimSpace(ssh[k]); v != "" {
+			body = append(body, "  "+k+" "+v)
+		}
+	}
+	body = append(body,
+		// devpod's helper ssh-server regenerates its host key on every
+		// `devpod ssh --stdio` invocation — the same way devpod's own
+		// `~/.ssh/config` entries handle it: `no` + `/dev/null`. That's
+		// not a security downgrade here because the real authentication
+		// already happened one hop up in the ProxyCommand — the stdio
+		// tunnel only exists for workstations that can ssh into the
+		// circuit as `dev`. An attacker who can tamper with the kart's
+		// host key has already compromised the circuit user.
+		//
+		// `LogLevel error` silences the "Permanently added … to list
+		// of known hosts" warnings that would otherwise fire on every
+		// master start.
+		"  StrictHostKeyChecking no",
+		"  UserKnownHostsFile /dev/null",
+		"  LogLevel error",
+		"  ControlMaster auto",
+		"  ControlPath ~/.config/drift/sockets/cm-%r@%h:%p",
+		"  ControlPersist 10m",
+	)
+	return HostBlock{Name: KartWildcardHost(circuitName), Body: body}
+}
+
+// isAuthDirective names the ssh_config keys that should flow from the
+// circuit's `ssh:` map into the kart wildcard block. Everything not
+// on this list is intentionally dropped — we don't want per-circuit
+// HostName / Port (wrong target) or User (forced to drifter).
+func isAuthDirective(key string) bool {
+	switch strings.ToLower(key) {
+	case "identityfile", "identitiesonly", "certificatefile",
+		"preferredauthentications", "pubkeyauthentication":
+		return true
+	}
+	return false
 }
 
 func ensureParentDir(path string) error {

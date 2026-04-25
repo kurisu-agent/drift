@@ -35,6 +35,37 @@ func registerConnectAndDispatch(t *testing.T, deps server.KartDeps, method strin
 	})
 }
 
+// TestKartConnectStdioFlag covers the SSH-ProxyCommand path: when stdio:
+// true is set, the resolved argv must end with --stdio so the wildcard
+// `Host drift.*.*` ssh alias gets a tunnel-mode devpod ssh on the
+// other end. Specifically guards against an earlier regression where
+// kart.connect's reuse of kart.session_env passed its raw params (which
+// include `stdio`) into a strict KartLifecycleParams binding that
+// rejected unknown fields, returning "invalid params" before the
+// connect handler could even build argv.
+func TestKartConnectStdioFlag(t *testing.T) {
+	t.Parallel()
+	deps := newKartDeps(t, &recordingDevpod{})
+	deps.Devpod = &devpod.Client{
+		Binary:     "/home/u/.drift/bin/devpod",
+		DevpodHome: "/home/u/.drift/devpod",
+	}
+	writeKart(t, deps, "alpha", server.KartConfig{SourceMode: "clone", Repo: "u"})
+
+	resp := registerConnectAndDispatch(t, deps, wire.MethodKartConnect,
+		map[string]any{"name": "alpha", "stdio": true})
+	if resp.Error != nil {
+		t.Fatalf("dispatch error: %+v", resp.Error)
+	}
+	var got wire.KartConnectResult
+	if err := json.Unmarshal(resp.Result, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Argv) == 0 || got.Argv[len(got.Argv)-1] != "--stdio" {
+		t.Errorf("argv missing trailing --stdio: %v", got.Argv)
+	}
+}
+
 // TestKartConnectReturnsEnvPrefixedArgv covers the happy path: the
 // handler assembles the remote-command argv from the devpod Client's
 // pinned binary path + configured DEVPOD_HOME. No session env in the

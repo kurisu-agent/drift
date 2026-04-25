@@ -39,6 +39,16 @@ func TestWriteCircuitBlock_CreatesFileWithCanonicalFormat(t *testing.T) {
 		"  ServerAliveInterval 30",
 		"  ServerAliveCountMax 3",
 		"",
+		"Host drift.my-server.*",
+		"  User drifter",
+		"  ProxyCommand drift ssh-proxy %h %p",
+		"  StrictHostKeyChecking no",
+		"  UserKnownHostsFile /dev/null",
+		"  LogLevel error",
+		"  ControlMaster auto",
+		"  ControlPath ~/.config/drift/sockets/cm-%r@%h:%p",
+		"  ControlPersist 10m",
+		"",
 	}, "\n")
 	if got != want {
 		t.Fatalf("managed ssh_config mismatch.\n got:\n%s\nwant:\n%s", got, want)
@@ -80,6 +90,21 @@ func TestWriteCircuitBlock_EmitsSSHMap(t *testing.T) {
 		"  ServerAliveInterval 30",
 		"  ServerAliveCountMax 3",
 		"",
+		"Host drift.lab.*",
+		"  User drifter",
+		"  ProxyCommand drift ssh-proxy %h %p",
+		// Only auth-relevant keys from the ssh map flow into the kart
+		// wildcard; HostName / Port / ForwardAgent are deliberately
+		// dropped (wrong target / not useful for the proxied path).
+		"  IdentitiesOnly yes",
+		"  IdentityFile ~/.ssh/lab_ed25519",
+		"  StrictHostKeyChecking no",
+		"  UserKnownHostsFile /dev/null",
+		"  LogLevel error",
+		"  ControlMaster auto",
+		"  ControlPath ~/.config/drift/sockets/cm-%r@%h:%p",
+		"  ControlPersist 10m",
+		"",
 	}, "\n")
 	if got != want {
 		t.Fatalf("managed ssh_config mismatch.\n got:\n%s\nwant:\n%s", got, want)
@@ -92,11 +117,18 @@ func TestWriteCircuitBlock_OmitsUserWhenEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := readFile(t, paths.ManagedSSHConfig)
-	if strings.Contains(got, "User ") {
-		t.Fatalf("expected no User directive, got:\n%s", got)
+	// The circuit block has no User. The kart wildcard block DOES
+	// have User drifter — that's the whole point, so check on
+	// the circuit block alone rather than the whole file.
+	circuitBlock := strings.Split(got, "\n\nHost drift.srv.*")[0]
+	if strings.Contains(circuitBlock, "User ") {
+		t.Fatalf("expected no User directive in circuit block, got:\n%s", circuitBlock)
 	}
 	if !strings.Contains(got, "HostName srv.example.com") {
 		t.Fatalf("missing HostName, got:\n%s", got)
+	}
+	if !strings.Contains(got, "Host drift.srv.*") {
+		t.Fatalf("missing per-circuit kart wildcard, got:\n%s", got)
 	}
 }
 

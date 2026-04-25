@@ -11,6 +11,7 @@ import (
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
+	"github.com/kurisu-agent/drift/internal/wire"
 )
 
 // sshProxyCmd is invoked by OpenSSH as the ProxyCommand for the wildcard
@@ -42,7 +43,29 @@ func runSSHProxy(ctx context.Context, io IO, _ *CLI, cmd sshProxyCmd, deps deps)
 		))
 	}
 
-	return execSSHProxy(ctx, io, "ssh", []string{"drift." + circuit, "devpod", "ssh", kart, "--stdio"})
+	// Ask lakitu to build the same env-prefixed argv `drift connect`
+	// would use, but in stdio-tunnel mode. Without this, a bare
+	// `devpod ssh <kart> --stdio` runs without DEVPOD_HOME and devpod
+	// fails to find lakitu's workspace tree under ~/.drift/devpod —
+	// surfacing as ssh's cryptic "Connection closed by UNKNOWN port
+	// 65535" the moment the proxy command exits.
+	//
+	// On any RPC failure (older lakitu without the method, kart not
+	// known to the server yet, transient network blip) we fall back
+	// to the legacy bare argv. The fallback path's own failure mode
+	// is clearer than synthesising a proxy-level error and lets
+	// integration shims that don't speak kart.connect still serve as
+	// a transport.
+	var res wire.KartConnectResult
+	rpcErr := deps.call(ctx, circuit, wire.MethodKartConnect,
+		wire.KartConnectParams{Name: kart, Stdio: true}, &res)
+	argv := []string{"drift." + circuit}
+	if rpcErr == nil {
+		argv = append(argv, res.Argv...)
+	} else {
+		argv = append(argv, "devpod", "ssh", kart, "--stdio")
+	}
+	return execSSHProxy(ctx, io, "ssh", argv)
 }
 
 // parseKartAlias validates both names against the shared regex so invalid

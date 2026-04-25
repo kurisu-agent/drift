@@ -256,6 +256,7 @@ func registerDevpodBacked(ctx context.Context, reg *rpc.Registry, garage string,
 	server.RegisterServerStatus(reg, kartDeps)
 	server.RegisterKartLifecycle(reg, kartDeps)
 	server.RegisterKartConnect(reg, kartDeps)
+	server.RegisterKartProbePorts(reg, kartDeps)
 	server.RegisterKartMigrate(reg, server.KartMigrateDeps{KartDeps: kartDeps})
 	server.RegisterKartNew(reg, server.KartNewDeps{
 		Deps: lifeDeps,
@@ -287,7 +288,7 @@ func methodNeedsDevpod(method string) bool {
 		wire.MethodKartInfo, wire.MethodKartEnable, wire.MethodKartDisable,
 		wire.MethodKartLogs, wire.MethodKartSessionEnv,
 		wire.MethodKartMigrateList, wire.MethodKartConnect,
-		wire.MethodServerStatus:
+		wire.MethodKartProbePorts, wire.MethodServerStatus:
 		return true
 	}
 	return false

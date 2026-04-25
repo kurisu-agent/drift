@@ -97,9 +97,7 @@ func (f *fakeServer) call(ctx context.Context, circuit, method string, params, r
 			return rpcerr.New(rpcerr.CodeUserError, "method_not_found",
 				"method %q not implemented", method)
 		}
-		res, ok := result.(*struct {
-			Argv []string `json:"argv"`
-		})
+		res, ok := result.(*wire.KartConnectResult)
 		if !ok {
 			return errors.New("fakeServer: unexpected result type for kart.connect")
 		}

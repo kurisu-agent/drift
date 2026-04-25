@@ -63,6 +63,8 @@ type CLI struct {
 
 	Migrate migrateCmd `cmd:"" name:"migrate" help:"Adopt an existing devpod workspace as a drift kart (interactive)."`
 
+	Ports portsCmd `cmd:"" name:"ports" help:"Workstation-side TCP port forward management."`
+
 	SshProxy sshProxyCmd `cmd:"" name:"ssh-proxy" hidden:"" help:"ProxyCommand helper for drift.<circuit>.<kart> aliases (invoked by OpenSSH)."`
 }
 
@@ -217,6 +219,22 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runSkillExec(ctx, io, &cli, cli.Skill, deps)
 	case "migrate":
 		return runMigrate(ctx, io, &cli, cli.Migrate, deps)
+	case "ports", "ports list":
+		return runPortsList(ctx, io, &cli, cli.Ports.List, deps)
+	case "ports add <port>":
+		return runPortsAdd(ctx, io, &cli, cli.Ports.Add, deps)
+	case "ports rm <port>":
+		return runPortsRm(ctx, io, &cli, cli.Ports.Rm, deps)
+	case "ports remap <spec>":
+		return runPortsRemap(ctx, io, &cli, cli.Ports.Remap, deps)
+	case "ports probe":
+		return runPortsProbe(ctx, io, &cli, cli.Ports.Probe, deps)
+	case "ports up":
+		return runPortsUp(ctx, io, &cli, cli.Ports.Up, deps)
+	case "ports down":
+		return runPortsDown(ctx, io, &cli, cli.Ports.Down, deps)
+	case "ports status":
+		return runPortsStatus(ctx, io, &cli, cli.Ports.Status, deps)
 	case "update", "update <source>":
 		return runUpdate(ctx, io, cli.Update)
 	case "ssh-proxy <alias>", "ssh-proxy <alias> <port>":
