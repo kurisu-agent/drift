@@ -57,6 +57,24 @@ func (s *containerScript) Run(ctx context.Context, dp *devpod.Client, kart strin
 // double-quote expansion; absolute paths also round-trip correctly.
 // Go's %q does not escape `$`, so the variable expands as intended.
 func base64WriteStmt(dst string, data []byte) string {
+	return base64RedirectStmt(dst, data, ">")
+}
+
+// base64AppendStmt is the >> sibling of base64WriteStmt — used by
+// seed.ConflictAppend to add to an existing file rather than replace.
+func base64AppendStmt(dst string, data []byte) string {
+	return base64RedirectStmt(dst, data, ">>")
+}
+
+// base64DecodeStmt writes data to a fresh dst path with no prior
+// existence assumption — same shape as base64WriteStmt but kept
+// distinct so callers signal intent (prepend's temp file, future
+// staging paths) without piggybacking on the canonical write helper.
+func base64DecodeStmt(dst string, data []byte) string {
+	return base64RedirectStmt(dst, data, ">")
+}
+
+func base64RedirectStmt(dst string, data []byte, redirect string) string {
 	encoded := base64.StdEncoding.EncodeToString(data)
-	return fmt.Sprintf(`printf '%%s' %q | base64 -d > %q`+"\n", encoded, dst)
+	return fmt.Sprintf(`printf '%%s' %q | base64 -d %s %q`+"\n", encoded, redirect, dst)
 }

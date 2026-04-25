@@ -219,13 +219,13 @@ func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
 		return nil, kartErrCleanup(wrapDevpodPhase("copy tune files", resolved.Name, cerr))
 	}
 	script.Append(copyFrag)
-	claudeFrag, cerr := claudeMDFragment(resolved)
+	seedFrag, cerr := seedFragments(ctx, d.Devpod, resolved)
 	if cerr != nil {
-		return nil, kartErrCleanup(rpcerr.Internal("kart.new: render CLAUDE.md: %v", cerr).Wrap(cerr))
+		return nil, kartErrCleanup(rpcerr.Internal("kart.new: render seeds: %v", cerr).Wrap(cerr))
 	}
-	script.Append(claudeFrag)
+	script.Append(seedFrag)
 	if !script.Empty() {
-		d.phase("finalising kart (symlinks, copies, CLAUDE.md)")
+		d.phase("finalising kart (symlinks, copies, seeds)")
 		if err := script.Run(ctx, d.Devpod, resolved.Name); err != nil {
 			return nil, kartErrCleanup(wrapDevpodPhase("finalise kart", resolved.Name, err))
 		}
