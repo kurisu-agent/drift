@@ -19,6 +19,7 @@ import (
 
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/config"
+	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/version"
 )
 
@@ -314,6 +315,7 @@ func runUpdateFromSource(ctx context.Context, ioStreams IO, source string) int {
 	if err != nil {
 		return errfmt.Emit(ioStreams.Stderr, err)
 	}
+	prev := version.Get().Format("drift")
 	fmt.Fprintf(ioStreams.Stderr, "→ pulling drift from %s\n", source)
 	data, err := readBinarySource(ctx, source, ioStreams.Stderr)
 	if err != nil {
@@ -328,7 +330,29 @@ func runUpdateFromSource(ctx context.Context, ioStreams IO, source string) int {
 		return errfmt.Emit(ioStreams.Stderr, err)
 	}
 	fmt.Fprintf(ioStreams.Stdout, "replaced %s from %s\n", exe, source)
+	if newVer := readSelfVersion(ctx, exe); newVer != "" {
+		fmt.Fprintf(ioStreams.Stdout, "  was: %s\n  now: %s\n", prev, newVer)
+	}
 	return 0
+}
+
+// readSelfVersion runs `<exe> --version` on the freshly-installed binary
+// and returns its trimmed first line. Returns "" on any failure — the
+// install itself succeeded, so a failed version probe is a soft miss
+// rather than an error path.
+func readSelfVersion(ctx context.Context, exe string) string {
+	res, err := driftexec.Run(ctx, driftexec.Cmd{
+		Name: exe,
+		Args: []string{"--version"},
+	})
+	if err != nil {
+		return ""
+	}
+	out := strings.TrimSpace(string(res.Stdout))
+	if i := strings.IndexByte(out, '\n'); i >= 0 {
+		out = out[:i]
+	}
+	return out
 }
 
 func readBinarySource(ctx context.Context, source string, progress io.Writer) ([]byte, error) {
