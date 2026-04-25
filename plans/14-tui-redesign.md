@@ -241,6 +241,23 @@ The status tab has three regions:
 
 **Startup.** Bare `drift` → `runDashboard`: load `~/.drift/config.json`, compute theme once, kick off parallel `status.Probe` for every circuit (errgroup, limit=4 — same call `drift status` makes today). First frame renders with placeholders; rows fill in as probes complete. Default tab `status` unless `--tab <name>` overrides. Non-TTY bare `drift` prints a one-liner pointing at `drift dashboard` / `drift help` and exits cleanly.
 
+**Entrance animation.** When the dashboard opens (and only then — never on tab switches or refreshes), the status panel plays a short staggered slide-in driven by `github.com/charmbracelet/harmonica`. Spring physics, not linear easing — the wordmark *drifts* into place and settles, matching the product name.
+
+Sequence:
+
+1. **Banner** slides in from the left edge of the panel to its final position (~0 to ~9 cols), spring frequency 6.0, damping 0.5. Takes ~400ms to settle.
+2. **Lockup** (drift 0.4.3 / tagline / placeholder) starts ~150ms after the banner begins, slides in from the right with the same spring constants. Each line is offset by ~50ms from the previous so they feel like they're catching up rather than entering as a block.
+3. **Stats block** (top-right) starts ~250ms in, slides in from the right edge.
+4. **Activity table** fades in last — opacity-style via dim → normal styling on the rows, no horizontal motion. ~600ms after launch the whole tab is settled.
+
+Implementation: a single `tea.Tick(time.Second/60, ...)` loop while the entrance is running. Each tick calls `spring.Update(pos, vel, target)` for each animated element, rounds the float position to the nearest column, re-renders. When all springs have settled (velocity below a threshold) the loop ends and the dashboard is in its steady state. Total cost: a handful of float ops per frame for ~10 frames, then nothing.
+
+**TUI gotcha.** Position resolution is one character cell, not one pixel. Spring positions are floats; rounding to integer columns means the motion steps in 1-col chunks at 60fps. That's fine for the entrance (the eye reads it as smooth motion), but it does mean we don't try to animate things smaller than a full column. No sub-pixel shimmer.
+
+**Opt-out.** `DRIFT_NO_MOTION=1` or `--no-motion` skips the animation and renders the final frame immediately. Same env shape as the `prefers-reduced-motion` web convention. Auto-skipped when `theme.Color == false`, when terminal width is below the banner's footprint, when the program is reattaching to an existing alt-screen, and inside `teatest` runs (where deterministic frames matter more than aesthetics).
+
+The animation is contained to the status tab's first paint. Other tabs render in their final state immediately when activated — no spring-motion on tab switches, that would cross over from "polished entrance" into "annoying every time."
+
 ### Per-command redesigns
 
 Every existing surface gets a defined target. Unchanged commands omitted.
@@ -283,6 +300,7 @@ Add (v2 import paths):
 - `charm.land/huh/v2` (replaces `github.com/charmbracelet/huh` v1)
 - `charm.land/colorprofile`
 - `github.com/charmbracelet/log` (kept the GitHub path — replaces `internal/slogfmt`)
+- `github.com/charmbracelet/harmonica` (spring physics for the dashboard entrance animation)
 - (optional, later phase) `charm.land/glamour/v2`
 - (test) `charm.land/x/teatest`
 
