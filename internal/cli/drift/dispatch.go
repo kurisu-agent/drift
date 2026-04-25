@@ -6,7 +6,7 @@ import (
 	osexec "os/exec"
 	"strings"
 
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
@@ -103,13 +103,13 @@ func connectLastScaffold(ctx context.Context, io IO, root *CLI, deps deps, circu
 		return fmt.Errorf("post-hook: read handoff sentinel: %w", err)
 	}
 	if name == "" {
-		p := style.For(io.Stderr, root.Output == "json")
+		p := ui.NewTheme(io.Stderr, root.Output == "json")
 		if p.Enabled {
 			fmt.Fprintln(io.Stderr, p.Dim("session exited without writing ~/.drift/last-scaffold — skipping connect"))
 		}
 		return nil
 	}
-	p := style.For(io.Stderr, root.Output == "json")
+	p := ui.NewTheme(io.Stderr, root.Output == "json")
 	if p.Enabled {
 		fmt.Fprintln(io.Stderr, p.Dim("→ connecting to scaffolded kart "+name))
 	}

@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	figure "github.com/common-nighthawk/go-figure"
 	"github.com/kurisu-agent/drift/internal/chest"
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
@@ -67,7 +67,7 @@ func Run(ctx context.Context, opts Options, deps Deps, stdin io.Reader, stdout i
 			"drift init requires a TTY on stdin (scripted equivalents: drift circuit add; lakitu character new / chest new)")
 	}
 
-	p := style.For(stdout, false)
+	p := ui.NewTheme(stdout, false)
 	writeBanner(stdout, p)
 
 	br := bufio.NewReader(stdin)
@@ -104,7 +104,7 @@ func Run(ctx context.Context, opts Options, deps Deps, stdin io.Reader, stdout i
 // writeBanner prints the one-time go-figure "drift" banner at wizard start
 // when styling is enabled (real TTY, NO_COLOR unset). Disabled palettes
 // skip it so tests and piped invocations don't see ASCII art.
-func writeBanner(w io.Writer, p *style.Palette) {
+func writeBanner(w io.Writer, p *ui.Theme) {
 	if p == nil || !p.Enabled {
 		return
 	}
@@ -114,7 +114,7 @@ func writeBanner(w io.Writer, p *style.Palette) {
 
 // sectionHeader renders `== Title ==` (plain) or a thin bordered panel
 // (styled). Plain form is a single line the existing tests assert against.
-func sectionHeader(w io.Writer, p *style.Palette, title string) {
+func sectionHeader(w io.Writer, p *ui.Theme, title string) {
 	if p == nil || !p.Enabled {
 		fmt.Fprintln(w, "")
 		fmt.Fprintf(w, "== %s ==\n", title)
@@ -131,7 +131,7 @@ func sectionHeader(w io.Writer, p *style.Palette, title string) {
 }
 
 func runCircuitPhase(ctx context.Context, opts Options, deps Deps, br *bufio.Reader, w io.Writer, cfg *config.Client, probes map[string]*ProbeResult, withDefaultChar map[string]bool) error {
-	sectionHeader(w, style.For(w, false), "Circuits")
+	sectionHeader(w, ui.NewTheme(w, false), "Circuits")
 	if len(cfg.Circuits) > 0 {
 		fmt.Fprintln(w, "already configured:")
 		names := sortedKeys(cfg.Circuits)
@@ -264,7 +264,7 @@ func addOneCircuit(ctx context.Context, opts Options, deps Deps, br *bufio.Reade
 }
 
 func runCharacterPhase(ctx context.Context, deps Deps, br *bufio.Reader, w io.Writer, cfg *config.Client, skip map[string]bool) error {
-	sectionHeader(w, style.For(w, false), "Characters")
+	sectionHeader(w, ui.NewTheme(w, false), "Characters")
 	if len(cfg.Circuits) == 0 {
 		fmt.Fprintln(w, "no circuits configured; skipping characters")
 		return nil
@@ -407,7 +407,7 @@ func pickCircuit(br *bufio.Reader, w io.Writer, cfg *config.Client) (string, err
 }
 
 func runSummary(ctx context.Context, opts Options, deps Deps, w io.Writer, cfg *config.Client, probes map[string]*ProbeResult) error {
-	sectionHeader(w, style.For(w, false), "Summary")
+	sectionHeader(w, ui.NewTheme(w, false), "Summary")
 	names := sortedKeys(cfg.Circuits)
 	if len(names) == 0 {
 		fmt.Fprintln(w, "no circuits configured")

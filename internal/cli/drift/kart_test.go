@@ -109,8 +109,8 @@ func TestRunKartLogs_TextLinesWrappedAsInfoRecords(t *testing.T) {
 		t.Fatalf("line count = %d, want 2; stdout=%q", len(lines), got)
 	}
 	for i, want := range []string{"line 1", "line 2"} {
-		if !strings.HasSuffix(lines[i], " INFO  "+want) {
-			t.Errorf("line[%d] = %q, want suffix %q", i, lines[i], " INFO  "+want)
+		if !strings.HasSuffix(lines[i], " INFO "+want) {
+			t.Errorf("line[%d] = %q, want suffix %q", i, lines[i], " INFO "+want)
 		}
 	}
 }
@@ -132,7 +132,7 @@ func TestRunKartLogs_JSONLRendersStructured(t *testing.T) {
 		t.Fatalf("rc=%d stderr=%s", rc, stderr.String())
 	}
 	got := stdout.String()
-	want := "09:05:07 WARN  slow\n  kart: alpha\n"
+	want := "09:05:07 WARN slow kart=alpha\n"
 	if got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
@@ -161,7 +161,8 @@ func TestRunKartLogs_DebugFlagDropsLevelFloor(t *testing.T) {
 	if rc != 0 {
 		t.Fatalf("rc=%d stderr=%s", rc, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "DEBUG") {
+	// charmlog renders DEBUG as the four-letter "DEBU" tag.
+	if !strings.Contains(stdout.String(), "DEBU") {
 		t.Errorf("debug record not rendered: %q", stdout.String())
 	}
 }

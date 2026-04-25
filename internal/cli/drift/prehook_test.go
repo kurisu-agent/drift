@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 )
 
 func TestClientState_RoundTrip(t *testing.T) {
@@ -83,7 +83,7 @@ func TestSaveClientState_PrettyPrintsJSON(t *testing.T) {
 }
 
 func TestUpdateBannerLine(t *testing.T) {
-	p := style.For(&bytes.Buffer{}, false) // NO_COLOR-unaware buffer → plain text
+	p := ui.NewTheme(&bytes.Buffer{}, false) // NO_COLOR-unaware buffer → plain text
 
 	cases := []struct {
 		name, cur, latest string

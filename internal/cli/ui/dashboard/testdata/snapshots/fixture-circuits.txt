@@ -1,0 +1,30 @@
+  status  ·  karts  ·  [1;4;4mc[m[1;4;4mi[m[1;4;4mr[m[1;4;4mc[m[1;4;4mu[m[1;4;4mi[m[1;4;4mt[m[1;4;4ms[m  ·  chest  ·  characters  ·  tunes  ·  ports  ·  logs                                   
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[1mname          [m[1mhost                        [m[1mdefault [m[1mlakitu    [m[1mlatency   [m[1mstate       [m                                      
+alpha         alpha.example.org           *       0.4.3     18ms      reachable                                         
+beta          beta.example.org            —       0.4.3     42ms      reachable                                         
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+↑/k up • ↓/j down • tab next tab • r refresh • ? help • q quit                                                          

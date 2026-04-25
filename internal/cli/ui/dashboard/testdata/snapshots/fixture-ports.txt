@@ -1,0 +1,30 @@
+  status  ·  karts  ·  circuits  ·  chest  ·  characters  ·  tunes  ·  [1;4;4mp[m[1;4;4mo[m[1;4;4mr[m[1;4;4mt[m[1;4;4ms[m  ·  logs                                   
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                    no port forwards configured. see `drift ports`.                                     
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+↑/k up • ↓/j down • tab next tab • r refresh • ? help • q quit                                                          

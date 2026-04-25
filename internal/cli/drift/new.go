@@ -8,10 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/huh"
+	"charm.land/huh/v2"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
-	"github.com/kurisu-agent/drift/internal/cli/progress"
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	"github.com/kurisu-agent/drift/internal/kart"
 	"github.com/kurisu-agent/drift/internal/model"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
@@ -89,15 +88,16 @@ func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 		// output streaming back over the SSH transport's stderr.
 		msg := fmt.Sprintf("creating kart %q", cmd.Name)
 		quiet := root.Output == "json" || root.Debug
-		ph := progress.Start(io.Stderr, quiet, msg, "ssh")
+		t := ui.NewTheme(io.Stderr, quiet)
+		sp := t.NewSpinner(io.Stderr, ui.SpinnerOptions{Message: msg, Transport: "ssh"})
 		start := time.Now()
 		callErr := deps.call(ctx, circuit, wire.MethodKartNew, params, &result)
 		elapsed := time.Since(start).Round(time.Second)
 		if callErr == nil {
-			ph.Succeed(fmt.Sprintf("created kart %q in %s", result.Name, elapsed))
+			sp.Succeed(fmt.Sprintf("created kart %q in %s", result.Name, elapsed))
 			break
 		}
-		ph.Fail()
+		sp.Fail()
 		// In-place retry when the server reports a name collision and
 		// we're on a real TTY — prompt for a new name and resend.
 		// Scripted callers keep the existing error contract.
@@ -263,7 +263,7 @@ func writeNewPreflight(w interface{ Write(p []byte) (int, error) }, jsonMode boo
 		}
 		return
 	}
-	p := style.For(w, false)
+	p := ui.NewTheme(w, false)
 	fmt.Fprintln(w, p.Dim(fmt.Sprintf("→ kart.new on circuit %q", circuit)))
 	fmt.Fprintln(w, p.Dim(fmt.Sprintf("  name:         %s", cmd.Name)))
 	if cmd.Clone != "" {
@@ -366,7 +366,7 @@ func buildNewConfirmSummary(cmd newCmd) string {
 // via huh, matching the other interactive prompts. Blank input cancels
 // (returns ""); ctrl-C / esc also cancels via huh.ErrUserAborted.
 func promptNewKartName(io IO, taken string) (string, error) {
-	p := style.For(io.Stderr, false)
+	p := ui.NewTheme(io.Stderr, false)
 	fmt.Fprintf(io.Stderr, "%s kart %q already exists on this circuit.\n", p.Warn("!"), taken)
 	var val string
 	input := huh.NewInput().

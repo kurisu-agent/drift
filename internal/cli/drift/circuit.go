@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/charmbracelet/huh"
+	"charm.land/huh/v2"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
@@ -229,7 +229,7 @@ func runCircuitList(io IO, root *CLI, deps deps) int {
 		fmt.Fprintln(io.Stdout, "no circuits configured")
 		return 0
 	}
-	p := style.For(io.Stdout, root.Output == "json")
+	p := ui.NewTheme(io.Stdout, root.Output == "json")
 	rows := make([][]string, 0, len(entries))
 	for _, e := range entries {
 		def := ""
@@ -262,7 +262,7 @@ func emitCircuitAdd(io IO, root *CLI, info *wire.ServerInfo, cfg *config.Client,
 		return emitJSON(io, payload)
 	}
 
-	p := style.For(io.Stdout, false)
+	p := ui.NewTheme(io.Stdout, false)
 	fmt.Fprintf(io.Stdout, "registered circuit %s (host %s)\n",
 		p.Accent(info.Name), cfg.Circuits[info.Name].Host)
 	if cfg.DefaultCircuit == info.Name {
@@ -407,7 +407,7 @@ func runCircuitSetDefault(io IO, root *CLI, cmd circuitSetDefaultCmd, deps deps)
 			DefaultCircuit string `json:"default_circuit"`
 		}{DefaultCircuit: target})
 	}
-	p := style.For(io.Stdout, false)
+	p := ui.NewTheme(io.Stdout, false)
 	fmt.Fprintf(io.Stdout, "default circuit → %s\n", p.Accent(target))
 	return 0
 }

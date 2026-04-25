@@ -6,10 +6,10 @@ import (
 	"io"
 	"text/tabwriter"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 )
 
 // emitJSON marshals v as a single-line JSON object and writes it to
@@ -31,7 +31,7 @@ func emitJSON(io IO, v any) int {
 // an inline closure with lipgloss.Color("6").
 func accentCellStyler(col int) tableCellStyler {
 	accent := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-	return func(_, c int, _ *style.Palette) lipgloss.Style {
+	return func(_, c int, _ *ui.Theme) lipgloss.Style {
 		if c == col {
 			return accent
 		}
@@ -63,7 +63,7 @@ type tableCell struct {
 // colorCellStyler wraps a per-cell color resolver into a tableCellStyler.
 // Callers implement the small closure without touching lipgloss.
 func colorCellStyler(fn func(row, col int) tableCell) tableCellStyler {
-	return func(row, col int, _ *style.Palette) lipgloss.Style {
+	return func(row, col int, _ *ui.Theme) lipgloss.Style {
 		return styleForCell(fn(row, col))
 	}
 }
@@ -94,13 +94,13 @@ func styleForCell(c tableCell) lipgloss.Style {
 // tableCellStyler receives the zero-indexed row/column of a cell (row == -1
 // is the header row) and returns a Palette-aware style applied to the cell
 // contents. Called only when the palette is enabled.
-type tableCellStyler func(row, col int, p *style.Palette) lipgloss.Style
+type tableCellStyler func(row, col int, p *ui.Theme) lipgloss.Style
 
 // writeTable emits a table to w. When the palette is enabled, it uses
 // lipgloss/table with no borders — headers bold, per-cell styling via
 // cellStyle. When disabled, it falls back to tabwriter so CI logs / piped
 // output stay plain.
-func writeTable(w io.Writer, p *style.Palette, headers []string, rows [][]string, cellStyle tableCellStyler) {
+func writeTable(w io.Writer, p *ui.Theme, headers []string, rows [][]string, cellStyle tableCellStyler) {
 	if p == nil || !p.Enabled {
 		writePlainTable(w, headers, rows)
 		return

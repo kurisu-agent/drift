@@ -25,10 +25,12 @@ type CLI struct {
 	// help output Kong auto-generates. See maybeVersionExit.
 	Version bool `short:"v" help:"Print drift version and exit."`
 
-	Help   helpCmd   `cmd:"" help:"Print an LLM-friendly command + protocol reference."`
-	Init   initCmd   `cmd:"" name:"init" help:"Interactive first-time setup wizard (circuits + characters)."`
-	Status statusCmd `cmd:"" name:"status" help:"Show configured circuits + their lakitu health and per-circuit karts."`
-	Update updateCmd `cmd:"" name:"update" help:"Check GitHub for a newer drift release and self-install."`
+	Help      helpCmd      `cmd:"" help:"Print an LLM-friendly command + protocol reference."`
+	Init      initCmd      `cmd:"" name:"init" help:"Interactive first-time setup wizard (circuits + characters)."`
+	Status    statusCmd    `cmd:"" name:"status" help:"Show configured circuits + their lakitu health and per-circuit karts."`
+	Update    updateCmd    `cmd:"" name:"update" help:"Check GitHub for a newer drift release and self-install."`
+	Dashboard dashboardCmd `cmd:"" name:"dashboard" help:"Open the live tabbed dashboard (status, karts, circuits, ...)."`
+	Menu      menuCmd      `cmd:"" name:"menu" help:"Open the launcher menu (pick a command, run, exit)."`
 
 	// Plural list verbs — print-only tables. Singular namespace verbs drop
 	// into pickers; plurals are for scripting and at-a-glance inspection.
@@ -92,18 +94,12 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return rc
 	}
 
-	// No-arg invocation on a real terminal drops into an interactive menu
-	// (see menu.go). Non-TTY callers fall through to Kong so scripts and
-	// agents continue to see the existing "expected command" error.
+	// No-arg invocation on a real terminal opens the dashboard (the
+	// flagship TUI). Non-TTY callers fall through to Kong so scripts and
+	// agents continue to see the existing "expected command" error. Use
+	// `drift menu` for the legacy launcher (pick a command and run it).
 	if len(argv) == 0 && stdinIsTTY(io.Stdin) && stdoutIsTTY(io.Stdout) {
-		chosen, err := runMenu(io)
-		if err != nil {
-			return errfmt.Emit(io.Stderr, err)
-		}
-		if len(chosen) == 0 {
-			return 0
-		}
-		argv = chosen
+		argv = []string{"dashboard"}
 	}
 
 	var cli CLI
@@ -149,6 +145,11 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 	switch kctx.Command() {
 	case "help":
 		return runHelp(io, parser, cli.Help)
+
+	case "dashboard":
+		return runDashboard(ctx, io, &cli, cli.Dashboard, deps)
+	case "menu":
+		return runMenuCmd(ctx, io, deps)
 
 	// Plural listings
 	case "circuits":

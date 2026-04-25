@@ -8,9 +8,9 @@ import (
 	"io"
 	"slices"
 
-	"github.com/charmbracelet/huh"
+	"charm.land/huh/v2"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/kart"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
@@ -291,7 +291,7 @@ func runKartNewForMigrate(
 // Reuses the visual style of promptNewKartName but adds a pre-filled
 // suggestion so one keystroke accepts it.
 func promptMigrateRename(io IO, taken, suggestion string) (string, error) {
-	p := style.For(io.Stderr, false)
+	p := ui.NewTheme(io.Stderr, false)
 	fmt.Fprintf(io.Stderr, "%s kart %q already exists on this circuit.\n",
 		p.Warn("!"), taken)
 	val := suggestion
@@ -316,7 +316,7 @@ func promptMigrateRename(io IO, taken, suggestion string) (string, error) {
 // responsibility — drift never reaches into the user's ~/.devpod/ to
 // delete on their behalf.
 func printManualCleanup(w io.Writer, c migrateCandidate) {
-	p := style.For(w, false)
+	p := ui.NewTheme(w, false)
 	fmt.Fprintln(w, p.Dim(fmt.Sprintf(
 		"kept %s/%s — old workspace's state will diverge from the kart over time.",
 		c.Context, c.Name)))

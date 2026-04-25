@@ -1,0 +1,30 @@
+  status  ·  karts  ·  [1;4;4mc[m[1;4;4mi[m[1;4;4mr[m[1;4;4mc[m[1;4;4mu[m[1;4;4mi[m[1;4;4mt[m[1;4;4ms[m  ·  chest  ·  characters  ·  tunes  ·  ports  ·  logs                                   
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                               no circuits configured. try `drift circuit add user@host`.                               
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+↑/k up • ↓/j down • tab next tab • r refresh • ? help • q quit                                                          

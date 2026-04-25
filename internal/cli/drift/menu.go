@@ -1,10 +1,29 @@
 package drift
 
 import (
+	"context"
 	"errors"
 
-	"github.com/charmbracelet/huh"
+	"charm.land/huh/v2"
 )
+
+// menuCmd is the placeholder for `drift menu` — the launcher TUI that
+// picks a command and dispatches it. Bare `drift` opens the dashboard;
+// `drift menu` keeps the picker for users who liked the old default.
+type menuCmd struct{}
+
+// runMenuCmd opens the launcher menu, then re-runs the dispatcher with
+// the chosen argv. A nil/empty argv means the user cancelled.
+func runMenuCmd(ctx context.Context, io IO, deps deps) int {
+	chosen, err := runMenu(io)
+	if err != nil {
+		return 1
+	}
+	if len(chosen) == 0 {
+		return 0
+	}
+	return run(ctx, chosen, io, deps)
+}
 
 // menuEntry describes a single row in the top-level interactive menu.
 // When `needs` is empty the command runs immediately with `argv`; otherwise

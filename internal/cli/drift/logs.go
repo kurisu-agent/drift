@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"strings"
 	"time"
 
+	charmlog "github.com/charmbracelet/log"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
-	"github.com/kurisu-agent/drift/internal/slogfmt"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
@@ -51,44 +53,103 @@ func runKartLogs(ctx context.Context, io IO, root *CLI, cmd logsCmd, deps deps) 
 	if err := json.Unmarshal(raw, &res); err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
-	renderLogs(io.Stdout, res, renderLogLevel(root, cmd.Level), time.Now)
+	renderLogs(io.Stdout, res, parseLogLevel(renderLogLevelString(root, cmd.Level)), time.Now)
 	return 0
 }
 
-// renderLogLevel precedence: --level > --debug > default Info. Info is
-// the default so server-captured Debug records don't spam normal users.
-func renderLogLevel(root *CLI, flagLevel string) slog.Level {
+// renderLogLevelString resolves the effective minimum level string. Same
+// precedence as before: --level > --debug > info default.
+func renderLogLevelString(root *CLI, flagLevel string) string {
 	if flagLevel != "" {
-		return slogfmt.ParseLevel(flagLevel)
+		return flagLevel
 	}
 	if root != nil && root.Debug {
-		return slog.LevelDebug
+		return "debug"
 	}
-	return slog.LevelInfo
+	return "info"
 }
 
-// renderLogs wraps text lines into synthetic INFO records with the
-// current wall clock — the server has no per-line emission time for
-// unstructured sources.
-func renderLogs(w stdoutWriter, res logsResult, min slog.Level, now func() time.Time) {
+// parseLogLevel mirrors the old slogfmt.ParseLevel: unknown / empty
+// resolves to Info so records below the default never silently drop.
+func parseLogLevel(s string) slog.Level {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error", "err":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
+// decodeLogRecord parses one slog.JSONHandler line. Unknown keys land in
+// attrs so server-side slog.With context survives the round trip.
+func decodeLogRecord(raw map[string]any) (t time.Time, level, msg string, attrs []any) {
+	if v, ok := raw["time"].(string); ok {
+		if parsed, err := time.Parse(time.RFC3339Nano, v); err == nil {
+			t = parsed
+		}
+	}
+	if v, ok := raw["level"].(string); ok {
+		level = v
+	}
+	if v, ok := raw["msg"].(string); ok {
+		msg = v
+	}
+	for k, v := range raw {
+		if k == "time" || k == "level" || k == "msg" {
+			continue
+		}
+		attrs = append(attrs, k, v)
+	}
+	return
+}
+
+// renderLogs feeds JSONL records into a charmlog.Logger and wraps plain
+// text lines as Info records with the current wall clock. JSONL records
+// route through slog.Handler so the upstream record's Time/Level survive.
+func renderLogs(w io.Writer, res logsResult, min slog.Level, now func() time.Time) {
+	logger := charmlog.NewWithOptions(w, charmlog.Options{
+		ReportTimestamp: true,
+		TimeFormat:      "15:04:05",
+	})
+	logger.SetLevel(slogToCharmLevel(min))
+
 	for _, line := range res.Lines {
 		switch res.Format {
 		case logFormatJSONL:
 			var raw map[string]any
 			if err := json.Unmarshal([]byte(line), &raw); err == nil {
-				slogfmt.Emit(w, slogfmt.DecodeRecord(raw), min)
+				ts, level, msg, attrs := decodeLogRecord(raw)
+				if ts.IsZero() {
+					ts = now()
+				}
+				rec := slog.NewRecord(ts, parseLogLevel(level), msg, 0)
+				for i := 0; i+1 < len(attrs); i += 2 {
+					rec.AddAttrs(slog.Any(fmt.Sprintf("%v", attrs[i]), attrs[i+1]))
+				}
+				_ = logger.Handle(context.Background(), rec)
 				continue
 			}
-			// Bad JSONL line — render as text so the user still sees it
-			// instead of silently dropping.
-			slogfmt.Emit(w, slogfmt.Record{Time: now(), Level: "info", Msg: line}, min)
+			// Bad JSONL — render as info text so the user still sees it.
+			logger.Info(line)
 		default:
-			slogfmt.Emit(w, slogfmt.Record{Time: now(), Level: "info", Msg: line}, min)
+			logger.Info(line)
 		}
 	}
 }
 
-// stdoutWriter avoids pulling io into renderLogs's signature.
-type stdoutWriter interface {
-	Write([]byte) (int, error)
+func slogToCharmLevel(l slog.Level) charmlog.Level {
+	switch l {
+	case slog.LevelDebug:
+		return charmlog.DebugLevel
+	case slog.LevelWarn:
+		return charmlog.WarnLevel
+	case slog.LevelError:
+		return charmlog.ErrorLevel
+	default:
+		return charmlog.InfoLevel
+	}
 }

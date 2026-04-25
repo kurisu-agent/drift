@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	"github.com/kurisu-agent/drift/internal/connect"
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/wire"
@@ -37,7 +37,7 @@ func runAIExec(ctx context.Context, io IO, root *CLI, cmd aiCmd, deps deps) int 
 	useMosh := !cmd.SSH && moshOnPath()
 	bin, argv := buildRunArgv(wire.RunModeInteractive, useMosh, circuit, cmd.ForwardAgent, wrapWithZellij(bareClaudeCommand))
 
-	p := style.For(io.Stderr, root.Output == "json")
+	p := ui.NewTheme(io.Stderr, root.Output == "json")
 	if p.Enabled {
 		transport := "ssh"
 		if useMosh {

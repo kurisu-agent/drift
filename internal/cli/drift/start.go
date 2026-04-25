@@ -6,8 +6,7 @@ import (
 	"fmt"
 
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
-	"github.com/kurisu-agent/drift/internal/cli/progress"
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
@@ -48,14 +47,17 @@ func runKartLifecycleOn(ctx context.Context, io IO, root *CLI, circuit, name, me
 	// `drift new`: live server-side output streaming over SSH stderr
 	// fights the spinner redraws.
 	quiet := root.Output == "json" || root.Debug
-	ph := progress.Start(io.Stderr, quiet,
-		activeVerb+" kart \""+name+"\"", "ssh")
+	t := ui.NewTheme(io.Stderr, quiet)
+	sp := t.NewSpinner(io.Stderr, ui.SpinnerOptions{
+		Message:   activeVerb + " kart \"" + name + "\"",
+		Transport: "ssh",
+	})
 	var raw json.RawMessage
 	if err := deps.call(ctx, circuit, method, map[string]string{"name": name}, &raw); err != nil {
-		ph.Fail()
+		sp.Fail()
 		return errfmt.Emit(io.Stderr, err)
 	}
-	ph.Succeed(pastVerb + " kart \"" + name + "\"")
+	sp.Succeed(pastVerb + " kart \"" + name + "\"")
 	return emitKartResult(io, root, pastVerb, raw)
 }
 
@@ -68,7 +70,7 @@ func writeLifecyclePreflight(w interface{ Write(p []byte) (int, error) }, jsonMo
 	if jsonMode {
 		return
 	}
-	p := style.For(w, false)
+	p := ui.NewTheme(w, false)
 	fmt.Fprintln(w, p.Dim(fmt.Sprintf("→ %s on circuit %q", method, circuit)))
 	fmt.Fprintln(w, p.Dim(fmt.Sprintf("  name: %s", name)))
 }

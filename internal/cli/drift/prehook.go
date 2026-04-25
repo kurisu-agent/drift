@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/sshconf"
@@ -129,7 +129,7 @@ func firstWord(s string) string {
 // the I/O and palette. Semver comparison (not string equality) guards
 // against a stale state.json emitting a "0.6.1 is available" banner
 // after the user has already upgraded past it.
-func updateBannerLine(cur, latest string, p *style.Palette) string {
+func updateBannerLine(cur, latest string, p *ui.Theme) string {
 	cur = strings.TrimPrefix(cur, "v")
 	latest = strings.TrimPrefix(latest, "v")
 	if cur == "" || cur == "devel" || latest == "" {
@@ -149,7 +149,7 @@ func updateBannerLine(cur, latest string, p *style.Palette) string {
 
 func showUpdateBanner(io IO) {
 	st := loadClientState()
-	p := style.For(io.Stderr, false)
+	p := ui.NewTheme(io.Stderr, false)
 	if line := updateBannerLine(version.Get().Version, st.LatestVersion, p); line != "" {
 		fmt.Fprintln(io.Stderr, line)
 	}

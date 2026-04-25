@@ -1,0 +1,30 @@
+  status  ·  karts  ·  circuits  ·  chest  ·  characters  ·  tunes  ·  ports  ·  [1;4;4ml[m[1;4;4mo[m[1;4;4mg[m[1;4;4ms[m                                   
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                       log tail not wired in this view yet. run `drift logs <kart>` from a shell.                       
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+tab next tab • r refresh • ? help • q quit                                                                              

@@ -9,10 +9,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/charmbracelet/huh"
+	"charm.land/huh/v2"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
-	"github.com/kurisu-agent/drift/internal/cli/progress"
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/connect"
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
@@ -544,7 +543,7 @@ func doCircuitConnect(ctx context.Context, io IO, root *CLI, circuit string, for
 		argv = append(argv, target)
 	}
 
-	p := style.For(io.Stderr, root.Output == "json")
+	p := ui.NewTheme(io.Stderr, root.Output == "json")
 	if p.Enabled {
 		fmt.Fprintln(io.Stderr, p.Dim(fmt.Sprintf("→ circuit %s (shell, via %s)", circuit, transport)))
 	}
@@ -575,13 +574,16 @@ func doConnect(ctx context.Context, io IO, root *CLI, deps deps, circuit, name s
 	}
 
 	transport := connect.Transport(osexec.LookPath, forceSSH)
-	ph := progress.Start(io.Stderr, root.Output == "json",
-		"connecting to kart \""+name+"\"", transport)
+	tt := ui.NewTheme(io.Stderr, root.Output == "json")
+	sp := tt.NewSpinner(io.Stderr, ui.SpinnerOptions{
+		Message:   "connecting to kart \"" + name + "\"",
+		Transport: transport,
+	})
 	d := connect.Deps{
 		Call: deps.call,
 		// Stop the spinner right before Exec takes the TTY so it doesn't
 		// race the interactive child for cursor control.
-		OnReady:    ph.Stop,
+		OnReady:    sp.Stop,
 		BeforeExec: makeBeforeExecPortsHook(io, root, circuit, name, noForwards),
 	}
 	opts := connect.Options{
@@ -595,15 +597,14 @@ func doConnect(ctx context.Context, io IO, root *CLI, deps deps, circuit, name s
 
 	// Transport hint to stderr so stdout stays clean for the remote
 	// session. Silenced in JSON mode / non-TTY via palette gating.
-	p := style.For(io.Stderr, root.Output == "json")
-	if p.Enabled {
-		fmt.Fprintln(io.Stderr, p.Dim("via "+transport))
+	if tt.Enabled {
+		fmt.Fprintln(io.Stderr, tt.Dim("via "+transport))
 	}
 
 	err := connect.Run(ctx, d, opts, stdio)
 	// If Run returned before reaching Exec (RPC error), the spinner is
 	// still running — make sure it cleans up before errfmt writes.
-	ph.Stop()
+	sp.Stop()
 	if err == nil {
 		return 0
 	}

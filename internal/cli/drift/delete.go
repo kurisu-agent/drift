@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
@@ -47,7 +47,7 @@ func confirmDelete(io IO, circuit, name string) (bool, error) {
 	if !stdinIsTTY(io.Stdin) {
 		return false, errors.New("drift kart delete requires -y on non-interactive stdin")
 	}
-	p := style.For(io.Stderr, false)
+	p := ui.NewTheme(io.Stderr, false)
 	fmt.Fprintf(io.Stderr, "%s delete kart %q on circuit %q? [y/N]: ",
 		p.Warn("!"), name, circuit)
 	br := bufio.NewReader(io.Stdin)

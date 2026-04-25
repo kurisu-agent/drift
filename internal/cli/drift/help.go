@@ -7,7 +7,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
-	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/cli/ui"
 	"github.com/kurisu-agent/drift/internal/clihelp"
 )
 
@@ -49,7 +49,7 @@ on the circuit under ~/.drift/garage/.`
 // callers can emit ANSI on a TTY and plain text everywhere else (tests,
 // pipes, NO_COLOR). Column widths are computed from the curated rows so the
 // description column lines up.
-func writeDriftHelp(w io.Writer, p *style.Palette) {
+func writeDriftHelp(w io.Writer, p *ui.Theme) {
 	cmdWidth := 0
 	for _, row := range driftHelpRows {
 		if len(row[0]) > cmdWidth {
@@ -81,7 +81,7 @@ func writeDriftHelp(w io.Writer, p *style.Palette) {
 
 func runHelp(io IO, parser *kong.Kong, cmd helpCmd) int {
 	if !cmd.Full {
-		writeDriftHelp(io.Stdout, style.For(io.Stdout, false))
+		writeDriftHelp(io.Stdout, ui.NewTheme(io.Stdout, false))
 		return 0
 	}
 	doc := clihelp.Doc{
