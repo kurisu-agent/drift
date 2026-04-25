@@ -219,3 +219,7 @@ Existing users who never touch `drift ports` see no change in behaviour: their d
 - Sync of `ports.yaml` across workstations (would pair naturally with the cross-circuit chest sync plan).
 - Container-side push-based port events.
 - Promoting the bubbletea TUI to a `drift status` super-dashboard that shows karts + forwards + tune drift in one place.
+
+---
+
+**Update — plan 15 supersedes "forwards survive shell sessions" for connect-driven forwards.** As shipped, ssh masters and forwards persisted past the shell exit so the next `drift connect` rejoined an existing master. Plan 15 flips that default: `drift connect` tears down the kart's forwards on session exit (via a new `AfterExec` hook), prompts per-port on conflicts instead of silently remapping, and folds devcontainer.json `forwardPorts` into `drift ports probe` so the picker is useful before the kart is up. The persistent behaviour is still available via `--keep-forwards` on `drift connect`, or by disabling the whole automation with `auto_forward_ports: false` in `~/.config/drift/config.yaml`. State-file schema, reconcile, and the `ssh -O` driver are unchanged.

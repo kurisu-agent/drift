@@ -18,7 +18,7 @@ import (
 // drop and re-add (briefly tears down a working tunnel). The cache lets
 // us compute add/cancel deltas straight from the desired state.
 //
-// On disk: ~/.config/drift/sockets/forwards.json. Wiped per-host when
+// On disk: ~/.config/drift/forwards.json. Wiped per-host when
 // `ssh -O check` reports the master gone.
 type liveCache struct {
 	Hosts map[string]liveHost `json:"hosts,omitempty"`
@@ -38,7 +38,7 @@ func livePath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "sockets", "forwards.json"), nil
+	return filepath.Join(dir, "forwards.json"), nil
 }
 
 func loadLiveCache(path string) (*liveCache, error) {
