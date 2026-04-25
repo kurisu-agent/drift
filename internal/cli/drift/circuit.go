@@ -454,7 +454,13 @@ func pickCircuitDefault(io IO, cfg *config.Client) (string, bool, error) {
 func sshManagerFor(cfgPath string) (*sshconf.Manager, error) {
 	cfgDir := filepath.Dir(cfgPath)
 	managed := filepath.Join(cfgDir, "ssh_config")
-	sockets := filepath.Join(cfgDir, "sockets")
+	// Per-user control-socket dir. Named `cm` (control master) and kept
+	// short because Termux's $HOME is already 32 chars deep, and Linux's
+	// sun_path limit is 108 — the old `~/.config/drift/sockets/cm-%r@%h:%p`
+	// expansion overflowed for `drift.<circuit>.<kart>` aliases. Pairs
+	// with the matching `ControlPath ~/.config/drift/cm/%C` directive
+	// emitted by sshconf.
+	sockets := filepath.Join(cfgDir, "cm")
 	return sshconf.New(sshconf.Paths{
 		UserSSHConfig:    userSSHConfigPath(),
 		ManagedSSHConfig: managed,
