@@ -69,6 +69,11 @@ type Options struct {
 	// Live use case: dashboard anchored to one circuit re-tints to
 	// that circuit's Color. Empty leaves the default Charple accent.
 	AccentOverride string
+
+	// LogsFollowDefault seeds the logs panel's follow toggle. Live
+	// runs default to follow=true; the eval-screens loop uses this
+	// to capture the paused-vs-follow scenarios.
+	LogsFollowDefault *bool
 }
 
 // DataSource is the small surface every panel calls into. Implementations

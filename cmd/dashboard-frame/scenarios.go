@@ -66,6 +66,25 @@ var scenarios = []scenario{
 			o.DataSource = withPortConflict{base: o.DataSource}
 		},
 	},
+	{
+		name:        "follow-on",
+		tab:         "logs",
+		description: "logs panel with follow=true; '● follow' badge sits flush right in the brand accent",
+		apply: func(o *dashboard.Options, _, _ *int) {
+			t := true
+			o.LogsFollowDefault = &t
+		},
+	},
+	{
+		name:        "filter-active",
+		tab:         "logs",
+		description: "logs panel with a filter pre-applied; non-matching lines render dim, the match-count strip is visible",
+		apply: func(o *dashboard.Options, _, _ *int) {
+			o.InitialFilter = "auth"
+			f := false
+			o.LogsFollowDefault = &f
+		},
+	},
 }
 
 // withPortConflict wraps a DataSource and injects an extra port row
@@ -108,17 +127,35 @@ func (w withPortConflict) Ports(ctx context.Context) ([]dashboard.PortRow, error
 	return rows, nil
 }
 
-// findScenario resolves a scenario by name, falling back to default
-// when name is empty. Unknown scenarios are an error so the Makefile
-// can fail loudly rather than silently rendering a default frame.
-func findScenario(name string) (scenario, error) {
+// findScenario resolves a scenario by (name, tab) with tab acting as
+// disambiguation when two panels both define a scenario with the
+// same short name (e.g. "filter-active" exists for karts and logs).
+// Unknown scenarios are an error so the Makefile can fail loudly
+// rather than silently rendering a default frame.
+func findScenario(name, tab string) (scenario, error) {
 	if name == "" {
 		name = "default"
 	}
+	// First pass: exact name+tab match.
+	for _, s := range scenarios {
+		if s.name == name && s.tab == tab {
+			return s, nil
+		}
+	}
+	// Second pass: name match where the scenario applies to any tab
+	// (s.tab == "") — covers "default", which is shared.
+	for _, s := range scenarios {
+		if s.name == name && s.tab == "" {
+			return s, nil
+		}
+	}
+	// Third pass: name match regardless of tab — covers cross-cut
+	// chrome scenarios that name a pseudo-tab the caller may have
+	// translated already.
 	for _, s := range scenarios {
 		if s.name == name {
 			return s, nil
 		}
 	}
-	return scenario{}, fmt.Errorf("unknown scenario %q", name)
+	return scenario{}, fmt.Errorf("unknown scenario %q for tab %q", name, tab)
 }

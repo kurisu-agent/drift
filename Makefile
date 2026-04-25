@@ -115,6 +115,8 @@ eval-screens:
 	render ports default; \
 	render ports with-conflict; \
 	render logs default; \
+	render logs follow-on; \
+	render logs filter-active; \
 	render cross-cut narrow-80c 80 30
 
 # eval-loop is convenience: capture + print the rubric path so an

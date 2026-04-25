@@ -1,6 +1,20 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │   status   ·   karts   ·   circuits   ·   chest   ·   characters   ·   tunes   ·   ports   ·   logs                  │
 │ ─────────────────────────────────────────────────────────────────────────────────────────────        ─────────────── │
+│  alpha.api                                                                                                 ● follow │
+│                                                                                                                      │
+│ 13:58:42  info  starting api server on :8080                                                                         │
+│ 13:58:42  debug  loaded 7 routes from internal/api/routes.go                                                         │
+│ 13:58:43  info  connected to postgres dsn=alpha.db                                                                   │
+│ 13:59:11  info  GET /healthz 200 1.2ms                                                                               │
+│ 13:59:18  warn  deprecated header X-Drift-Old in request from 10.0.0.7                                               │
+│ 13:59:42  info  POST /v1/sessions 201 8.4ms                                                                          │
+│ 14:00:00  info  tick: 0.1MB/s in, 0.4MB/s out, 13 connections                                                        │
+│ 14:00:12  error  downstream lakitu auth refused: token expired                                                       │
+│ 14:00:12  info  retrying with refreshed token (attempt 1/3)                                                          │
+│ 14:00:13  info  downstream lakitu auth ok                                                                            │
+│ 14:00:30  debug  scheduler: 3 jobs pending, 2 running, 8 done                                                        │
+│ 14:00:45  warn  memory pressure: 412MB / 512MB rss                                                                   │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
@@ -12,19 +26,5 @@
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│                                                                                                                      │
-│                      log tail not wired in this view yet. run `drift logs <kart>` from a shell.                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│ tab next tab • r refresh • ? help • q quit                                                                           │
+│ ↑/k up • ↓/j down • / filter • tab next tab • r refresh • ? help • q quit                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

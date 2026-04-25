@@ -33,7 +33,7 @@ func main() {
 	at := flag.Duration("at", -1, "render at simulated time `at` from entrance start (e.g. 100ms); negative = settled, 0 = first frame")
 	flag.Parse()
 
-	sc, err := findScenario(*scenarioName)
+	sc, err := findScenario(*scenarioName, *tab)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
