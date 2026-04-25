@@ -43,17 +43,19 @@ func (e element) settled() bool {
 }
 
 // entrance owns the spring state for the status panel's first paint.
-// The status banner slides in from the left, the lockup follows from
-// the right, then the stats column, then the activity table fades in.
+// The wordmark bounces in from the left first (low-damped spring so it
+// overshoots and settles), then the lockup lines slide in from the
+// right, then the stats column, then the activity table fades in.
 //
-// All four use the same harmonica spring (frequency 6.0, damping 0.5)
-// so the motion feels like one mechanical system. Per-piece delays
-// stagger the start so the eye reads them as a sequence, not a block.
+// The banner uses a snappier, bouncier spring; the lockup/stats use a
+// gentler one so the staggered entrance reads as one mechanical system
+// even though the parts have different feels.
 type entrance struct {
-	spring  harmonica.Spring
-	started time.Time
-	done    bool
-	skipped bool
+	bannerSpring harmonica.Spring
+	textSpring   harmonica.Spring
+	started      time.Time
+	done         bool
+	skipped      bool
 
 	banner   element
 	lockup1  element
@@ -69,31 +71,41 @@ type entrance struct {
 // settled state.
 func newEntrance(width int, motionDisabled bool) *entrance {
 	e := &entrance{
-		spring:  harmonica.NewSpring(harmonica.FPS(60), 6.0, 0.5),
-		started: time.Now(),
+		// Banner spring: low damping so the wordmark overshoots and
+		// settles back — that's the visible "bounce".
+		bannerSpring: harmonica.NewSpring(harmonica.FPS(60), 7.0, 0.35),
+		// Text spring: moderate damping so the lockup / stats glide in
+		// without bouncing, contrasting with the banner.
+		textSpring: harmonica.NewSpring(harmonica.FPS(60), 6.0, 0.7),
+		started:    time.Now(),
 	}
 	skip := motionDisabled || os.Getenv("DRIFT_NO_MOTION") != "" ||
 		width < bannerWidth+12 || os.Getenv("GO_TEST_DETERMINISTIC") != ""
-	// Banner: slides in from -bannerWidth to 0.
-	e.banner = element{start: float64(-bannerWidth), pos: float64(-bannerWidth), target: 0, delay: 0}
-	// Lockup lines: slide in from +width to 0 (offset from final col).
+	// Banner: starts off-screen left (pos = -2 * bannerWidth gives the
+	// spring some travel to build velocity before reaching col 0), and
+	// the bouncy spring overshoots target=0 once or twice before
+	// settling. delay=0 — banner enters first.
+	e.banner = element{start: float64(-2 * bannerWidth), pos: float64(-2 * bannerWidth), target: 0, delay: 0}
+	// Lockup lines: slide in from the right edge of the panel after
+	// the banner has had time to land. 50ms cascade keeps lines from
+	// arriving in lockstep.
 	for i, dst := range []*element{&e.lockup1, &e.lockup2, &e.lockup3} {
 		*dst = element{
 			start:  float64(width),
 			pos:    float64(width),
 			target: 0,
-			delay:  time.Duration(150+50*i) * time.Millisecond,
+			delay:  time.Duration(420+60*i) * time.Millisecond,
 		}
 	}
-	// Stats: slides in from +width.
+	// Stats: arrives last among the sliding pieces.
 	e.stats = element{
 		start:  float64(width),
 		pos:    float64(width),
 		target: 0,
-		delay:  250 * time.Millisecond,
+		delay:  600 * time.Millisecond,
 	}
-	// Activity table: fade 0..1 starting after the others have begun.
-	e.activity = element{start: 0, pos: 0, target: 1, delay: 300 * time.Millisecond}
+	// Activity table: fade 0..1 starting after the slides have begun.
+	e.activity = element{start: 0, pos: 0, target: 1, delay: 700 * time.Millisecond}
 
 	if skip {
 		e.banner.pos, e.banner.vel = e.banner.target, 0
@@ -131,17 +143,17 @@ func (e *entrance) tick() bool {
 		return false
 	}
 	elapsed := time.Since(e.started)
-	advance := func(el *element) {
+	advance := func(el *element, sp harmonica.Spring) {
 		if elapsed < el.delay {
 			return
 		}
-		el.pos, el.vel = e.spring.Update(el.pos, el.vel, el.target)
+		el.pos, el.vel = sp.Update(el.pos, el.vel, el.target)
 	}
-	advance(&e.banner)
-	advance(&e.lockup1)
-	advance(&e.lockup2)
-	advance(&e.lockup3)
-	advance(&e.stats)
+	advance(&e.banner, e.bannerSpring)
+	advance(&e.lockup1, e.textSpring)
+	advance(&e.lockup2, e.textSpring)
+	advance(&e.lockup3, e.textSpring)
+	advance(&e.stats, e.textSpring)
 	// Activity uses linear interp on a 0..1 axis with the same delay
 	// gating, so it shares the per-frame loop without a second cmd.
 	if elapsed >= e.activity.delay {
@@ -163,7 +175,13 @@ func (e *entrance) tick() bool {
 // offsetLeft returns the integer column offset for an element sliding
 // in from the left. Positions are floats; we round to whole cells per
 // the plan's "no sub-pixel shimmer" rule.
-func offsetLeft(el element) int { return int(el.pos + 0.5) }
+func offsetLeft(el element) int {
+	x := el.pos
+	if x < 0 {
+		return -int(-x + 0.5)
+	}
+	return int(x + 0.5)
+}
 
 // padLeft pads s with `n` leading spaces (clamped at 0). Used to slide
 // content rightward during entrance.
@@ -177,4 +195,49 @@ func padLeft(s string, n int) string {
 		lines[i] = pad + line
 	}
 	return strings.Join(lines, "\n")
+}
+
+// renderBannerSliding returns a slotWidth-wide block where each line of
+// `banner` is positioned with its left edge at column `x` (relative to
+// the slot's left edge). Negative x clips the wordmark from the left
+// (it's emerging from off-screen); positive x pads with leading spaces
+// (the spring has overshot col 0 during the bounce). The output is
+// always exactly slotWidth columns per line so the surrounding layout
+// doesn't reflow as the banner moves.
+func renderBannerSliding(banner string, x, slotWidth int) string {
+	lines := strings.Split(banner, "\n")
+	out := make([]string, len(lines))
+	for i, line := range lines {
+		runes := []rune(line)
+		out[i] = sliceLineAtX(runes, x, slotWidth)
+	}
+	return strings.Join(out, "\n")
+}
+
+func sliceLineAtX(runes []rune, x, slotWidth int) string {
+	if slotWidth <= 0 {
+		return ""
+	}
+	if x >= slotWidth {
+		return strings.Repeat(" ", slotWidth)
+	}
+	leadingPad := 0
+	visible := runes
+	if x < 0 {
+		skip := -x
+		if skip >= len(visible) {
+			return strings.Repeat(" ", slotWidth)
+		}
+		visible = visible[skip:]
+	} else {
+		leadingPad = x
+	}
+	if leadingPad+len(visible) > slotWidth {
+		visible = visible[:slotWidth-leadingPad]
+	}
+	trailing := slotWidth - leadingPad - len(visible)
+	if trailing < 0 {
+		trailing = 0
+	}
+	return strings.Repeat(" ", leadingPad) + string(visible) + strings.Repeat(" ", trailing)
 }

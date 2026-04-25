@@ -113,28 +113,28 @@ func (p *statusPanel) View(width, height int) string {
 	return lipgloss.JoinVertical(lipgloss.Left, header, body)
 }
 
-// headerRow lays out banner (left, slides in from -bannerWidth to 0)
-// and lockup + stats (right, slide in from +width). Stats columns are
-// individual elements with staggered delays so the row "catches up"
-// rather than entering as a single slab.
+// headerRow lays out the wordmark (left, bouncing in from off-screen
+// left), the lockup (middle, sliding in from the right), and the stats
+// column (right, sliding in from the right). The banner's slot is a
+// fixed bannerWidth columns wide so its overshoot doesn't reflow the
+// surrounding layout — the wordmark is clipped or padded inside the
+// slot via renderBannerSliding.
 func (p *statusPanel) headerRow(width int) string {
 	banner := renderWordmark(p.t)
 	lockup := p.lockup()
 	stats := p.statsBlock()
 
 	bx := 0
-	lx, sx := 0, 0
-	l1off, l2off, l3off := 0, 0, 0
+	l1off, l2off, l3off, sx := 0, 0, 0, 0
 	if p.entr != nil {
 		bx = offsetLeft(p.entr.banner)
 		l1off = int(p.entr.lockup1.pos + 0.5)
 		l2off = int(p.entr.lockup2.pos + 0.5)
 		l3off = int(p.entr.lockup3.pos + 0.5)
 		sx = int(p.entr.stats.pos + 0.5)
-		_ = lx
 	}
 
-	bannerCol := slideHorizontal(banner, bx)
+	bannerCol := renderBannerSliding(banner, bx, bannerWidth)
 	lockupLines := strings.Split(lockup, "\n")
 	if len(lockupLines) >= 1 {
 		lockupLines[0] = padLeftLine(lockupLines[0], maxInt(0, l1off))
@@ -148,7 +148,7 @@ func (p *statusPanel) headerRow(width int) string {
 	lockupCol := strings.Join(lockupLines, "\n")
 	statsCol := slideHorizontal(stats, sx)
 
-	bannerW := lipgloss.Width(bannerCol)
+	bannerW := bannerWidth
 	statsW := lipgloss.Width(statsCol)
 	lockupW := maxInt(0, width-bannerW-statsW-4)
 
