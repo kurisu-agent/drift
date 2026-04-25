@@ -18,12 +18,12 @@ type emptyDataSource struct{}
 func (emptyDataSource) Status(_ context.Context) (StatusSnapshot, error) {
 	return StatusSnapshot{}, nil
 }
-func (emptyDataSource) Karts(_ context.Context, _ string) ([]KartRow, error)  { return nil, nil }
-func (emptyDataSource) Circuits(_ context.Context) ([]CircuitRow, error)      { return nil, nil }
-func (emptyDataSource) Chest(_ context.Context) ([]ResourceRow, error)        { return nil, nil }
-func (emptyDataSource) Characters(_ context.Context) ([]ResourceRow, error)   { return nil, nil }
-func (emptyDataSource) Tunes(_ context.Context) ([]ResourceRow, error)        { return nil, nil }
-func (emptyDataSource) Ports(_ context.Context) ([]PortRow, error)            { return nil, nil }
+func (emptyDataSource) Karts(_ context.Context, _ string) ([]KartRow, error) { return nil, nil }
+func (emptyDataSource) Circuits(_ context.Context) ([]CircuitRow, error)     { return nil, nil }
+func (emptyDataSource) Chest(_ context.Context) ([]ResourceRow, error)       { return nil, nil }
+func (emptyDataSource) Characters(_ context.Context) ([]ResourceRow, error)  { return nil, nil }
+func (emptyDataSource) Tunes(_ context.Context) ([]ResourceRow, error)       { return nil, nil }
+func (emptyDataSource) Ports(_ context.Context) ([]PortRow, error)           { return nil, nil }
 
 func TestDashboardTabsCycle(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
