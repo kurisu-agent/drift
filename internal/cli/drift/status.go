@@ -2,6 +2,7 @@ package drift
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 
@@ -13,7 +14,7 @@ import (
 )
 
 type statusCmd struct {
-	NoProbe bool `name:"no-probe" help:"Skip the server.version + kart.list round-trips (show client state only)."`
+	NoProbe bool `name:"no-probe" help:"Skip the server.status round-trip (show client state only)."`
 }
 
 // statusCircuit is the per-circuit payload in both text and JSON modes.
@@ -196,27 +197,30 @@ func runStatus(ctx context.Context, io IO, root *CLI, cmd statusCmd, deps deps) 
 	return 0
 }
 
-// fillProbe populates sc.Lakitu / API / LatencyMS, plus Karts when the
-// kart.list round-trip succeeds. Any failure lands in ProbeError —
-// status is a read-only overview, never aborts.
+// fillProbe populates sc.Lakitu / API / LatencyMS / Karts in a single
+// server.status round-trip. Any failure lands in ProbeError — status is
+// a read-only overview, never aborts. The combined-RPC defaultStatusProbe
+// handles the two-call fallback for old lakitus internally.
 func fillProbe(ctx context.Context, deps deps, circuit string, sc *statusCircuit) {
-	if deps.probe == nil {
-		sc.ProbeError = "probe not configured"
+	if deps.statusProbe == nil {
+		sc.ProbeError = "status probe not configured"
 		return
 	}
-	pr, err := deps.probe(ctx, circuit)
+	res, err := deps.statusProbe(ctx, circuit)
 	if err != nil {
 		sc.ProbeError = err.Error()
 		return
 	}
-	sc.Lakitu = pr.Version
-	sc.API = pr.API
-	sc.LatencyMS = pr.LatencyMS
+	sc.Lakitu = res.Version
+	sc.API = res.API
+	sc.LatencyMS = res.LatencyMS
 
-	entries, _, err := fetchKartList(ctx, deps, circuit)
-	if err != nil {
-		sc.ProbeError = fmt.Sprintf("kart.list: %v", err)
-		return
+	if len(res.Karts) > 0 {
+		var listRes listResult
+		if jerr := json.Unmarshal(res.Karts, &listRes.Karts); jerr != nil {
+			sc.ProbeError = fmt.Sprintf("decode karts: %v", jerr)
+			return
+		}
+		sc.Karts = listRes.Karts
 	}
-	sc.Karts = entries
 }

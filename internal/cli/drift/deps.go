@@ -14,6 +14,11 @@ import (
 type deps struct {
 	clientConfigPath func() (string, error)
 	probe            func(ctx context.Context, circuit string) (*probeResult, error)
+	// statusProbe is the combined server.status probe — one round-trip
+	// for `drift status` instead of probe + kart.list back-to-back.
+	// Falls back to the two-call path when the circuit's lakitu predates
+	// server.status.
+	statusProbe func(ctx context.Context, circuit string) (*statusProbeResult, error)
 	// probeInfo is used by `circuit add` before the drift.<name> alias
 	// exists on disk — it ssh's directly to sshArgs (e.g. ["alice@host"]
 	// or ["-p", "2222", "alice@host"]).
@@ -26,6 +31,7 @@ func defaultDeps() deps {
 	return deps{
 		clientConfigPath: config.ClientConfigPath,
 		probe:            defaultProbe(c),
+		statusProbe:      defaultStatusProbe(c),
 		probeInfo:        defaultProbeInfo(),
 		call:             defaultCall(c),
 	}
