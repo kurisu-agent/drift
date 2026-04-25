@@ -366,7 +366,13 @@ func (c *Client) SSH(ctx context.Context, opts SSHOpts) ([]byte, error) {
 // with its garage view. DisallowUnknownFields is deliberately NOT set —
 // devpod's JSON surface is additive and we want to ride through minor bumps.
 type Workspace struct {
-	ID       string `json:"id"`
+	ID string `json:"id"`
+	// UID is devpod's stable internal handle (e.g. "default-dr-e7cdc"),
+	// emitted on every workspace by `devpod list`. lakitu uses it to
+	// match workspaces against the `dev.containers.id` docker label so
+	// container state can be looked up in one `docker ps` instead of N
+	// `devpod status` shells.
+	UID      string `json:"uid,omitempty"`
 	Source   Source `json:"source"`
 	Provider struct {
 		Name string `json:"name"`

@@ -45,6 +45,7 @@ type TuneNewParams struct {
 	Features     string        `json:"features,omitempty"`
 	Env          model.TuneEnv `json:"env,omitempty"`
 	MountDirs    []model.Mount `json:"mount_dirs,omitempty"`
+	Seed         []string      `json:"seed,omitempty"`
 }
 
 // TunePatchOp is one `git config`-shaped operation against a tune.
@@ -134,6 +135,7 @@ func (d *Deps) TuneNewHandler(_ context.Context, params json.RawMessage) (any, e
 		Features:     p.Features,
 		Env:          p.Env,
 		MountDirs:    p.MountDirs,
+		Seed:         p.Seed,
 	}
 	if err := writeTune(path, &t); err != nil {
 		return nil, err

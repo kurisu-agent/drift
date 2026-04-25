@@ -15,6 +15,7 @@ import (
 	"github.com/kurisu-agent/drift/internal/chest"
 	"github.com/kurisu-agent/drift/internal/model"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
+	"github.com/kurisu-agent/drift/internal/seed"
 )
 
 // Tune is an alias for model.Tune — shared with internal/server to avoid
@@ -101,6 +102,10 @@ type Resolved struct {
 	// MigratedFrom threads through from Flags unchanged; the resolver has
 	// nothing to decide about it.
 	MigratedFrom model.MigratedFrom
+	// Seeds are the resolved (but not yet rendered) templates listed in
+	// the tune's `seed:` field. The post-`devpod up` finaliser renders
+	// each against the kart's vars and emits one shell drop per file.
+	Seeds []*seed.Template
 }
 
 type Resolver struct {
@@ -123,6 +128,11 @@ type Resolver struct {
 	// refs in non-env fields will fail with internal_error — wire it
 	// whenever ResolveEnv is wired.
 	ResolveChestRef func(ref string) (string, error)
+	// LoadSeed resolves a seed template by name — built-in registry first,
+	// then on-disk garage/seeds. Missing entries should return a
+	// `seed_not_found` rpcerr. nil means the tune's `seed:` list is
+	// rejected with internal_error if non-empty (caller wiring bug).
+	LoadSeed func(name string) (*seed.Template, error)
 	// Verbose, if non-nil, receives a `[resolver] …` summary of the
 	// effective resolved inputs (tune, character, source, devcontainer,
 	// dotfiles, env block names) after each Resolve call. Wire to
@@ -252,6 +262,22 @@ func (r *Resolver) Resolve(f Flags) (*Resolved, error) {
 		return nil, err
 	}
 
+	var seeds []*seed.Template
+	if tune != nil && len(tune.Seed) > 0 {
+		if r.LoadSeed == nil {
+			return nil, rpcerr.Internal(
+				"kart.new: tune %q lists seed templates but no seed loader is configured", tuneName)
+		}
+		seeds = make([]*seed.Template, 0, len(tune.Seed))
+		for _, n := range tune.Seed {
+			t, err := r.LoadSeed(n)
+			if err != nil {
+				return nil, err
+			}
+			seeds = append(seeds, t)
+		}
+	}
+
 	resolved := &Resolved{
 		Name:          f.Name,
 		SourceMode:    sourceMode,
@@ -268,6 +294,7 @@ func (r *Resolver) Resolve(f Flags) (*Resolved, error) {
 		EnvRefs:       envRefs,
 		Mounts:        mounts,
 		MigratedFrom:  f.MigratedFrom,
+		Seeds:         seeds,
 	}
 	r.logResolved(resolved)
 	return resolved, nil

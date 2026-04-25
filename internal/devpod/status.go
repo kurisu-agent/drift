@@ -35,3 +35,21 @@ func normalizeStatus(raw string) Status {
 		return StatusError
 	}
 }
+
+// FromDockerState maps a docker container State onto the same lifecycle
+// enum `devpod status` returns, so lakitu can fold a docker-batch lookup
+// and per-workspace devpod probes into one shape. Empty input means "no
+// container with this UID" — devpod treats that as stopped (the workspace
+// can be re-upped), so we mirror that.
+func FromDockerState(state string) Status {
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "running":
+		return StatusRunning
+	case "restarting", "removing":
+		return StatusBusy
+	case "paused", "exited", "created", "dead", "":
+		return StatusStopped
+	default:
+		return StatusError
+	}
+}

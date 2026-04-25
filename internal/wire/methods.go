@@ -7,6 +7,10 @@ const (
 	MethodServerInfo    = "server.info"
 	MethodServerInit    = "server.init"
 	MethodServerVerify  = "server.verify"
+	// MethodServerStatus is the combined hot-path RPC for `drift status`:
+	// returns server.version's payload + the kart.list payload in one
+	// round-trip so the client doesn't pay two SSH handshakes per circuit.
+	MethodServerStatus = "server.status"
 
 	MethodKartNew         = "kart.new"
 	MethodKartStart       = "kart.start"
@@ -62,6 +66,7 @@ const (
 func Methods() []string {
 	return []string{
 		MethodServerVersion, MethodServerInfo, MethodServerInit, MethodServerVerify,
+		MethodServerStatus,
 		MethodKartNew, MethodKartStart, MethodKartStop, MethodKartRestart,
 		MethodKartRecreate, MethodKartRebuild, MethodKartDriftCheck,
 		MethodKartDelete, MethodKartList, MethodKartInfo,
