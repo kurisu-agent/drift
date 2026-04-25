@@ -1,9 +1,9 @@
   [1;4;4ms[m[1;4;4mt[m[1;4;4ma[m[1;4;4mt[m[1;4;4mu[m[1;4;4ms[m  ·  karts  ·  circuits  ·  chest  ·  characters  ·  tunes  ·  ports  ·  logs                                   
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-     _      _   __ _     [1mdrift test[m                                                                 [1m0 / 0[m  circuits     
-  __| |_ _ (_) / _| |_   devpods for drifters                                                          [1m0 / 0[m  karts     
- / _' | '_|| ||  _|  _|                                                                                    [1m0[m  ports     
- \__,_|_|  |_||_|  \__|                                                                                                 
+┌┬┐ ┬─┐ ┬ ┌─┐ ┌┬┐  [1mdrift test[m                                                                       [1m0 / 0[m  circuits     
+ │  ├┬┘ │ ├   │    devpods for drifters                                                                [1m0 / 0[m  karts     
+─┴  ┴└─ ┴ ┴   ┴                                                                                            [1m0[m  ports     
+                                                                                                                        
                                                                                                                         
                                                                                                                         
                                                                                                                         

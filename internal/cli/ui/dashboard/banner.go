@@ -8,20 +8,17 @@ import (
 	"github.com/kurisu-agent/drift/internal/cli/ui"
 )
 
-// wordmark is the hardcoded "drift" banner. Four rows, 23 columns,
-// figlet "small" letterforms — readable as "drift" at a glance, and
-// every line is padded to the same width so the rainbow gradient
-// blends evenly across columns. The plan suggested Tmplr Rounded; we
-// chose readability over font fidelity. No runtime figlet renderer
-// per the plan's no-deps rule.
-const wordmark = "     _      _   __ _   \n" +
-	"  __| |_ _ (_) / _| |_ \n" +
-	" / _' | '_|| ||  _|  _|\n" +
-	" \\__,_|_|  |_||_|  \\__|"
+// wordmark is the hardcoded "drift" banner. Three rows, 17 columns
+// in a rounded box-drawing style. The plan calls for Tmplr Rounded;
+// we approximate with light box drawings since runtime figlet is out
+// of scope (per plan: "no runtime figlet renderer").
+const wordmark = `┌┬┐ ┬─┐ ┬ ┌─┐ ┌┬┐
+ │  ├┬┘ │ ├   │
+─┴  ┴└─ ┴ ┴   ┴ `
 
 // bannerWidth is the column width of the wordmark — used by the
 // entrance animation to compute the off-screen start position.
-const bannerWidth = 23
+const bannerWidth = 17
 
 // renderWordmark applies a horizontal rainbow gradient to the wordmark
 // glyphs. The gradient is computed once per render pass via
