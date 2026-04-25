@@ -8,17 +8,18 @@ import (
 	"github.com/kurisu-agent/drift/internal/cli/ui"
 )
 
-// wordmark is the hardcoded "drift" banner. Three rows, 17 columns
-// in a rounded box-drawing style. The plan calls for Tmplr Rounded;
-// we approximate with light box drawings since runtime figlet is out
-// of scope (per plan: "no runtime figlet renderer").
-const wordmark = `┌┬┐ ┬─┐ ┬ ┌─┐ ┌┬┐
- │  ├┬┘ │ ├   │
-─┴  ┴└─ ┴ ┴   ┴ `
+// wordmark is the hardcoded "drift" banner from plans/14-tui-redesign.md
+// lines 194-196. Three rows, 7 columns of rounded box drawing. The
+// plan calls for a Tmplr Rounded approximation; this is the literal
+// sketch and must not be redesigned without updating the plan first.
+// Hardcoded per the plan's "no runtime figlet renderer" rule.
+const wordmark = ` ╮  •╭ ` + "\n" +
+	`╭┤╭╮╮┼┼` + "\n" +
+	`╰┴╯ ╰╯╰`
 
 // bannerWidth is the column width of the wordmark — used by the
 // entrance animation to compute the off-screen start position.
-const bannerWidth = 17
+const bannerWidth = 7
 
 // renderWordmark applies a horizontal rainbow gradient to the wordmark
 // glyphs. The gradient is computed once per render pass via
