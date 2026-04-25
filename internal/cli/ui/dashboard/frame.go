@@ -13,23 +13,53 @@ import (
 // Pipe into `freeze` to produce a PNG still.
 //
 // Used by cmd/dashboard-frame for the visual eval loop. Headless: no
-// TTY, no real-time, no goroutine leaks. Settling synchronously avoids
-// the wall-clock gating inside entrance.tick — a fast-spinning loop
-// would race past the per-element delays without ever advancing the
-// later springs.
+// TTY, no real-time, no goroutine leaks.
 func RenderSettledFrame(o Options, width, height int) string {
-	root := newModel(o)
-
-	cmd := root.Init()
-	deliverFrame(root, cmd)
-
-	out, _ := root.Update(tea.WindowSizeMsg{Width: width, Height: height})
-	rm, _ := out.(*model)
-
+	rm := buildFrameModel(o, width, height)
 	if sp, ok := rm.panels[TabStatus].(*statusPanel); ok && sp.entr != nil {
 		sp.entr.settleNow()
 	}
 	return rm.View().Content
+}
+
+// RenderFrameAt is RenderSettledFrame's mid-animation cousin: it
+// captures the dashboard at simulated time `at` measured from the
+// entrance start. The springs are stepped frame-by-frame at 60 FPS
+// up to `at`, ignoring wall clock so the captured frame is
+// deterministic regardless of how long the host took to produce it.
+//
+// Use 0ms for the very first frame (everything off-screen), then
+// increment by 1/60 (~16ms) for each "tick in" the caller wants
+// to inspect.
+func RenderFrameAt(o Options, width, height int, at time.Duration) string {
+	// Force MotionDisabled off so the entrance runs through the spring
+	// path even if a caller's Options had it on (the renderer is meant
+	// to capture animation frames; settling early defeats the purpose).
+	o.MotionDisabled = false
+	rm := buildFrameModel(o, width, height)
+	sp, ok := rm.panels[TabStatus].(*statusPanel)
+	if !ok || sp.entr == nil {
+		return rm.View().Content
+	}
+	const dt = time.Second / 60
+	for elapsed := dt; elapsed <= at; elapsed += dt {
+		if !sp.entr.advance(elapsed) {
+			break
+		}
+	}
+	return rm.View().Content
+}
+
+// buildFrameModel is the shared setup the settled and per-frame
+// renderers both rely on: build the model, drain Init's cmds, deliver
+// WindowSizeMsg so panels construct their entrance state.
+func buildFrameModel(o Options, width, height int) *model {
+	root := newModel(o)
+	cmd := root.Init()
+	deliverFrame(root, cmd)
+	out, _ := root.Update(tea.WindowSizeMsg{Width: width, Height: height})
+	rm, _ := out.(*model)
+	return rm
 }
 
 // deliverFrame is the headless equivalent of bubbletea's runtime: pump

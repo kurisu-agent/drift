@@ -141,21 +141,27 @@ func (e *entrance) settleNow() {
 // when at least one element is still moving — caller schedules another
 // frame in that case.
 func (e *entrance) tick() bool {
+	return e.advance(time.Since(e.started))
+}
+
+// advance is tick with an injectable elapsed value. Used by the
+// headless frame renderer (cmd/dashboard-frame) to capture frames at
+// specific simulated time points without depending on wall clock.
+func (e *entrance) advance(elapsed time.Duration) bool {
 	if e.done {
 		return false
 	}
-	elapsed := time.Since(e.started)
-	advance := func(el *element, sp harmonica.Spring) {
+	step := func(el *element, sp harmonica.Spring) {
 		if elapsed < el.delay {
 			return
 		}
 		el.pos, el.vel = sp.Update(el.pos, el.vel, el.target)
 	}
-	advance(&e.banner, e.bannerSpring)
-	advance(&e.lockup1, e.textSpring)
-	advance(&e.lockup2, e.textSpring)
-	advance(&e.lockup3, e.textSpring)
-	advance(&e.stats, e.textSpring)
+	step(&e.banner, e.bannerSpring)
+	step(&e.lockup1, e.textSpring)
+	step(&e.lockup2, e.textSpring)
+	step(&e.lockup3, e.textSpring)
+	step(&e.stats, e.textSpring)
 	// Activity uses linear interp on a 0..1 axis with the same delay
 	// gating, so it shares the per-frame loop without a second cmd.
 	if elapsed >= e.activity.delay {

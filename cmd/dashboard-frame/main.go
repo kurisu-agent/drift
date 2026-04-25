@@ -29,6 +29,7 @@ func main() {
 	width := flag.Int("w", 120, "frame width in columns")
 	height := flag.Int("h", 30, "frame height in rows")
 	noMotion := flag.Bool("no-motion", false, "skip the entrance animation; render the settled frame directly")
+	at := flag.Duration("at", -1, "render at simulated time `at` from entrance start (e.g. 100ms); negative = settled, 0 = first frame")
 	flag.Parse()
 
 	t, err := parseTab(*tab)
@@ -46,13 +47,19 @@ func main() {
 	theme := *probe
 	theme.Enabled = true
 
-	frame := dashboard.RenderSettledFrame(dashboard.Options{
+	opts := dashboard.Options{
 		InitialTab:     t,
 		Theme:          &theme,
 		DriftVersion:   "0.4.3",
 		DataSource:     demo.New(),
 		MotionDisabled: *noMotion,
-	}, *width, *height)
+	}
+	var frame string
+	if *at >= 0 && !*noMotion {
+		frame = dashboard.RenderFrameAt(opts, *width, *height, *at)
+	} else {
+		frame = dashboard.RenderSettledFrame(opts, *width, *height)
+	}
 	if _, err := os.Stdout.WriteString(frame); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

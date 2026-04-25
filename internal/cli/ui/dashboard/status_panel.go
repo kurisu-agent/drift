@@ -10,6 +10,7 @@ import (
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/kurisu-agent/drift/internal/cli/ui"
 )
 
@@ -124,38 +125,113 @@ func (p *statusPanel) headerRow(width int) string {
 	lockup := p.lockup()
 	stats := p.statsBlock()
 
+	// Natural widths so the columns don't grow when slide offsets
+	// push content past the right edge — the Width()/MaxWidth() pair
+	// below clips overflow per line instead of letting it wrap.
+	bannerW := bannerWidth
+	statsW := lipgloss.Width(stats)
+	lockupW := maxInt(0, width-bannerW-statsW-4)
+
 	bx := 0
 	l1off, l2off, l3off, sx := 0, 0, 0, 0
 	if p.entr != nil {
 		bx = offsetLeft(p.entr.banner)
-		l1off = int(p.entr.lockup1.pos + 0.5)
-		l2off = int(p.entr.lockup2.pos + 0.5)
-		l3off = int(p.entr.lockup3.pos + 0.5)
-		sx = int(p.entr.stats.pos + 0.5)
+		// Cap slide offsets at the column width so a far-off-screen
+		// position doesn't blow the row past the screen width when
+		// rendered. Once content slides into the column the cap is
+		// redundant; before that, padding fills the column with
+		// spaces (content invisible) which is the desired effect.
+		l1off = clampInt(int(p.entr.lockup1.pos+0.5), 0, lockupW)
+		l2off = clampInt(int(p.entr.lockup2.pos+0.5), 0, lockupW)
+		l3off = clampInt(int(p.entr.lockup3.pos+0.5), 0, lockupW)
+		sx = clampInt(int(p.entr.stats.pos+0.5), 0, statsW)
 	}
 
 	bannerCol := renderBannerSliding(wordmark, gradient, bx, bannerWidth)
-	lockupLines := strings.Split(lockup, "\n")
-	if len(lockupLines) >= 1 {
-		lockupLines[0] = padLeftLine(lockupLines[0], maxInt(0, l1off))
-	}
-	if len(lockupLines) >= 2 {
-		lockupLines[1] = padLeftLine(lockupLines[1], maxInt(0, l2off))
-	}
-	if len(lockupLines) >= 3 {
-		lockupLines[2] = padLeftLine(lockupLines[2], maxInt(0, l3off))
-	}
-	lockupCol := strings.Join(lockupLines, "\n")
-	statsCol := slideHorizontal(stats, sx)
+	lockupCol := clipColumn(lockup, []int{l1off, l2off, l3off}, lockupW)
+	statsCol := clipColumn(stats, repeat(sx, lipgloss.Height(stats)), statsW)
 
-	bannerW := bannerWidth
-	statsW := lipgloss.Width(statsCol)
-	lockupW := maxInt(0, width-bannerW-statsW-4)
+	// 2-col gutter between banner and lockup, no border. lipgloss.JoinHorizontal
+	// is height-respecting; every column is the same height (3 rows) so no
+	// wrap-induced row inflation can happen here.
+	gutter := strings.Repeat(" ", 2)
+	rows := joinHorizontalRows(bannerCol, gutter, lockupCol, gutter, statsCol)
+	return rows
+}
 
-	left := lipgloss.NewStyle().Width(bannerW).Render(bannerCol)
-	mid := lipgloss.NewStyle().Width(lockupW).PaddingLeft(2).Render(lockupCol)
-	right := lipgloss.NewStyle().Width(statsW).Render(statsCol)
-	return lipgloss.JoinHorizontal(lipgloss.Top, left, mid, right)
+// clipColumn pads each line of `s` by the matching offset and then
+// truncates the line to `width` columns using ansi-aware truncation.
+// This guarantees the returned block is exactly `width` columns wide
+// regardless of the slide offset, so JoinHorizontal can't reflow rows.
+func clipColumn(s string, offsets []int, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	lines := strings.Split(s, "\n")
+	out := make([]string, len(lines))
+	for i, line := range lines {
+		off := 0
+		if i < len(offsets) {
+			off = offsets[i]
+		}
+		padded := padLeftLine(line, off)
+		clipped := ansi.Truncate(padded, width, "")
+		// Pad the clipped line back out to width with trailing spaces
+		// so every row of the column has identical visible width.
+		visW := lipgloss.Width(clipped)
+		if visW < width {
+			clipped += strings.Repeat(" ", width-visW)
+		}
+		out[i] = clipped
+	}
+	return strings.Join(out, "\n")
+}
+
+// joinHorizontalRows pairs each row of every column and concatenates
+// them with the supplied separator. lipgloss.JoinHorizontal does this
+// too but pads short columns with extra rows; clipColumn already
+// guarantees equal heights so we can stay simple here and avoid that
+// path entirely.
+func joinHorizontalRows(cols ...string) string {
+	splits := make([][]string, len(cols))
+	maxRows := 0
+	for i, c := range cols {
+		splits[i] = strings.Split(c, "\n")
+		if n := len(splits[i]); n > maxRows {
+			maxRows = n
+		}
+	}
+	rows := make([]string, maxRows)
+	for r := 0; r < maxRows; r++ {
+		var b strings.Builder
+		for _, lines := range splits {
+			if r < len(lines) {
+				b.WriteString(lines[r])
+			}
+		}
+		rows[r] = b.String()
+	}
+	return strings.Join(rows, "\n")
+}
+
+func repeat(v, n int) []int {
+	out := make([]int, n)
+	for i := range out {
+		out[i] = v
+	}
+	return out
+}
+
+// clampInt confines v to [lo, hi]. Used by the entrance to keep slide
+// offsets within their owning column so wrap doesn't break the row.
+func clampInt(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 // slideHorizontal pads each line of s with leading spaces equal to
