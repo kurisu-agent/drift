@@ -13,7 +13,7 @@
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│                                   no port forwards configured. see `drift ports`.                                    │
+│                                     no port forwards yet. see `drift ports add`.                                     │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │

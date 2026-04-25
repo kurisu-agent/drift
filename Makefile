@@ -113,6 +113,7 @@ eval-screens:
 	render characters default; \
 	render tunes default; \
 	render ports default; \
+	render ports with-conflict; \
 	render logs default; \
 	render cross-cut narrow-80c 80 30
 

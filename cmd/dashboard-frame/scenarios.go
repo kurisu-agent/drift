@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/kurisu-agent/drift/internal/cli/ui/dashboard"
@@ -57,6 +58,54 @@ var scenarios = []scenario{
 			o.AccentOverride = "#FF388B" // charmtone.Cherry
 		},
 	},
+	{
+		name:        "with-conflict",
+		tab:         "ports",
+		description: "ports panel with two rows binding the same workstation port; warn pill + leading warning glyph mark the conflict",
+		apply: func(o *dashboard.Options, _, _ *int) {
+			o.DataSource = withPortConflict{base: o.DataSource}
+		},
+	},
+}
+
+// withPortConflict wraps a DataSource and injects an extra port row
+// that conflicts with an existing local port, so the with-conflict
+// scenario can capture the warn-pill rendering without the live
+// fixture needing a hand-curated dup.
+type withPortConflict struct {
+	base dashboard.DataSource
+}
+
+func (w withPortConflict) Status(ctx context.Context) (dashboard.StatusSnapshot, error) {
+	return w.base.Status(ctx)
+}
+func (w withPortConflict) Karts(ctx context.Context, c string) ([]dashboard.KartRow, error) {
+	return w.base.Karts(ctx, c)
+}
+func (w withPortConflict) Circuits(ctx context.Context) ([]dashboard.CircuitRow, error) {
+	return w.base.Circuits(ctx)
+}
+func (w withPortConflict) Chest(ctx context.Context) ([]dashboard.ResourceRow, error) {
+	return w.base.Chest(ctx)
+}
+func (w withPortConflict) Characters(ctx context.Context) ([]dashboard.ResourceRow, error) {
+	return w.base.Characters(ctx)
+}
+func (w withPortConflict) Tunes(ctx context.Context) ([]dashboard.ResourceRow, error) {
+	return w.base.Tunes(ctx)
+}
+func (w withPortConflict) Ports(ctx context.Context) ([]dashboard.PortRow, error) {
+	rows, err := w.base.Ports(ctx)
+	if err != nil {
+		return rows, err
+	}
+	// Stub a second forward bound to local 3000 (already used by
+	// alpha.web in the demo fixture) so two rows reach for the same
+	// host port and trip the conflict detector.
+	rows = append(rows,
+		dashboard.PortRow{Local: 3000, Remote: 4000, Circuit: "beta", Kart: "experiments", Active: true},
+	)
+	return rows, nil
 }
 
 // findScenario resolves a scenario by name, falling back to default
