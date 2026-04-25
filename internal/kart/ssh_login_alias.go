@@ -51,24 +51,49 @@ func sshLoginAliasFragment(alias string) string {
 	// re-run (kart.recreate will re-hit it; retrofitting an existing
 	// kart via an ad-hoc `devpod ssh --command` also should be idempotent).
 	fmt.Fprintf(&b, `if ! getent passwd %q >/dev/null; then`+"\n", alias)
+	// useradd / passwd need root. Most devcontainer images give the
+	// primary user passwordless sudo, but minimal bases (debian:slim,
+	// alpine without -extras) ship without sudo. Detect both: prefer
+	// already-root, fall back to sudo, and skip the whole block with a
+	// warning if neither is available — drifter is a usability win,
+	// not a hard requirement, so a kart on a minimal image still
+	// builds (just without the wildcard ssh alias).
+	b.WriteString(`  if [ "$(id -u)" -eq 0 ]; then` + "\n")
+	b.WriteString(`    sudo_cmd=""` + "\n")
+	b.WriteString(`  elif command -v sudo >/dev/null 2>&1; then` + "\n")
+	b.WriteString(`    sudo_cmd="sudo"` + "\n")
+	b.WriteString(`  else` + "\n")
+	b.WriteString(`    sudo_cmd="__skip__"` + "\n")
+	b.WriteString(`  fi` + "\n")
+	b.WriteString(`  if [ "$sudo_cmd" = "__skip__" ]; then` + "\n")
+	fmt.Fprintf(&b, `    echo "ssh-alias: skipping %s (kart has no root and no sudo)" >&2`+"\n", alias)
+	b.WriteString(`  else` + "\n")
 	// Resolve the primary user from /workspaces (the canonical devpod
 	// mount root). `stat -c %u` gives UID; getent translates UID back
 	// to the user's passwd entry so we can copy home/shell verbatim.
-	b.WriteString(`  primary_uid=$(stat -c %u /workspaces)` + "\n")
-	b.WriteString(`  primary_entry=$(getent passwd "$primary_uid")` + "\n")
-	b.WriteString(`  if [ -z "$primary_entry" ]; then echo "ssh-alias: no /etc/passwd entry for uid $primary_uid" >&2; exit 1; fi` + "\n")
+	b.WriteString(`    primary_uid=$(stat -c %u /workspaces)` + "\n")
+	b.WriteString(`    primary_entry=$(getent passwd "$primary_uid")` + "\n")
+	b.WriteString(`    if [ -z "$primary_entry" ]; then echo "ssh-alias: no /etc/passwd entry for uid $primary_uid" >&2; exit 1; fi` + "\n")
 	// /etc/passwd is colon-separated name:passwd:uid:gid:gecos:home:shell.
-	b.WriteString(`  primary_gid=$(echo "$primary_entry" | cut -d: -f4)` + "\n")
-	b.WriteString(`  primary_home=$(echo "$primary_entry" | cut -d: -f6)` + "\n")
-	b.WriteString(`  primary_shell=$(echo "$primary_entry" | cut -d: -f7)` + "\n")
+	b.WriteString(`    primary_gid=$(echo "$primary_entry" | cut -d: -f4)` + "\n")
+	b.WriteString(`    primary_home=$(echo "$primary_entry" | cut -d: -f6)` + "\n")
+	b.WriteString(`    primary_shell=$(echo "$primary_entry" | cut -d: -f7)` + "\n")
 	// Append the alias. `-o` allows the duplicate UID; `-M` skips
 	// creating a home dir (we're sharing the primary user's home).
+	// `useradd` may also be missing on minimal images; treat that the
+	// same as no-sudo and degrade gracefully rather than failing the
+	// whole kart.new pipeline.
+	b.WriteString(`    if ! command -v useradd >/dev/null 2>&1; then` + "\n")
+	fmt.Fprintf(&b, `      echo "ssh-alias: skipping %s (kart has no useradd)" >&2`+"\n", alias)
+	b.WriteString(`    else` + "\n")
 	fmt.Fprintf(&b,
-		`  sudo useradd -o -u "$primary_uid" -g "$primary_gid" -d "$primary_home" -s "$primary_shell" -M -N %q`+"\n",
+		`      $sudo_cmd useradd -o -u "$primary_uid" -g "$primary_gid" -d "$primary_home" -s "$primary_shell" -M -N %q`+"\n",
 		alias)
 	// Lock the password so only key auth works. `passwd -l` puts `!`
 	// in front of the hash field in /etc/shadow.
-	fmt.Fprintf(&b, `  sudo passwd -l %q >/dev/null`+"\n", alias)
+	fmt.Fprintf(&b, `      $sudo_cmd passwd -l %q >/dev/null || true`+"\n", alias)
+	b.WriteString(`    fi` + "\n")
+	b.WriteString(`  fi` + "\n")
 	b.WriteString(`fi` + "\n")
 	return b.String()
 }

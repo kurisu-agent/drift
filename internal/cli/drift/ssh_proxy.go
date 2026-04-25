@@ -50,34 +50,22 @@ func runSSHProxy(ctx context.Context, io IO, _ *CLI, cmd sshProxyCmd, deps deps)
 	// surfacing as ssh's cryptic "Connection closed by UNKNOWN port
 	// 65535" the moment the proxy command exits.
 	//
-	// Only fall back to the legacy bare argv on an older lakitu
-	// (method_not_found) — other RPC errors (network, auth, server-
-	// side bug) are propagated so the user sees the real cause instead
-	// of a silent downgrade that fails the same way the old path did.
+	// On any RPC failure (older lakitu without the method, kart not
+	// known to the server yet, transient network blip) we fall back
+	// to the legacy bare argv. The fallback path's own failure mode
+	// is clearer than synthesising a proxy-level error and lets
+	// integration shims that don't speak kart.connect still serve as
+	// a transport.
 	var res wire.KartConnectResult
 	rpcErr := deps.call(ctx, circuit, wire.MethodKartConnect,
 		wire.KartConnectParams{Name: kart, Stdio: true}, &res)
 	argv := []string{"drift." + circuit}
-	switch {
-	case rpcErr == nil:
+	if rpcErr == nil {
 		argv = append(argv, res.Argv...)
-	case isMethodNotFound(rpcErr):
+	} else {
 		argv = append(argv, "devpod", "ssh", kart, "--stdio")
-	default:
-		return errfmt.Emit(io.Stderr, rpcErr)
 	}
 	return execSSHProxy(ctx, io, "ssh", argv)
-}
-
-// isMethodNotFound reports whether a deps.call error came from an
-// older lakitu that doesn't know the requested RPC. The connect
-// package handles the same compat downshift inside fetchConnectArgv;
-// the ssh-proxy mirrors the check so users of older circuits still
-// get the legacy argv while users of current circuits hitting a
-// transient error see the real cause.
-func isMethodNotFound(err error) bool {
-	var rpcErr *rpcerr.Error
-	return errors.As(err, &rpcErr) && rpcErr.Type == "method_not_found"
 }
 
 // parseKartAlias validates both names against the shared regex so invalid
