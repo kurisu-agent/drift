@@ -517,7 +517,7 @@ func circuitBlock(circuitName, host, user string, ssh map[string]string) HostBlo
 	}
 	body = append(body,
 		"  ControlMaster auto",
-		"  ControlPath ~/.config/drift/sockets/cm-%r@%h:%p",
+		"  ControlPath ~/.config/drift/cm/%C",
 		"  ControlPersist 10m",
 		"  ServerAliveInterval 30",
 		"  ServerAliveCountMax 3",
@@ -543,7 +543,7 @@ func wildcardBlock() HostBlock {
 		Body: []string{
 			"  ProxyCommand drift ssh-proxy %h %p",
 			"  ControlMaster auto",
-			"  ControlPath ~/.config/drift/sockets/cm-%r@%h:%p",
+			"  ControlPath ~/.config/drift/cm/%C",
 			"  ControlPersist 10m",
 		},
 	}
@@ -604,7 +604,7 @@ func kartWildcardBlock(circuitName string, ssh map[string]string) HostBlock {
 		"  UserKnownHostsFile /dev/null",
 		"  LogLevel error",
 		"  ControlMaster auto",
-		"  ControlPath ~/.config/drift/sockets/cm-%r@%h:%p",
+		"  ControlPath ~/.config/drift/cm/%C",
 		"  ControlPersist 10m",
 	)
 	return HostBlock{Name: KartWildcardHost(circuitName), Body: body}
