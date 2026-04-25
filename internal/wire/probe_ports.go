@@ -1,18 +1,23 @@
 package wire
 
-// KartProbePortsParams asks lakitu to enumerate listening TCP ports
-// inside the kart. Name is the kart to probe; the kart must be running.
+// KartProbePortsParams asks lakitu to enumerate ports the kart wants
+// forwarded. Name is the kart to probe. The kart does not have to be
+// running: when it isn't, Listeners is empty but DevcontainerPorts is
+// still populated from the kart's devcontainer.json.
 type KartProbePortsParams struct {
 	Name string `json:"name"`
 }
 
-// KartProbePortsResult is the deduplicated, sorted list of TCP listeners
-// inside the kart. Lakitu owns the parsing because the in-kart listing
-// tool (`ss -tlnpH`) only exists server-side and the client should
-// never need to know how to talk to a devcontainer directly. An empty
-// slice is a normal result, not an error.
+// KartProbePortsResult bundles two ways of asking "what should we
+// forward?" — the live `ss -tlnpH` listeners *and* the static
+// forwardPorts from devcontainer.json. The client unions both when
+// presenting the picker so users can pre-select the kart's declared
+// ports before any process inside has bound them. Both fields may be
+// empty (no listeners + no spec); that's a normal "nothing to forward"
+// result, not an error.
 type KartProbePortsResult struct {
-	Listeners []ProbeListener `json:"listeners"`
+	Listeners         []ProbeListener `json:"listeners"`
+	DevcontainerPorts []int           `json:"devcontainer_ports,omitempty"`
 }
 
 // ProbeListener is one (port, process-name) pair from `ss -tlnpH`.

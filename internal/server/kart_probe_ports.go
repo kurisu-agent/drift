@@ -9,27 +9,36 @@ import (
 	"strings"
 
 	"github.com/kurisu-agent/drift/internal/devpod"
+	"github.com/kurisu-agent/drift/internal/kart"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
-// kartProbePortsHandler runs `ss -tlnH` inside the kart via devpod and
-// returns the listening TCP ports. The probe lives server-side because:
+// kartProbePortsHandler enumerates ports the kart wants forwarded by
+// combining two sources:
 //
-//  1. Reaching the kart's interior is lakitu's job — it already speaks
-//     devpod, owns DEVPOD_HOME, and knows the per-kart container user.
-//     Doing this from the client would mean either ssh'ing in via the
-//     `Host drift.<c>.<k>` wildcard alias (which has its own user-mapping
-//     issues for unmodified upstream images) or duplicating the env+user
-//     plumbing on the workstation.
-//  2. The output format (`ss -tlnH` rows) is implementation detail. If
-//     the server tomorrow chooses `netstat` or `lsof` or asks the kernel
-//     directly, the client doesn't need to change.
+//  1. Live listeners inside the kart, via `ss -tlnpH` over devpod ssh.
+//     Captures whatever's actually bound right now (vite, postgres,
+//     ad-hoc test servers).
+//  2. Static `forwardPorts` from the kart's devcontainer.json. Captures
+//     the kart authors' intent — these are useful even before the kart
+//     is up, so users can pre-select them.
 //
-// The handler returns ports raw — it does NOT filter port 22 or anything
-// else. Callers (`drift ports probe`) decide what to surface in the
-// picker; that policy is client-side UX, not server truth.
+// The probe lives server-side because lakitu already speaks devpod,
+// owns DEVPOD_HOME, and knows where each kart's workspace is checked
+// out (devcontainer.json sits inside the cloned content, not at a
+// path the workstation can guess). The output format (`ss -tlnH` rows
+// plus hujson devcontainer parsing) is implementation detail; the
+// client never has to know.
+//
+// Both sources are best-effort: if `ss` fails (kart not running,
+// devpod not available, ss missing) we still return the devcontainer
+// ports. The handler only escalates to a hard error when the kart
+// itself can't be found in the garage.
+//
+// Returned ports are raw — port 22 and already-configured forwards are
+// filtered client-side because that's UX policy, not server truth.
 func (d KartDeps) kartProbePortsHandler(ctx context.Context, params json.RawMessage) (any, error) {
 	var p wire.KartProbePortsParams
 	if err := rpc.BindParams(params, &p); err != nil {
@@ -38,7 +47,7 @@ func (d KartDeps) kartProbePortsHandler(ctx context.Context, params json.RawMess
 	if err := d.requireDevpod(); err != nil {
 		return nil, err
 	}
-	cfg, ok, err := d.readKartConfig(p.Name)
+	_, ok, err := d.readKartConfig(p.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -46,22 +55,30 @@ func (d KartDeps) kartProbePortsHandler(ctx context.Context, params json.RawMess
 		return nil, rpcerr.NotFound(rpcerr.TypeKartNotFound,
 			"kart %q not found", p.Name).With("kart", p.Name)
 	}
-	_ = cfg
 
-	// `-p` adds the `users:(("name",pid=...,fd=...))` column so the
-	// picker can show "vite (:5173)" instead of just ":5173". The
-	// column is empty for listeners owned by another user — that's
-	// fine; the parser just returns Process="" in that case.
+	// Static side: parse devcontainer.json from disk. This works whether
+	// or not the kart's container is up.
+	devcontainerPorts := kart.ProbeForwardPorts(p.Name)
+
+	// Live side: `-p` adds the `users:(("name",pid=...,fd=...))` column
+	// so the picker can show "vite (:5173)" instead of just ":5173". The
+	// column is empty for listeners owned by another user — that's fine;
+	// the parser just returns Process="" in that case. A failure here is
+	// soft: the kart may be stopped, or `ss` may not be in the image. We
+	// still return the devcontainer ports so the picker has something.
+	var listeners []wire.ProbeListener
 	out, err := d.Devpod.SSH(ctx, devpod.SSHOpts{
 		Name:            p.Name,
 		Command:         "ss -tlnpH",
 		NoStartServices: true,
 	})
-	if err != nil {
-		return nil, rpcerr.Conflict("kart_probe_failed",
-			"kart.probe_ports: ss inside %q failed: %v", p.Name, err).With("kart", p.Name)
+	if err == nil {
+		listeners = parseSSListeners(out)
 	}
-	return wire.KartProbePortsResult{Listeners: parseSSListeners(out)}, nil
+	return wire.KartProbePortsResult{
+		Listeners:         listeners,
+		DevcontainerPorts: devcontainerPorts,
+	}, nil
 }
 
 // parseSSListeners walks `ss -tlnpH` rows and returns the deduplicated
