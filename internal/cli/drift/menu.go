@@ -3,7 +3,7 @@ package drift
 import (
 	"errors"
 
-	"github.com/charmbracelet/huh"
+	"charm.land/huh/v2"
 )
 
 // menuEntry describes a single row in the top-level interactive menu.

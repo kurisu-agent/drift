@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/charmbracelet/huh"
+	"charm.land/huh/v2"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
