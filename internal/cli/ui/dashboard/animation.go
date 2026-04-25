@@ -108,6 +108,21 @@ func newEntrance(width int, motionDisabled bool) *entrance {
 	return e
 }
 
+// settleNow snaps every element to its target with zero velocity and
+// marks the entrance as done. Used by the headless frame renderer so
+// settled-state PNGs don't depend on wall-clock progressing inside a
+// for-loop while the spring's per-element delays are wall-clock gated.
+func (e *entrance) settleNow() {
+	if e == nil {
+		return
+	}
+	for _, el := range []*element{&e.banner, &e.lockup1, &e.lockup2, &e.lockup3, &e.stats} {
+		el.pos, el.vel = el.target, 0
+	}
+	e.activity.pos = 1
+	e.done = true
+}
+
 // tick advances every spring whose delay has elapsed. Returns true
 // when at least one element is still moving — caller schedules another
 // frame in that case.

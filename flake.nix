@@ -125,6 +125,11 @@
               pkgs.gnumake
               pkgs.git
               devpod
+              # TUI eval loop (plan 14): freeze converts ANSI text into
+              # PNG stills, vhs scripts a tape into a GIF / MP4. Both are
+              # dev-only — they don't ship in the release tarballs.
+              pkgs.charm-freeze
+              pkgs.vhs
             ];
 
             shellHook = ''

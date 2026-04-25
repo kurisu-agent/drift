@@ -68,3 +68,20 @@ install-hooks:
 	@git config core.hooksPath .githooks
 	@echo "pre-commit hook enabled (core.hooksPath = .githooks)"
 	@echo "  applies to every worktree of this clone"
+.PHONY: eval-frames
+
+# eval-frames renders one PNG per dashboard tab against the demo
+# fixtures. Use this loop while iterating on TUI polish — generate
+# stills, ask Claude to read docs/eval/*.png, fix the issues it
+# flags, regenerate. Per the plan's visual-eval-loop section.
+eval-frames:
+	@mkdir -p docs/eval
+	@CGO_ENABLED=0 go build -o /tmp/dashboard-frame ./cmd/dashboard-frame
+	@for tab in status karts circuits chest characters tunes ports logs; do \
+	    /tmp/dashboard-frame -tab $$tab -w 120 -h 30 \
+	        | freeze /dev/stdin --output docs/eval/$$tab.png \
+	            --language ansi --background "#0a0a0a" \
+	            --padding 24 --window=false --font.size 14 \
+	            >/dev/null; \
+	    echo "  -> docs/eval/$$tab.png"; \
+	done
