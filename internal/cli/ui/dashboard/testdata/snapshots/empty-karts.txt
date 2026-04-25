@@ -26,5 +26,5 @@
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│ ↑/k up • ↓/j down • / filter • tab next tab • r refresh • ? help • q quit                                            │
+│ ↑/k up • ↓/j down • / filter • ←/→ tab • r refresh • ? help • q quit                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

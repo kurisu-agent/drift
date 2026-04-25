@@ -45,7 +45,8 @@ func newKartsPanel(o Options) Panel {
 	return &kartsPanel{o: o, t: o.Theme, tbl: tbl, filter: in}
 }
 
-func (p *kartsPanel) Title() string { return "karts" }
+func (p *kartsPanel) Title() string         { return "karts" }
+func (p *kartsPanel) KeyboardLocked() bool  { return p.filtering }
 
 func (p *kartsPanel) ShortHelp() []key.Binding {
 	if p.filtering {

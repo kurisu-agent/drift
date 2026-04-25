@@ -46,6 +46,11 @@ type Panel interface {
 	// ShortHelp returns the panel's contextual key bindings, prepended
 	// to the global ones (tab/quit/help) by the dashboard footer.
 	ShortHelp() []key.Binding
+	// KeyboardLocked reports whether the panel currently wants every
+	// keypress (filter input, modal edit, etc.). When true, the
+	// dashboard root suppresses its global tab-nav / quit handlers so
+	// the panel's textinput can receive arrows, slash, q, etc.
+	KeyboardLocked() bool
 }
 
 // Options configures a dashboard run.
@@ -209,6 +214,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
+		// If the active panel has the keyboard locked (filter input,
+		// edit mode), skip every global handler and let the panel
+		// own the keypress.
+		if m.panels[m.tab].KeyboardLocked() {
+			p, cmd := m.panels[m.tab].Update(msg)
+			m.panels[m.tab] = p
+			return m, cmd
+		}
 		switch {
 		case key.Matches(msg, ui.Keys.Quit, ui.Keys.ForceQuit):
 			return m, tea.Quit
@@ -221,10 +234,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.helpOpen = false
 			m.paletteQuery = ""
 			return m, nil
-		case key.Matches(msg, ui.Keys.Tab):
+		case key.Matches(msg, ui.Keys.Tab, ui.Keys.Right):
 			m.tab = (m.tab + 1) % tabCount
 			return m, nil
-		case key.Matches(msg, ui.Keys.ShiftTab):
+		case key.Matches(msg, ui.Keys.ShiftTab, ui.Keys.Left):
 			m.tab = (m.tab + tabCount - 1) % tabCount
 			return m, nil
 		}
@@ -448,6 +461,16 @@ func helpStylesFor(t *ui.Theme) help.Styles {
 	return help.DefaultLightStyles()
 }
 
+// tabSpine is the visible "left/right cycle tabs" entry in the help
+// footer. Composes both Left and Right so the help line reads as
+// "←/→ tab" rather than two separate entries; the actual key matching
+// happens against ui.Keys.Left and ui.Keys.Right in the model's
+// Update.
+var tabSpine = key.NewBinding(
+	key.WithKeys("left", "right", "h", "l"),
+	key.WithHelp("←/→", "tab"),
+)
+
 // keyMap implements help.KeyMap by interleaving the active panel's
 // bindings with the dashboard's globals.
 type keyMap struct {
@@ -460,14 +483,14 @@ func keyMapFor(p Panel) keyMap {
 
 func (k keyMap) ShortHelp() []key.Binding {
 	out := append([]key.Binding{}, k.panel...)
-	out = append(out, ui.Keys.Tab, ui.Keys.Refresh, ui.Keys.Help, ui.Keys.Quit)
+	out = append(out, tabSpine, ui.Keys.Refresh, ui.Keys.Help, ui.Keys.Quit)
 	return out
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		k.panel,
-		{ui.Keys.Tab, ui.Keys.ShiftTab, ui.Keys.Tab1, ui.Keys.Tab2, ui.Keys.Tab3, ui.Keys.Tab4, ui.Keys.Tab5, ui.Keys.Tab6, ui.Keys.Tab7, ui.Keys.Tab8},
-		{ui.Keys.Refresh, ui.Keys.Filter, ui.Keys.Help, ui.Keys.Quit, ui.Keys.ForceQuit},
+		{tabSpine, ui.Keys.Tab, ui.Keys.ShiftTab, ui.Keys.Tab1, ui.Keys.Tab2, ui.Keys.Tab3, ui.Keys.Tab4, ui.Keys.Tab5, ui.Keys.Tab6, ui.Keys.Tab7, ui.Keys.Tab8},
+		{ui.Keys.Refresh, ui.Keys.Filter, ui.Keys.Palette, ui.Keys.Help, ui.Keys.Quit, ui.Keys.ForceQuit},
 	}
 }

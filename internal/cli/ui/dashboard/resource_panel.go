@@ -39,7 +39,8 @@ func newResourcePanel(o Options, title string,
 	return &resourcePanel{o: o, t: o.Theme, title: title, fetch: fetch, tbl: tbl}
 }
 
-func (p *resourcePanel) Title() string { return p.title }
+func (p *resourcePanel) Title() string         { return p.title }
+func (p *resourcePanel) KeyboardLocked() bool  { return false }
 func (p *resourcePanel) ShortHelp() []key.Binding {
 	return []key.Binding{ui.Keys.Up, ui.Keys.Down}
 }

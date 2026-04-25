@@ -38,7 +38,8 @@ func newCircuitsPanel(o Options) Panel {
 	return &circuitsPanel{o: o, t: o.Theme, tbl: tbl}
 }
 
-func (p *circuitsPanel) Title() string { return "circuits" }
+func (p *circuitsPanel) Title() string         { return "circuits" }
+func (p *circuitsPanel) KeyboardLocked() bool  { return false }
 func (p *circuitsPanel) ShortHelp() []key.Binding {
 	return []key.Binding{ui.Keys.Up, ui.Keys.Down}
 }

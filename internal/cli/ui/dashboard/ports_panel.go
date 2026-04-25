@@ -38,7 +38,8 @@ func newPortsPanel(o Options) Panel {
 	return &portsPanel{o: o, t: o.Theme, tbl: tbl}
 }
 
-func (p *portsPanel) Title() string { return "ports" }
+func (p *portsPanel) Title() string         { return "ports" }
+func (p *portsPanel) KeyboardLocked() bool  { return false }
 func (p *portsPanel) ShortHelp() []key.Binding {
 	return []key.Binding{ui.Keys.Up, ui.Keys.Down}
 }

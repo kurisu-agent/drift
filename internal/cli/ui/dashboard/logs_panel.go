@@ -54,7 +54,8 @@ func newLogsPanel(o Options) Panel {
 	}
 }
 
-func (p *logsPanel) Title() string { return "logs" }
+func (p *logsPanel) Title() string         { return "logs" }
+func (p *logsPanel) KeyboardLocked() bool  { return p.filtering }
 
 func (p *logsPanel) ShortHelp() []key.Binding {
 	if p.filtering {

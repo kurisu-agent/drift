@@ -37,7 +37,8 @@ func newStatusPanel(o Options) Panel {
 	return &statusPanel{o: o, t: o.Theme, tbl: tbl}
 }
 
-func (p *statusPanel) Title() string            { return "status" }
+func (p *statusPanel) Title() string         { return "status" }
+func (p *statusPanel) KeyboardLocked() bool  { return false }
 func (p *statusPanel) ShortHelp() []key.Binding { return nil }
 
 func (p *statusPanel) Init() tea.Cmd {
