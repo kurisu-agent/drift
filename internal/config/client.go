@@ -7,9 +7,15 @@ import (
 )
 
 type Client struct {
-	DefaultCircuit  string                   `yaml:"default_circuit"`
-	ManageSSHConfig *bool                    `yaml:"manage_ssh_config,omitempty"`
-	Circuits        map[string]ClientCircuit `yaml:"circuits,omitempty"`
+	DefaultCircuit  string `yaml:"default_circuit"`
+	ManageSSHConfig *bool  `yaml:"manage_ssh_config,omitempty"`
+	// AutoForwardPorts toggles the workstation-side ports automation
+	// `drift connect` runs (devcontainer passthrough + reconcile +
+	// session-end teardown). Tri-state via *bool: nil = default on,
+	// true = explicit on, false = disabled. Per-invocation override is
+	// the `--no-forwards` flag, which beats this setting.
+	AutoForwardPorts *bool                    `yaml:"auto_forward_ports,omitempty"`
+	Circuits         map[string]ClientCircuit `yaml:"circuits,omitempty"`
 }
 
 type ClientCircuit struct {
@@ -29,6 +35,14 @@ func (c *Client) ManagesSSHConfig() bool {
 		return true
 	}
 	return *c.ManageSSHConfig
+}
+
+// AutoForwardsPorts defaults to true when the field is absent.
+func (c *Client) AutoForwardsPorts() bool {
+	if c.AutoForwardPorts == nil {
+		return true
+	}
+	return *c.AutoForwardPorts
 }
 
 func (c *Client) Validate() error {

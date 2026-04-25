@@ -39,8 +39,15 @@ type Deps struct {
 	// error aborts Run before Exec — useful for tests; production binds
 	// a best-effort hook that warns rather than failing the connect.
 	BeforeExec func(ctx context.Context, forwardPorts []int) error
-	Now        func() time.Time
-	Sleep      func(d time.Duration)
+	// AfterExec fires once Exec returns, regardless of exit code. The
+	// CLI binds this to the workstation-side ports teardown so forwards
+	// don't outlive the connect session. Receives a fresh
+	// context.Background() — the parent ctx may already be cancelled if
+	// the user ctrl-c'd the shell. Errors from this hook do not change
+	// the exit code Run returns; the connect's own outcome wins.
+	AfterExec func(ctx context.Context)
+	Now       func() time.Time
+	Sleep     func(d time.Duration)
 }
 
 type Stdio struct {
@@ -89,7 +96,14 @@ func Run(ctx context.Context, d Deps, opts Options, stdio Stdio) error {
 			return err
 		}
 	}
-	return d.Exec(ctx, bin, argv, stdio)
+	execErr := d.Exec(ctx, bin, argv, stdio)
+	if d.AfterExec != nil {
+		// Use a fresh context: the parent may already be cancelled if
+		// the user ctrl-c'd the shell, but the teardown still needs to
+		// run (otherwise forwards leak past the session).
+		d.AfterExec(context.Background())
+	}
+	return execErr
 }
 
 // fetchConnectArgv asks lakitu for the exact remote-command argv. On a
