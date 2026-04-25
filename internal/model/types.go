@@ -16,6 +16,13 @@ type Tune struct {
 	// these with the project's mounts, deduped by target, so the
 	// project repo never needs to be edited to add host binds.
 	MountDirs []Mount `yaml:"mount_dirs,omitempty" json:"mount_dirs,omitempty"`
+	// Seed names a list of seed templates to apply post-`devpod up`. Each
+	// name resolves first against the built-in registry (e.g. `claudeCode`)
+	// and then against `~/.drift/garage/seeds/<name>.yaml`. A seed template
+	// is a declarative bundle of files to drop into the kart's $HOME with
+	// optional Go-template substitution from a fixed set of kart-derived
+	// vars. See internal/seed for the schema.
+	Seed []string `yaml:"seed,omitempty" json:"seed,omitempty"`
 }
 
 // Mount mirrors the devcontainer.json mount shape (and the skevetter/devpod

@@ -50,6 +50,7 @@ const (
 	TypeCircuitNotFound    Type = "circuit_not_found"
 	TypeCharacterNotFound  Type = "character_not_found"
 	TypeChestEntryNotFound Type = "chest_entry_not_found"
+	TypeSeedNotFound       Type = "seed_not_found"
 	TypeNameCollision      Type = "name_collision"
 	TypeStaleKart          Type = "stale_kart"
 	TypeAlreadyEnabled     Type = "already_enabled"
