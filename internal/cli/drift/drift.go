@@ -65,6 +65,8 @@ type CLI struct {
 
 	Ports portsCmd `cmd:"" name:"ports" help:"Workstation-side TCP port forward management."`
 
+	Browse browseCmd `cmd:"" name:"browse" help:"Open filebrowser on the circuit (rooted at all kart workspaces) over an ssh tunnel."`
+
 	SshProxy sshProxyCmd `cmd:"" name:"ssh-proxy" hidden:"" help:"ProxyCommand helper for drift.<circuit>.<kart> aliases (invoked by OpenSSH)."`
 }
 
@@ -235,6 +237,8 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runPortsDown(ctx, io, &cli, cli.Ports.Down, deps)
 	case "ports status":
 		return runPortsStatus(ctx, io, &cli, cli.Ports.Status, deps)
+	case "browse":
+		return runBrowse(ctx, io, &cli, cli.Browse, deps)
 	case "update", "update <source>":
 		return runUpdate(ctx, io, cli.Update)
 	case "ssh-proxy <alias>", "ssh-proxy <alias> <port>":
