@@ -13,6 +13,7 @@ import (
 // animation is running. Status panel consumes it; root model forwards.
 type animFrameMsg time.Time
 
+//nolint:unused // kept for the parked entrance animation; see status_panel.Init.
 func animFrameCmd() tea.Cmd {
 	return tea.Tick(time.Second/60, func(t time.Time) tea.Msg { return animFrameMsg(t) })
 }
@@ -29,6 +30,8 @@ type element struct {
 
 // settled reports whether the spring has effectively reached its
 // target. Both position and velocity must be near-zero in delta terms.
+//
+//nolint:unused // kept for the parked entrance animation.
 func (e element) settled() bool {
 	const eps = 0.5
 	dx := e.target - e.pos
@@ -138,6 +141,8 @@ func (e *entrance) settleNow() {
 // tick advances every spring whose delay has elapsed. Returns true
 // when at least one element is still moving — caller schedules another
 // frame in that case.
+//
+//nolint:unused // kept for the parked entrance animation.
 func (e *entrance) tick() bool {
 	if e.done {
 		return false

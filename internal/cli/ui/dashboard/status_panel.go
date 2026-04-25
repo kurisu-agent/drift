@@ -40,10 +40,12 @@ func (p *statusPanel) Title() string            { return "status" }
 func (p *statusPanel) ShortHelp() []key.Binding { return nil }
 
 func (p *statusPanel) Init() tea.Cmd {
-	// The frame loop kicks off here. The entrance object itself is
-	// created lazily on the first WindowSizeMsg so we know the layout
-	// width — the spring targets are width-relative.
-	return tea.Batch(p.refreshCmd(), animFrameCmd())
+	// Entrance animation is intentionally disabled — the spring code
+	// in animation.go is kept for a future revisit, but the rendered
+	// output today is the settled frame from frame 1. Re-enable by
+	// returning tea.Batch(p.refreshCmd(), animFrameCmd()) and removing
+	// the unconditional settleNow() in the WindowSizeMsg branch.
+	return p.refreshCmd()
 }
 
 func (p *statusPanel) refreshCmd() tea.Cmd {
@@ -72,16 +74,15 @@ func (p *statusPanel) Update(msg tea.Msg) (Panel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		p.width = m.Width
 		if p.entr == nil {
-			motionOff := p.t == nil || !p.t.Enabled || p.o.MotionDisabled
-			p.entr = newEntrance(m.Width, motionOff)
+			// Always settle — animation is disabled until the spring
+			// design is revisited. Constructing the entrance keeps the
+			// renderer's settleNow path working for snapshots / PNGs.
+			p.entr = newEntrance(m.Width, true)
 		}
 	case animFrameMsg:
-		if p.entr == nil {
-			return p, nil
-		}
-		if p.entr.tick() {
-			return p, animFrameCmd()
-		}
+		// Animation is off; ignore. Kept so a future re-enable doesn't
+		// have to re-thread the message routing.
+		return p, nil
 	case tickMsg:
 		return p, p.refreshCmd()
 	case tea.KeyPressMsg:
