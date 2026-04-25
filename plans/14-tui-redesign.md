@@ -343,6 +343,44 @@ The demo path is otherwise indistinguishable from the live path: same theme, sam
 
 The make target and the demo flag are small additions to the giant PR. The vhs tape and the first GIF land alongside.
 
+### Visual evaluation loop (Claude Code)
+
+A developer-loop workflow — not a CI gate — for catching things teatest can't see: alignment, contrast, balance, "does this rainbow gradient actually look good," "is the entrance animation timing right." When the developer is iterating on UI polish in a Claude Code session, they generate frames from the demo fixtures and ask Claude Code to read them directly. Claude Code's `Read` tool already accepts images (PNG/JPG/etc.); no external API integration, no SDK dependency, no key management.
+
+**Capture:** two paths, both producing files Claude Code can read.
+
+- **Stills** via `freeze` — a series of `.png` frames at meaningful checkpoints (initial render, mid-entrance, settled, each tab activated, kart row expanded, modal open). Driven by the same key sequence the vhs tape uses. Output: `docs/eval/<scenario>-<step>.png`.
+- **Animation** via `vhs` — the existing `docs/dashboard.gif`. Useful when checking entrance-animation timing rather than static layout.
+
+**Rubric.** A versioned markdown file at `docs/eval/rubric.md` describing what "good" looks like, structured as concrete questions: *Is the banner gradient evenly distributed across the wordmark? Are the right-aligned stats numbers actually right-aligned? Does the activity table's column spacing read as deliberate or accidental? Does anything look like a visual bug (truncation, overlap, garbled glyphs)?* The rubric lives in-repo so it evolves with the design and can be referenced in chat.
+
+**Workflow.** No bespoke binary, no API plumbing — just the developer collaborating with Claude Code:
+
+```
+1. Edit a panel.
+2. make eval-frames
+   → regenerates fixtures-driven .png stills under docs/eval/.
+3. In the Claude Code session, ask:
+   "Read docs/eval/rubric.md and docs/eval/*.png. Evaluate each frame
+    against the rubric. List issues with severity and suggested fixes."
+4. Read findings, decide which to act on (Claude is a critic, not a boss).
+5. Edit, repeat from step 2 until findings are clean or only flag
+   intentional choices.
+```
+
+**Why this works without a separate tool.** Claude Code reads images directly via its `Read` tool. The rubric is plain markdown in the repo. The frames are PNGs on disk. The "evaluation" is a chat turn. Adding a Go binary, an SDK dependency, and a key-management story to do the same thing would be over-engineering — every piece already exists.
+
+**Why this isn't in CI.** Same reasons as before — vision judgments aren't deterministic, and the session is interactive by design. CI gates stay teatest + the smoke `make readme-gif`.
+
+**Tooling additions:**
+
+- `freeze` — installed in the dev shell (`flake.nix`).
+- `make eval-frames` target — drives the demo dashboard through its key sequence and dumps stills under `docs/eval/`.
+- `docs/eval/rubric.md` — the in-repo design rubric.
+- `docs/eval/.gitignore` — ignores everything except the rubric (frames are ephemeral, regenerated on demand).
+
+Lands alongside the demo-mode work in the same PR. The rubric starts minimal and grows as we learn what's worth flagging.
+
 ### Testing
 
 The bubbletea framework unlocks a class of tests we don't have today. The lever is `charm.land/x/teatest`, which drives a `tea.Program` programmatically: scripted keystrokes in, captured frames out, golden-file diffs as assertions.
@@ -424,7 +462,8 @@ What goes in the single PR, in implementation order (each step's diff stays revi
 5. **Bubbletea infra.** `ui/tea.go` (program helpers, signal/ctx wiring), shared `viewport`. Reimplement `drift menu` on `bubbles/list`.
 6. **Dashboard.** `drift dashboard` with all eight tabs (status, karts, circuits, chest, characters, tunes, ports, logs) and lifecycle actions on the karts tab wired through confirmation modals. Chest/characters/tunes are read-only and share a `ResourcePanel[T]` generic. The logs tab uses the charmbracelet/log path landed in step 4. The ports tab is implemented in this PR against plan 13's data layer (state file + RPC + ssh ControlMaster lifecycle); if plan 13's CLI-shaped API doesn't fit the dashboard's needs, adjust it as part of this PR — both halves ship together. Banner and Tmplr-Rounded const live in `internal/cli/ui/dashboard/banner.go`. Bare `drift` is rewired to open the dashboard.
 7. **Demo mode + README GIF.** Add `internal/demo/fixtures.go`, the `--demo` flag on `drift dashboard`, the `docs/dashboard.tape` vhs script, and the `make readme-gif` target. Land the first `docs/dashboard.gif` and reference it in the README. Add the teatest demo-replay test that mirrors the tape's key sequence (the actual regression gate).
-8. **Tests + cleanup.** `teatest` golden frames for the dashboard happy paths, `NO_COLOR` regression test, `DetectMode` matrix tests, dependency tidy. `make ci && make integration` green before merge.
+8. **Visual eval loop.** Add `make eval-frames` (drives demo dashboard → stills via `freeze` under `docs/eval/`) and `docs/eval/rubric.md`. Developer-loop workflow with Claude Code reading the frames directly — no Go binary, no SDK dep, no key plumbing.
+9. **Tests + cleanup.** `teatest` golden frames for the dashboard happy paths, `NO_COLOR` regression test, `DetectMode` matrix tests, dependency tidy. `make ci && make integration` green before merge.
 
 Things deliberately deferred out of even the giant PR (would balloon the scope without paying for itself): `glamour`-rendered `drift help <topic>` (separate, optional), mouse-driven interaction in the dashboard. These are listed in non-goals or open questions; they can land as small follow-ups whenever someone wants them.
 
