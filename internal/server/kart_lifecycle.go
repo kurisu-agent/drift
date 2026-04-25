@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -14,7 +15,6 @@ import (
 	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
-	"github.com/kurisu-agent/drift/internal/slogfmt"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
 
@@ -287,8 +287,40 @@ func classifyLogLines(chunk string) (format string, lines []string) {
 	return LogFormatText, split
 }
 
+// parseLogLevel mirrors the old slogfmt.ParseLevel: unknown/empty maps
+// to slog.LevelInfo so records below the default never silently drop.
+func parseLogLevel(s string) slog.Level {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error", "err":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
+// decodeLogRecord pulls just enough from a slog.JSONHandler line to drive
+// per-line filtering — Time / Level / Msg, ignoring the rest.
+func decodeLogRecord(raw map[string]any) (t time.Time, level, msg string) {
+	if v, ok := raw["time"].(string); ok {
+		if parsed, err := time.Parse(time.RFC3339Nano, v); err == nil {
+			t = parsed
+		}
+	}
+	if v, ok := raw["level"].(string); ok {
+		level = v
+	}
+	if v, ok := raw["msg"].(string); ok {
+		msg = v
+	}
+	return
+}
+
 func filterLogLines(lines []string, format string, p KartLogsParams, now time.Time) []string {
-	minLevel := slogfmt.ParseLevel(p.Level)
+	minLevel := parseLogLevel(p.Level)
 	hasLevel := strings.TrimSpace(p.Level) != ""
 	cutoff := time.Time{}
 	if p.Since > 0 {
@@ -308,14 +340,14 @@ func filterLogLines(lines []string, format string, p KartLogsParams, now time.Ti
 				// malformed line slipping through rather than panicking.
 				continue
 			}
-			rec := slogfmt.DecodeRecord(obj)
-			if !cutoff.IsZero() && rec.Time.Before(cutoff) {
+			recT, recLevel, recMsg := decodeLogRecord(obj)
+			if !cutoff.IsZero() && recT.Before(cutoff) {
 				continue
 			}
-			if hasLevel && slogfmt.ParseLevel(rec.Level) < minLevel {
+			if hasLevel && parseLogLevel(recLevel) < minLevel {
 				continue
 			}
-			if grep != "" && !strings.Contains(rec.Msg, grep) {
+			if grep != "" && !strings.Contains(recMsg, grep) {
 				continue
 			}
 		} else {
