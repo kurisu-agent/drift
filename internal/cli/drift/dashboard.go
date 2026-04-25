@@ -29,6 +29,15 @@ func runDashboard(ctx context.Context, io IO, root *CLI, cmd dashboardCmd, deps 
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
 	}
+	// Suppress debug logging while the TUI owns the terminal: the SSH
+	// RPC transport mirrors lakitu stderr directly to os.Stderr when
+	// DRIFT_DEBUG is set, which bypasses bubbletea's alt-screen and
+	// scrawls "→ devpod list" lines over the rendered frame. Restore
+	// on exit so subsequent commands honor the user's flag.
+	if prev := os.Getenv("DRIFT_DEBUG"); prev != "" {
+		_ = os.Unsetenv("DRIFT_DEBUG")
+		defer func() { _ = os.Setenv("DRIFT_DEBUG", prev) }()
+	}
 	t := ui.NewTheme(io.Stdout, false)
 	var ds dashboard.DataSource
 	if cmd.Demo || os.Getenv("DRIFT_DEMO") != "" {
