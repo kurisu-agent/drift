@@ -6,9 +6,14 @@ import (
 	"github.com/kurisu-agent/drift/internal/cli/ui"
 )
 
-// tableStyles wires bubbles/v2/table to drift's theme. Header bold,
-// selected row reverse-styled in accent, rest dim — matches the rest
-// of the dashboard chrome.
+// tableStyles wires bubbles/v2/table to drift's theme.
+//
+// - Header is bold + brand accent so it reads as the column hierarchy.
+// - Cells use the muted default text + horizontal padding 1; status
+//   pills inside cells composit on top of this without fighting it.
+// - Selected row has the brand-accent background with bg-paired
+//   foreground and bold weight, matching the rubric's "high-contrast
+//   foreground over Border.Focus background".
 func tableStyles(t *ui.Theme) table.Styles {
 	s := table.DefaultStyles()
 	if t == nil || !t.Enabled {
@@ -18,9 +23,23 @@ func tableStyles(t *ui.Theme) table.Styles {
 		s.Cell = lipgloss.NewStyle()
 		return s
 	}
-	s.Header = t.BoldStyle.Padding(0, 1)
+	s.Header = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(t.AccentColor).
+		Padding(0, 1)
 	s.Cell = lipgloss.NewStyle().Padding(0, 1)
-	s.Selected = t.AccentStyle.Reverse(true).Padding(0, 1)
+	// Selected uses Reverse on top of an accent foreground rather
+	// than an explicit fg+bg pair: cells in the row may already
+	// carry a status pill or other inline ANSI, and an explicit
+	// Background gets cut off the moment that inner ANSI's reset
+	// (\x1b[0m) emits. Reverse + accent fg produces an accent bg
+	// against the terminal default fg, and the swap composes
+	// cleanly across pre-styled cells.
+	s.Selected = lipgloss.NewStyle().
+		Foreground(t.AccentColor).
+		Bold(true).
+		Reverse(true).
+		Padding(0, 1)
 	return s
 }
 

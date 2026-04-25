@@ -45,18 +45,15 @@ func main() {
 		os.Exit(2)
 	}
 
-	// Force-enable the theme. ui.NewTheme inspects the writer for TTY-
-	// ness; here stdout is a pipe (freeze) so we'd otherwise get a
-	// no-op palette. Probe through ui.NewTheme on stderr to pick up
-	// the real terminal's dark/light + colorprofile detection, then
-	// flip Enabled on so the styles render to ANSI regardless.
-	probe := ui.NewTheme(os.Stderr, false)
-	theme := *probe
-	theme.Enabled = true
+	// Stdout is a pipe (freeze) so ui.NewTheme on stdout would build
+	// a no-op palette; ui.NewThemeForced builds the full palette
+	// regardless and probes os.Stderr for dark/light + profile so
+	// real-terminal detection still works under `make eval-screens`.
+	theme := ui.NewThemeForced(os.Stderr)
 
 	opts := dashboard.Options{
 		InitialTab:     t,
-		Theme:          &theme,
+		Theme:          theme,
 		DriftVersion:   "0.4.3",
 		DataSource:     demo.New(),
 		MotionDisabled: *noMotion,

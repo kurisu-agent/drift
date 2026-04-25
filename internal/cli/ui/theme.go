@@ -107,6 +107,29 @@ func NewTheme(w io.Writer, jsonMode bool) *Theme {
 	return t
 }
 
+// NewThemeForced returns a fully-resolved Theme regardless of TTY,
+// NO_COLOR, or jsonMode signals. The dark/profile detection still
+// probes w for the right palette, but Enabled is always true and the
+// styles are always built. Used by the offline frame renderers
+// (cmd/dashboard-frame and friends) where stdout is a pipe but the
+// caller still wants colored ANSI in the captured output.
+func NewThemeForced(w io.Writer) *Theme {
+	dark := resolveDark(w)
+	profile := colorprofile.Detect(w, os.Environ())
+	if profile == colorprofile.NoTTY {
+		// Nothing useful detected (stdout was a pipe). Assume the
+		// downstream consumer is a true-color renderer such as freeze.
+		profile = colorprofile.TrueColor
+	}
+	t := &Theme{
+		Enabled: true,
+		Dark:    dark,
+		Profile: profile,
+	}
+	buildPalette(t, charmtone.Charple)
+	return t
+}
+
 // WithAccent returns a shallow copy of t with its accent recolored to c.
 // Used by the dashboard when it's anchored to a single circuit and the
 // circuit declares a per-circuit color tint. The non-accent palette

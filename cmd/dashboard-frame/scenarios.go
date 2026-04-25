@@ -37,6 +37,14 @@ var scenarios = []scenario{
 			*w = 80
 		},
 	},
+	{
+		name:        "filter-active",
+		tab:         "karts",
+		description: "karts panel with a filter pre-applied; non-matching rows render dim and the match-count strip is visible",
+		apply: func(o *dashboard.Options, _, _ *int) {
+			o.InitialFilter = "alpha"
+		},
+	},
 }
 
 // findScenario resolves a scenario by name, falling back to default

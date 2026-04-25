@@ -57,6 +57,12 @@ type Options struct {
 	DriftVersion   string
 	DataSource     DataSource
 	MotionDisabled bool // true skips the entrance animation; mirrors --no-motion / DRIFT_NO_MOTION.
+
+	// InitialFilter pre-fills the active panel's filter input and
+	// captures the filter-active visual scenario without needing a
+	// pre-driven key sequence harness. Live runs leave this empty;
+	// the eval-screens loop sets it for filter-* scenarios.
+	InitialFilter string
 }
 
 // DataSource is the small surface every panel calls into. Implementations

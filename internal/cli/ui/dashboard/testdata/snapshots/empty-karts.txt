@@ -13,7 +13,7 @@
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│                                          no karts on any configured circuit                                          │
+│                                        no karts yet, drift new to create one                                         │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
@@ -26,5 +26,5 @@
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│ ↑/k up • ↓/j down • tab next tab • r refresh • ? help • q quit                                                       │
+│ ↑/k up • ↓/j down • / filter • tab next tab • r refresh • ? help • q quit                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

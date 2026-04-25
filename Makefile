@@ -106,6 +106,7 @@ eval-screens:
 	}; \
 	render status default; \
 	render karts default; \
+	render karts filter-active; \
 	render circuits default; \
 	render chest default; \
 	render characters default; \

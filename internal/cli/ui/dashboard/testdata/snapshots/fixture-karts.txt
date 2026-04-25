@@ -1,12 +1,12 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │   status   ·   karts   ·   circuits   ·   chest   ·   characters   ·   tunes   ·   ports   ·   logs                  │
 │ ─────────────         ────────────────────────────────────────────────────────────────────────────────────────────── │
-│ [1mcircuit     [m[1mname                [m[1mstatus    [m[1mtune        [m[1msource    [m[1mautostart[m                                            │
-│ alpha       api                 running   go-stack    clone     yes                                                  │
-│ alpha       web                 running   ts-stack    clone     —                                                    │
-│ alpha       db                  stopped   py-stack    starter   —                                                    │
-│ beta        experiments         running   py-stack    clone     —                                                    │
-│ beta        scratch             stale     —           —         —                                                    │
+│ [1mcircuit     [m[1mname                [m[1mstatus        [m[1mtune        [m[1msource    [m[1mautostart[m                                        │
+│ alpha       api                 running       go-stack    clone     yes                                              │
+│ alpha       web                 running       ts-stack    clone     —                                                │
+│ alpha       db                  stopped       py-stack    starter   —                                                │
+│ beta        experiments         running       py-stack    clone     —                                                │
+│ beta        scratch             stale         —           —         —                                                │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
@@ -26,5 +26,5 @@
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│ ↑/k up • ↓/j down • tab next tab • r refresh • ? help • q quit                                                       │
+│ ↑/k up • ↓/j down • / filter • tab next tab • r refresh • ? help • q quit                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
