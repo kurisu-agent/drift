@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/kurisu-agent/drift/internal/cli/ui"
 )
 
@@ -103,11 +104,47 @@ func (p *resourcePanel) View(width, height int) string {
 		return panelEmpty(p.t, fmt.Sprintf("loading %s...", p.title), width, height)
 	}
 	if len(p.rows) == 0 {
-		return panelEmpty(p.t, fmt.Sprintf("no %s defined on any configured circuit", p.title), width, height)
+		return panelEmpty(p.t, fmt.Sprintf("no %s yet — drift connect <circuit> to author them", p.title), width, height)
+	}
+
+	hint := p.renderHint(width)
+	hintH := lipgloss.Height(hint)
+	tableHeight := height - hintH - 1
+	if tableHeight < 3 {
+		tableHeight = 3
 	}
 	p.tbl.SetWidth(width)
-	p.tbl.SetHeight(maxInt(3, height-2))
-	return p.tbl.View()
+	p.tbl.SetHeight(tableHeight)
+	if hint == "" {
+		return p.tbl.View()
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, hint, "", p.tbl.View())
+}
+
+// renderHint is the one-line muted strip above the table that names
+// the lakitu-side authoring command. The chest/characters/tunes panels
+// are read-only views; mutations live server-side, and this hint
+// keeps that contract visible without dragging the user out of the
+// dashboard.
+func (p *resourcePanel) renderHint(_ int) string {
+	if p.t == nil || !p.t.Enabled {
+		return fmt.Sprintf("authoring lives in lakitu — drift connect <circuit> -- %s add <name>", p.singular())
+	}
+	body := fmt.Sprintf("authoring lives in lakitu — drift connect <circuit> -- %s add <name>", p.singular())
+	return p.t.MutedStyle.Render(body)
+}
+
+// singular returns the panel's resource word in subcommand form
+// ("chest" → "chest", "characters" → "character", "tunes" → "tune"),
+// matching the lakitu CLI surface.
+func (p *resourcePanel) singular() string {
+	switch p.title {
+	case "characters":
+		return "character"
+	case "tunes":
+		return "tune"
+	}
+	return p.title
 }
 
 func toResourceTableRows(rs []ResourceRow) []table.Row {

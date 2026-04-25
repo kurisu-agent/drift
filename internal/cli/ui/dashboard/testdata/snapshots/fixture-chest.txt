@@ -1,10 +1,10 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │   status   ·   karts   ·   circuits   ·   chest   ·   characters   ·   tunes   ·   ports   ·   logs                  │
 │ ────────────────────────────────────────         ─────────────────────────────────────────────────────────────────── │
+│ authoring lives in lakitu — drift connect <circuit> -- chest add <name>                                              │
+│                                                                                                                      │
 │ [1mcircuit     [m[1mname                  [m[1mdetail                              [m[1mused by               [m                         │
 │ alpha       OPENAI_API_KEY        1password://drift/openai            api, web                                       │
-│                                                                                                                      │
-│                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
