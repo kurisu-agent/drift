@@ -182,8 +182,15 @@ Every existing surface gets a defined target. Unchanged commands omitted.
 | `drift kart delete` | Prompt + Color | Confirmation via `ui.Confirm`; spinner during deletion. |
 | `drift list` / `drift karts` | Plain or Color | `ui.Table` decides; no model loop. JSON unchanged. |
 | `drift status` | Plain or Color | Same. The *live* version is the dashboard's status tab. |
-| `drift kart info` | Plain or Color | Key-value block via `ui.KeyValue` (new helper, just two-column dim/accent rendering). |
+| `drift kart info` | Plain or Color | Key-value block via `ui.KeyValue` (new helper, two-column dim/accent rendering). The dashboard's karts-tab row-expand renders through the same helper. |
 | `drift logs` | Plain or Color | Plain unchanged; under TUI the logs tab in the dashboard supersedes interactive use. |
+| `drift update` | Color (progress bar) | The hand-rolled `\r`-rewrite progress writer at `update.go:297` is replaced by `bubbles/progress` with a gradient fill, tied to a `ui.PhaseTracker` for the surrounding stages: check release → select asset → download → verify checksum → extract → atomic replace. Per-file extraction prints stay dim under the bar; in `ModePlain` the bar collapses to periodic byte-count lines so CI logs stay readable. `drift update <source>` (scp/url/local self-replace) shares the same tracker, with the source-resolution step as its first phase. |
+| `drift kart enable` / `disable` | Plain or Color | Single success line via `ui.Status` so the glyph + theme matches every other lifecycle command. JSON unchanged. |
+| `drift run` | TUI picker (no name) → exec | When invoked without a name on a TTY, the runs.yaml picker uses `ui.picker` (same shape as `drift connect`'s); with a name, drops straight into exec. The exec'd command keeps stdout — no model loop wraps it. |
+| `drift ai` | TUI picker (no circuit) → exec | Circuit picker via `ui.picker`; then execs into Claude Code on the chosen circuit. Same pattern as `drift run` / `drift connect`. |
+| `drift skill` | TUI picker + prompt → exec | No name → `ui.picker` over skills; name without prompt → `ui.Input` for the prompt; then executes on the circuit. The two-stage flow becomes one `huh.Form` with two groups so back-navigation works. |
+| `drift circuit set name` | Color (spinner) | Server-side rename is a single RPC; wrap in `ui.Spinner` since the rewrite of server config + local alias takes a moment, and surface the before/after names in the success line. |
+| `drift help` (short) / `drift version` | Plain or Color | Stay grep-friendly. `drift help --full` keeps its current Kong-derived catalog; only the column rendering moves to `ui.Table`. `drift version` is plain text or JSON unchanged. |
 | `drift help` / `drift help <topic>` | Plain or Color | Short help stays grep-friendly; `<topic>` mode renders markdown via `glamour` (style `auto` on TTY, `notty` otherwise). Optional follow-up. |
 | `drift ports` | TUI (plan 13) | Standalone TUI; same model embedded into dashboard's ports tab. |
 | Errors (everywhere) | All modes | `errfmt.Emit` keeps its job; the new `ui.Error(err)` wraps it so the rendered block uses theme colors and aligns with success lines. Inside a TUI, errors render into a status bar / toast and are also re-emitted to stderr on quit so they're not lost. |
