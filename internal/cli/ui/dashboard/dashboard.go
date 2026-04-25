@@ -385,12 +385,11 @@ func (m *model) renderTabBar(width int) string {
 	for i := Tab(0); i < tabCount; i++ {
 		label := cellPad + i.String() + cellPad
 		cellW := lipgloss.Width(label)
-		switch {
-		case i == m.tab:
+		if i == m.tab {
 			parts = append(parts, accent.Render(label))
 			activeStart = cursor
 			activeWidth = cellW
-		default:
+		} else {
 			parts = append(parts, muted.Render(label))
 		}
 		cursor += cellW

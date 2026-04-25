@@ -234,16 +234,6 @@ func clampInt(v, lo, hi int) int {
 	return v
 }
 
-// slideHorizontal pads each line of s with leading spaces equal to
-// max(0, offset). Used to hold an element off-screen during the
-// entrance and slide it into place as the spring resolves.
-func slideHorizontal(s string, offset int) string {
-	if offset <= 0 {
-		return s
-	}
-	return padLeft(s, offset)
-}
-
 // padLeftLine pads a single line; preserves embedded ANSI by treating
 // the prefix as raw spaces (lipgloss measurement still works because
 // the prefix is plain ASCII).

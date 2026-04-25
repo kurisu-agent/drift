@@ -8,12 +8,12 @@ import (
 
 // tableStyles wires bubbles/v2/table to drift's theme.
 //
-// - Header is bold + brand accent so it reads as the column hierarchy.
-// - Cells use the muted default text + horizontal padding 1; status
-//   pills inside cells composit on top of this without fighting it.
-// - Selected row has the brand-accent background with bg-paired
-//   foreground and bold weight, matching the rubric's "high-contrast
-//   foreground over Border.Focus background".
+//   - Header is bold + brand accent so it reads as the column hierarchy.
+//   - Cells use the muted default text + horizontal padding 1; status
+//     pills inside cells render on top of this without fighting it.
+//   - Selected row has the brand-accent background with bg-paired
+//     foreground and bold weight, matching the rubric's "high-contrast
+//     foreground over Border.Focus background".
 func tableStyles(t *ui.Theme) table.Styles {
 	s := table.DefaultStyles()
 	if t == nil || !t.Enabled {

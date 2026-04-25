@@ -191,20 +191,6 @@ func offsetLeft(el element) int {
 	return int(x + 0.5)
 }
 
-// padLeft pads s with `n` leading spaces (clamped at 0). Used to slide
-// content rightward during entrance.
-func padLeft(s string, n int) string {
-	if n <= 0 {
-		return s
-	}
-	pad := strings.Repeat(" ", n)
-	lines := strings.Split(s, "\n")
-	for i, line := range lines {
-		lines[i] = pad + line
-	}
-	return strings.Join(lines, "\n")
-}
-
 // renderBannerSliding returns a slotWidth-wide block where the
 // wordmark is positioned with its left edge at column `x` (relative
 // to the slot's left edge). Negative x clips from the left (emerging
