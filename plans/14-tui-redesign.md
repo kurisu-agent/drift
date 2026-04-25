@@ -97,6 +97,28 @@ A single `ui.Theme` value, constructed once in `ui.DetectMode`, carries:
 
 A short integration test verifies that `NO_COLOR=1 drift status` produces zero ANSI bytes — this is a regression we've burned ourselves on before.
 
+### Icons (Nerd Font)
+
+The TUI assumes the terminal is running a Nerd Font and uses icon glyphs from the Nerd Font Private Use Area wherever an action, resource, or status can be expressed with one. Icons condense the interface — one glyph where a word would be — and give the TUI a distinct visual identity without shouting.
+
+**Catalog (filled in during implementation; representative targets):**
+
+- **Status:** running (play), stopped (square), stale (warning), unreachable (disconnected plug), starting (spinner-compatible), error (x-circle), success (check-circle).
+- **Resources:** circuit (server / network), kart (container / package), chest (key / lock), character (person), tune (sliders / gear), port (plug), log (file-lines), skill (sparkle), run (play-square), ai (robot / spark).
+- **Actions:** start (play), stop (stop), restart (rotate), rebuild (hammer), recreate (refresh-ccw), delete (trash), clone (git-branch), connect (arrow-right-to-bracket), migrate (arrow-right-arrow-left), enable (toggle-on), disable (toggle-off), add (plus), edit (pencil), save (floppy), filter (funnel), search (magnifier).
+- **Navigation / chrome:** tab-switch chevrons, default-circuit star, expand/collapse carets, scroll-pos indicator, help (question), quit (power).
+- **Tech/brand where appropriate:** github, docker, ssh, mosh, go — used sparingly for kart-source indicators or transport hints, never as decoration.
+
+**Central registry.** All icon codepoints live in one place: `internal/cli/ui/icons.go`, as named `rune` constants (`IconStart`, `IconKart`, `IconCircuit`, etc.). Callers never write the raw codepoint inline. Makes it trivial to swap an icon (Nerd Font versions shift codepoints occasionally) or to maintain a parallel ASCII-fallback table.
+
+**Fallback.** Not every terminal has a Nerd Font. Behavior:
+
+- Default: ON. Drift's expected environments (Ghostty, kitty, iTerm2, Termux with a properly installed Nerd Font) handle this natively.
+- Opt-out: `DRIFT_NO_NERDFONT=1` env var collapses every icon to its ASCII-fallback sibling from the same registry — a text word (`start`, `stop`), a short symbol (`▶`, `■`), or nothing at all depending on the icon's role. The tests exercise both paths via `DetectMode`'s carrying field.
+- Auto-detection: deliberately NOT attempted. There's no reliable capability query for "does this terminal have a Nerd Font loaded." Guessing wrong (rendering tofu boxes everywhere) is worse than requiring an env var for the minority case.
+
+**Sketches in this plan deliberately keep ASCII placeholders** (`●`, `○`, `▸`, `[tab]`, `arrow`, `clone`, etc.) for readability in the plan file and in PR diffs. Implementation replaces them with the registry icons. When reading the sketches, assume any status glyph, action label, or directional symbol will become a Nerd Font icon; the sketches fix what they represent, not how they render.
+
 ### Key bindings and help
 
 `internal/cli/ui/keys.go` declares the shared bindings:
@@ -131,39 +153,81 @@ Composite flows (`drift migrate`, `drift init`) build their own `huh.Form` with 
 
 ### The `drift dashboard` TUI
 
-A top-level subcommand: `drift dashboard [-c <circuit>] [--tab <name>]`.
+A top-level subcommand: `drift dashboard [-c <circuit>] [--tab <name>]`. **Bare `drift` (no args) on a TTY opens the dashboard.** `drift menu` stays as an explicit subcommand for the launcher use case (pick a command, run it, exit) — the two are different jobs and both keep their place.
 
-A long-lived bubbletea program with five tabs along the top:
+> **Sketches are for shape, not pixels.** Every ASCII mockup in this plan (dashboard chrome, banner placement, per-tab layouts produced during design) communicates *what lives where and how the user navigates it*. Exact borders, padding, spacing, color choices, glyph selection for focus/blur, and responsive breakpoints are the framework's job — lipgloss v2 decides joins and placement, `bubbles/help` decides footer shape, `bubbles/list` and `bubbles/table` decide their own chrome. When an implementation detail in a sketch conflicts with an idiomatic bubbletea/lipgloss approach, **follow the framework**. The plan locks information architecture and interaction model, not visual minutiae.
+
+A long-lived bubbletea program. The tab bar sits at row 1 (always visible); the banner appears only on the **status** tab, inside the panel body.
+
+**Chrome — every tab:**
 
 ```
-┌ drift dashboard ─────────────────────── alpha · beta · gamma ─┐
-│  status  ▸ karts ◂  circuits   ports   logs                   │
-├───────────────────────────────────────────────────────────────┤
-│                                                               │
-│   CIRCUIT  NAME              STATUS    SOURCE      LAST USED  │
-│   alpha    drift-app-server  running   github:...  2m ago     │
-│   alpha    plan-14           stopped   local       3h ago     │
-│   beta     experiments       running   github:...  1d ago     │
-│                                                               │
-│                                                               │
-├───────────────────────────────────────────────────────────────┤
-│ [tab] switch tab  [↑↓] move  [enter] open  [r] refresh  [q] quit │
-└───────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│  status  ▸ karts ◂  circuits  chest  characters  tunes  ports  logs │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│   <active panel content>                                            │
+│                                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│ [tab] next  [1-8] jump  [/] filter  [r] refresh  [?] help  [q] quit │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-Tabs:
+**Status tab — full layout:**
 
-- **status** — circuit roster, live latency every 10s, lakitu version, API reachability. Same data as `drift status` today, but live.
-- **karts** — cross-circuit kart table, filterable (`/`), sortable, enter on a row opens a side panel with `drift kart info` shape; `s`/`x`/`R`/`D` start/stop/restart/delete (with confirmation modal). Effectively a console for the lifecycle commands.
-- **circuits** — list of configured circuits with add/remove/set-default actions, default circuit highlighted, `a` adds via inline `huh` form.
-- **ports** — plan 13's port view, embedded. Add/remove forwards, see conflict status, see remaps. Reuses the same model the standalone `drift ports` TUI uses.
-- **logs** — pick a kart, tail its logs in a viewport, `/` filters, `[level]` filters.
+```
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│ ▸ status ◂  karts  circuits  chest  characters  tunes  ports  logs                   │
+├──────────────────────────────────────────────────────────────────────────────────────┤
+│  ╮  •╭   drift 0.4.3                                              3 / 3   circuits   │
+│ ╭┤╭╮╮┼┼  devpods for drifters                                     7 / 9   karts      │
+│ ╰┴╯ ╰╯╰  [tagline tbd]                                                4   ports      │
+│                                                                                      │
+│  TIME      ACTION              KART                   DETAIL                         │
+│  ──────────────────────────────────────────────────────────────────────────────      │
+│   3m ago   drift new           alpha.plan-14          from example-org/template      │
+│  12m ago   kart restart        alpha.api                                             │
+│   1h ago   port add            alpha.web              :3000 → :3000                  │
+│   2h ago   drift status        —                                                     │
+│   3h ago   kart info           beta.experiments                                      │
+│   4h ago   drift connect       alpha.api                                             │
+│   5h ago   kart stop           alpha.experiments                                     │
+│                                                                                      │
+├──────────────────────────────────────────────────────────────────────────────────────┤
+│ [tab] next  [1-8] jump  [enter] drill  [r] refresh  [?] help  [q] quit               │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+```
 
-Tab switching: `tab` / `shift+tab` / numeric keys (`1`–`5`).
-Refresh: `r` for explicit, plus a 10s ticker for status/karts/ports.
-Layout: `lipgloss.JoinVertical` of header + tab bar + active panel + footer; active panel composes its own internal layout. Each panel implements a small `Panel` interface (`Init`, `Update`, `View`, `Focused`, `KeyMap`) so the root model just routes messages.
+The status tab has three regions:
 
-The dashboard is the showcase, not the entry point — `drift` with no args still drops into `drift menu` (which now invokes the dashboard as one of its top options). The dashboard never replaces the one-shot commands; users who want to script will keep using `drift status --output json`.
+- **Banner block** (top-left, 3 rows) — Tmplr Rounded wordmark with rainbow gradient + 3-line text lockup (`drift <ver>` bold, tagline + placeholder dim). Status tab only.
+- **Stats block** (top-right, 3 rows, right-aligned) — small key-value table with numbers first. `circuits N/M` (reachable/total), `karts N/M` (running/total), `ports N` (count, no slash — ports never conflict on this circuit). Numbers right-aligned in their column, labels left-aligned after a 3-space gutter, whole block self-sized to the longest label and anchored to the panel right edge. Numbers bold, labels dim.
+- **Activity table** (full-width, scrollable viewport) — TIME / ACTION / KART / DETAIL. TIME right-aligned and dim; ACTION is the verb (`drift new`, `kart restart`, `port add`, etc.); KART is `<circuit>.<kart>` for kart-scoped actions or `—` for global ones (`drift status`, `drift help`); DETAIL holds context where useful (clone source, port mapping, what changed). `enter` on a row jumps to the relevant resource (`kart restart api` → karts tab filtered to that kart). Source: in-memory ring per session, optionally backed by a small persisted ring at `~/.local/state/drift/activity` for cross-session scrollback (open question — cheap to add later).
+
+**Banner.** Owned by the status panel, not the dashboard chrome. Top-left of the panel body on tab 1 only: a Tmplr Rounded ASCII wordmark for "drift", with a three-line text lockup beside it (name + version, tagline, third tagline placeholder). The banner glyphs get a horizontal rainbow gradient via `lipgloss.Blend1D`; the lockup text stays in `theme.Bold` (line 1) and `theme.Dim` (lines 2-3) so the wordmark owns the color and the text owns the meaning. Hardcoded as a `const` in `internal/cli/ui/dashboard/banner.go` — no runtime figlet renderer. Skipped entirely when `theme.Color == false` (a plain "drift 0.4.3" header replaces it) or when terminal width drops below the banner's footprint. Switching away from the status tab reclaims the 3 rows for panel content.
+
+**Tab bar.** Row 1, always visible across every tab. `status · karts · circuits · chest · characters · tunes · ports · logs`. Active tab underlined in accent color, others dim. Switch with `tab` / `shift+tab` or numeric keys `1`–`8`. On widths below ~100 cols the bar collapses to numeric pips (`1 2 3 4 5 6 7 8`) with the active tab's name shown alone.
+
+**Tabs:**
+
+- **status** — high-level overview (see status-tab layout above). Banner + stats block in the top row; full-width activity table below. Stats refresh on a 10s ticker (latency, kart status); activity is event-driven, no polling. *Drill into karts/circuits tabs for detail* — the status tab deliberately doesn't reproduce them.
+- **karts** — cross-circuit kart table, filterable (`/`), sortable, enter expands a row inline into a `drift kart info` key-value block. In-row lifecycle actions with confirmation modals: `s` start, `x` stop, `R` restart, `B` rebuild, `C` recreate, `D` delete, `c` connect (execs out), `l` jump to logs tab pre-filtered, `e`/`d` enable/disable autostart.
+- **circuits** — circuit-level admin. Add (`a`, inline form), delete (`d`), set default (`space`), rename (`r`), drill into per-circuit detail (`enter`). On zero circuits the dashboard auto-opens the add modal (subsumes `drift init`'s "first circuit" path).
+- **chest** *(read-only)* — env-refs per circuit. Table with name, backend, last-used, used-by-karts. `enter` expands to backend resolver detail + cross-link to kart references. No add/edit/rotate; that stays a CLI surface (`lakitu chest …` over ssh).
+- **characters** *(read-only)* — git identity bindings per circuit. Name, git name, git email, PAT ref, kart count. `enter` expands to container username, dotfiles, kart references. Authoring stays in `lakitu character edit`.
+- **tunes** *(read-only)* — workspace/session configs per circuit. Name, base image, feature count, used-by-karts. `enter` expands to full devcontainer fragment in a viewport. Authoring stays in `lakitu tune edit`.
+- **ports** — plan 13's port view, embedded. Add/remove forwards, see active forwards + remaps. Reuses plan 13's standalone TUI model; this PR depends on plan 13's `Panel` interface impl. If plan 13 isn't merged yet the tab renders a placeholder.
+- **logs** — kart picker on top, scrollable log viewport below. `/` filter, `L` cycle level, `f` toggle follow, `s` save current contents to `~/drift-logs-<kart>-<ts>.log`.
+
+**Cross-tab affordances.** `:` opens a fuzzy command palette (every action in every tab); `?` opens the full-help modal; `Q` quits without confirming, `q` confirms if any in-flight action; `enter` on any expandable row toggles its detail. Toast region bottom-right for transient messages.
+
+**Read-only resource panels are cheap.** Chest/characters/tunes share a `ResourcePanel[T]` generic — per-circuit grouped table + filter + expand-on-enter, one file in `dashboard/panels/`. Per-tab files are thin wrappers that supply the RPC fetcher and the row formatter, so three tabs cost roughly the LOC of one. RPC results cached for 30s (model-local, busted by `r`). If a tab's RPC isn't wired on the lakitu side yet, the panel renders a "not available on lakitu vX.Y.Z — needs vA.B.C" notice instead of erroring.
+
+**Layout.** `lipgloss.JoinVertical` of banner + tab bar + active panel + footer; active panel composes its own internal layout. Each panel implements a small `Panel` interface (`Init`, `Update`, `View`, `Focused`, `KeyMap`) so the root model just routes messages and a future ninth tab is one new file.
+
+**Refresh.** `r` for explicit, plus a 10s ticker for live data (status latency, karts list, ports). Pause the ticker when the program loses terminal focus (bubbletea v2 emits focus events; verify Termux passes them through).
+
+**Startup.** Bare `drift` → `runDashboard`: load `~/.drift/config.json`, compute theme once, kick off parallel `status.Probe` for every circuit (errgroup, limit=4 — same call `drift status` makes today). First frame renders with placeholders; rows fill in as probes complete. Default tab `status` unless `--tab <name>` overrides. Non-TTY bare `drift` prints a one-liner pointing at `drift dashboard` / `drift help` and exits cleanly.
 
 ### Per-command redesigns
 
@@ -172,7 +236,8 @@ Every existing surface gets a defined target. Unchanged commands omitted.
 | Surface | Target mode | Notes |
 |---|---|---|
 | `drift dashboard` | TUI (new) | The flagship. |
-| `drift menu` | TUI | Reimplemented on bubbles `list` with theme + help footer; gains the dashboard as an entry. |
+| `drift menu` | TUI | Stays as an explicit subcommand for the launcher use case (pick a command → run → exit). Reimplemented on bubbles `list` with theme + help footer. **No longer the entry point for bare `drift`** — that now opens `drift dashboard` (see dashboard section). |
+| `drift` (no args) | TUI | On a TTY, opens `drift dashboard`. Non-TTY prints a one-liner pointing at `drift dashboard` / `drift help` and exits. |
 | `drift connect` (picker) | TUI | huh-based picker stays, themed; bare connect is unchanged. |
 | `drift connect` (drift-check rebuild prompt) | Prompt | `ui.Confirm`, themed. |
 | `drift migrate` | TUI | Three-step `huh.Form` becomes one form with progress indicator + preview pane on the side (candidate details, tune summary, character permissions). |
@@ -223,11 +288,63 @@ Keep:
 
 ### Testing
 
-- `internal/cli/ui` gets unit tests for `DetectMode` across the JSON / Plain / Color / TUI matrix and for `Theme` adaptive palette selection.
-- `bubbles/help` keymap correctness is verified in panel tests via a small assertion that `ShortHelp()` matches the actual key bindings.
-- `teatest` golden-frame tests for the dashboard happy paths: load → switch tab → quit; load → karts tab → filter → enter on a row → confirm restart. Frames stored under `internal/cli/ui/dashboard/testdata/`.
-- A `NO_COLOR` integration test asserts zero ANSI bytes in plain output for `drift status`, `drift list`, `drift kart info`.
-- Existing `progress_test.go` snapshots get rewritten against the new spinner; behavior invariants (no ANSI under non-TTY, success/fail emit the right glyph) are preserved.
+The bubbletea framework unlocks a class of tests we don't have today. The lever is `charm.land/x/teatest`, which drives a `tea.Program` programmatically: scripted keystrokes in, captured frames out, golden-file diffs as assertions.
+
+**Five test surfaces this gives us:**
+
+1. **Golden-frame snapshots.** `teatest.NewTestModel(t, model, teatest.WithInitialTermSize(W, H))` runs the model with a pinned width/height. Send messages with `tm.Send(...)`, read frames with `tm.FinalOutput(t)` or via the read interface, diff against `testdata/<scenario>.golden`. `go test -update` regenerates baselines. Pinned terminal size is mandatory — otherwise frames flake across machines.
+
+2. **Scripted user flows.** Replace "open the dashboard, click around, eyeball the result" with deterministic input. The dashboard happy-path test reads:
+
+    ```go
+    tm := teatest.NewTestModel(t, dashboardModel(...), teatest.WithInitialTermSize(120, 40))
+    tm.Send(tea.KeyMsg{Type: tea.KeyTab})       // status → karts
+    tm.Send(tea.KeyMsg{Runes: []rune{'/'}})     // open filter
+    tm.Type("plan-14")                          // type filter text
+    tm.Send(tea.KeyMsg{Type: tea.KeyEnter})     // expand row
+    teatest.RequireEqualOutput(t, tm.FinalOutput(t))
+    ```
+
+3. **Fake clocks for tickers.** The status-tab latency ticker, logs-tab follow-poll, and toast-fade timer are all time-driven. Inject a clock interface (`type Clock interface { Now() time.Time; After(d) <-chan time.Time }`) so a 10s ticker fires immediately under test. Production wires `realClock{}`; tests wire a controllable fake. Eliminates `time.Sleep` from tests entirely.
+
+4. **Component isolation.** Every panel is a standalone `tea.Model`, testable without spinning up the full dashboard. `panels/karts_test.go` constructs a karts panel with a mock RPC client + scripted messages, asserts on the returned model state — pure functional unit tests, no rendering, no goroutines. The full dashboard test only verifies tab routing.
+
+5. **Property-style invariants.** Cheap to declare, expensive to forget. Run as table-driven tests across all panels via the shared `Panel` interface — write once, every new panel inherits coverage:
+   - Every `key.Binding` has non-empty `Help()`.
+   - `View()` output is ≤ program width (no horizontal overflow).
+   - `Update(tea.WindowSizeMsg{...})` doesn't panic at any reasonable size.
+   - Mock RPC errors surface as a visible error state (toast or modal), never silently swallowed.
+
+**Plus the non-TUI tests we already need:**
+
+- `DetectMode` matrix: every combination of `(stdoutTTY, JSON flag, NO_COLOR, NoTUI)` returns the expected `Mode`.
+- `Theme` adaptive selection: light/dark backgrounds + the `colorprofile` levels (NoTTY / ANSI16 / ANSI256 / TrueColor) produce the expected style values.
+- `NO_COLOR=1` regression: zero ANSI bytes in plain output for `drift status`, `drift list`, `drift kart info`. We've burned ourselves on this before.
+- `progress_test.go` rewritten against the new spinner; behavior invariants preserved (no ANSI under non-TTY, success/fail emit the right glyph).
+- Existing one-shot output snapshots (status formatting, error blocks, table rendering) stay as text-based asserts — cheap and effective for non-TUI surfaces.
+
+**What still belongs in `make integration`:** the exec-into-shell paths (`drift connect`, `drift run`, `drift ai`) — bubbletea exits before the exec, so teatest covers up to the exec call only. Real ssh / mosh / devpod orchestration stays in `make integration`. Visual fidelity (does the rainbow look nice on Termux?) is human-eyeball territory; not gated.
+
+**Test layout:**
+
+```
+internal/cli/ui/
+  mode_test.go              DetectMode matrix
+  theme_test.go             theme + colorprofile
+  testkit/
+    teatest.go              shared helpers (fixed-width fixtures, fake clock)
+    nocolor.go              NO_COLOR assertion helper
+internal/cli/ui/dashboard/
+  dashboard_test.go         full-program teatest scenarios
+  testdata/
+    happy-path.golden
+    karts-filter-restart.golden
+    chest-expand.golden
+    ...
+  panels/
+    karts_test.go           component-level
+    chest_test.go           ...
+```
 
 ## Delivery
 
@@ -239,7 +356,7 @@ What goes in the single PR, in implementation order (each step's diff stays revi
 2. **Spinner / progress.** Add `ui.Spinner`, `ui.Progress`, `ui.PhaseTracker`. Migrate every `internal/cli/progress` caller (`drift new`, `drift kart start/stop/restart/recreate/rebuild`). Delete `internal/cli/progress`. Drop `briandowns/spinner`.
 3. **Prompts.** Add `ui.Confirm`, `ui.Select`, `ui.Input`, themed `ui.picker`. Migrate `drift connect`, `drift kart delete`, `drift circuit add/rm/set`, `drift migrate`, `drift init`.
 4. **Bubbletea infra.** `ui/tea.go` (program helpers, signal/ctx wiring), shared `viewport`. Reimplement `drift menu` on `bubbles/list`.
-5. **Dashboard.** `drift dashboard` with all five tabs (status, karts, circuits, ports, logs) and lifecycle actions wired through confirmation modals. Ports tab embeds the same model plan 13's standalone `drift ports` TUI uses — coordinate the merge order with plan 13 so the import isn't a phantom; if plan 13 lands first, this PR consumes it; if not, this PR ships the ports panel against a stub interface that plan 13 implements.
+5. **Dashboard.** `drift dashboard` with all eight tabs (status, karts, circuits, chest, characters, tunes, ports, logs) and lifecycle actions on the karts tab wired through confirmation modals. Chest/characters/tunes are read-only and share a `ResourcePanel[T]` generic. Ports tab embeds the same model plan 13's standalone `drift ports` TUI uses — coordinate the merge order with plan 13 so the import isn't a phantom; if plan 13 lands first, this PR consumes it; if not, this PR ships the ports panel against a stub interface that plan 13 implements. Banner and Tmplr-Rounded const live in `internal/cli/ui/dashboard/banner.go`. Bare `drift` is rewired to open the dashboard.
 6. **Tests + cleanup.** `teatest` golden frames for the dashboard happy paths, `NO_COLOR` regression test, `DetectMode` matrix tests, dependency tidy. `make ci && make integration` green before merge.
 
 Things deliberately deferred out of even the giant PR (would balloon the scope without paying for itself): `glamour`-rendered `drift help <topic>` (separate, optional), mouse-driven interaction in the dashboard, replacing `internal/slogfmt` with `charmbracelet/log`. These are listed in non-goals or open questions; they can land as small follow-ups whenever someone wants them.
@@ -250,6 +367,7 @@ Risk of one PR: a bad merge ordering with plan 13 (ports). Mitigation: define th
 
 - **Termux background detection.** `lipgloss.HasDarkBackground` queries the terminal — Termux generally responds correctly, but Ghostty / dumb TERM combinations sometimes don't. Decide: trust the query, or expose `DRIFT_THEME=light|dark|auto` as an explicit override? (Lean: ship the env var on day one, default `auto`.)
 - **Dashboard refresh cadence.** 10s ticker on every panel is cheap but noisy in a long-idle terminal. Pause the ticker when the program is in the background (terminal not focused) — bubbletea v2 exposes focus events; verify Termux passes them through.
-- **`drift menu` vs `drift dashboard`.** Currently `drift` with no args opens the menu. Consider making it open the dashboard once the dashboard is mature — the menu becomes redundant. Not a phase-1 decision.
 - **glamour width on small terminals.** If `<topic>` help is wider than the terminal it word-wraps oddly. Worth testing on Termux landscape and tmux split panes before turning glamour on by default.
+- **Third banner tagline.** The banner has a `[placeholder]` slot for a third line of dim text under "devpods for drifters". Naming this is cosmetic; pick before merge.
+- **Tab count on narrow terminals.** Eight tabs collapse to numeric pips below ~100 cols, but Termux landscape is sometimes ~80; verify the collapsed-bar UX on real Termux before shipping. Worst case we hide chest/characters/tunes from the bar by default and surface them via the command palette.
 - **Snapshot stability.** `teatest` golden frames are sensitive to terminal-width assumptions. Pin the test program width explicitly and accept that snapshot regen is part of any visual change.
