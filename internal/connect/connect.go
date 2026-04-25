@@ -32,8 +32,15 @@ type Deps struct {
 	// TTY. CLI callers use it to stop a spinner so it doesn't fight the
 	// interactive child for cursor control. nil skips the hook.
 	OnReady func()
-	Now     func() time.Time
-	Sleep   func(d time.Duration)
+	// BeforeExec fires after OnReady but still before Exec, with the
+	// resolved devcontainer forwardPorts from the kart.connect RPC. The
+	// CLI binds this to the workstation-side ports reconcile so forwards
+	// are live by the time the user's shell starts. Returning a non-nil
+	// error aborts Run before Exec — useful for tests; production binds
+	// a best-effort hook that warns rather than failing the connect.
+	BeforeExec func(ctx context.Context, forwardPorts []int) error
+	Now        func() time.Time
+	Sleep      func(d time.Duration)
 }
 
 type Stdio struct {
@@ -67,7 +74,7 @@ func Run(ctx context.Context, d Deps, opts Options, stdio Stdio) error {
 		return err
 	}
 
-	remote, err := fetchConnectArgv(ctx, d, opts)
+	remote, forwardPorts, err := fetchConnectArgv(ctx, d, opts)
 	if err != nil {
 		return err
 	}
@@ -76,6 +83,11 @@ func Run(ctx context.Context, d Deps, opts Options, stdio Stdio) error {
 	bin, argv := buildConnectArgv(useMosh, opts, remote)
 	if d.OnReady != nil {
 		d.OnReady()
+	}
+	if d.BeforeExec != nil {
+		if err := d.BeforeExec(ctx, forwardPorts); err != nil {
+			return err
+		}
 	}
 	return d.Exec(ctx, bin, argv, stdio)
 }
@@ -94,29 +106,30 @@ func Run(ctx context.Context, d Deps, opts Options, stdio Stdio) error {
 // internal/cli/drift/compat.go doesn't apply here because `drift
 // connect`'s RPC is issued before the transport spawn; we handle the
 // compat downshift locally instead.
-func fetchConnectArgv(ctx context.Context, d Deps, opts Options) ([]string, error) {
-	var res struct {
-		Argv []string `json:"argv"`
-	}
+func fetchConnectArgv(ctx context.Context, d Deps, opts Options) ([]string, []int, error) {
+	var res wire.KartConnectResult
 	err := d.Call(ctx, opts.Circuit, wire.MethodKartConnect,
 		map[string]string{"name": opts.Kart}, &res)
 	if err == nil {
-		return res.Argv, nil
+		return res.Argv, res.ForwardPorts, nil
 	}
 	var rpcErr *rpcerr.Error
 	if !errors.As(err, &rpcErr) || rpcErr.Type != "method_not_found" {
-		return nil, err
+		return nil, nil, err
 	}
 	// Legacy path: build the classic argv locally and re-ask for session env.
+	// Pre-kart.connect lakitus don't surface forwardPorts at all; the
+	// caller treats nil as "no auto-forwards", so the user can still add
+	// them by hand via `drift ports add`.
 	sessionEnv, envErr := fetchSessionEnv(ctx, d, opts)
 	if envErr != nil {
-		return nil, envErr
+		return nil, nil, envErr
 	}
 	remote := []string{"devpod", "ssh", opts.Kart}
 	for _, kv := range sessionEnv {
 		remote = append(remote, "--set-env", kv)
 	}
-	return remote, nil
+	return remote, nil, nil
 }
 
 // fetchSessionEnv pulls resolved env.session KEY=VALUE pairs for the kart.

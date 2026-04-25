@@ -31,6 +31,7 @@ var driftHelpRows = [][2]string{
 	{"karts", "List karts across circuits (cross-circuit; -c scopes)"},
 	{"start | stop | delete [<name>]", "Lifecycle shortcuts; bare drops into the cross-circuit kart picker"},
 	{"kart <verb> <name>", "Full lifecycle: start / stop / restart / recreate / rebuild / delete / logs / info / enable / disable"},
+	{"ports [<verb>]", "Workstation-side TCP port forwards (list/add/rm/remap/up/down/status)"},
 	{"ai", "Launch Claude Code on the circuit"},
 	{"skill [<name> [prompt]]", "Pick / invoke a Claude skill (`drift skills` to list)"},
 	{"run [<name>]", "Execute a user-script shorthand (`drift runs` to list)"},

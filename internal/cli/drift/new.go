@@ -137,7 +137,7 @@ func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 		fmt.Fprintf(io.Stderr, "warning: %s\n", result.Warning)
 	}
 	if shouldAutoConnect(cmd, root, io) {
-		return doConnect(ctx, io, root, deps, circuit, result.Name, false, false,
+		return doConnect(ctx, io, root, deps, circuit, result.Name, false, false, false,
 			nil)
 	}
 	return 0

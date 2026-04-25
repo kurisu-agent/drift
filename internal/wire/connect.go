@@ -2,9 +2,14 @@ package wire
 
 // KartConnectParams asks lakitu to build the exact remote command the
 // client should pass to `ssh -t` / `mosh --` to attach to the kart.
-// Name is the kart to connect to.
+// Name is the kart to connect to. Stdio asks for a stdio-tunneling
+// variant (`devpod ssh --stdio`) suitable for use as an SSH
+// ProxyCommand (e.g. drift's `Host drift.*.*` wildcard alias) — needed
+// so callers can `ssh drift.<circuit>.<kart>` directly without
+// rebuilding the env prefix on the workstation.
 type KartConnectParams struct {
-	Name string `json:"name"`
+	Name  string `json:"name"`
+	Stdio bool   `json:"stdio,omitempty"`
 }
 
 // KartConnectResult: Argv is the remote-command token sequence the client
@@ -22,4 +27,10 @@ type KartConnectParams struct {
 // upgrades are smooth in either direction.
 type KartConnectResult struct {
 	Argv []string `json:"argv"`
+	// ForwardPorts mirrors the `forwardPorts` array from the kart's
+	// resolved devcontainer.json. The client unions these into its
+	// ports.yaml with source=devcontainer so they survive across
+	// sessions and don't depend on devpod's per-shell forward injection.
+	// Empty / missing is a normal "no auto-forwards" case, not an error.
+	ForwardPorts []int `json:"forward_ports,omitempty"`
 }

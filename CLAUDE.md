@@ -79,6 +79,32 @@ Drift is pre-1.0 (currently v0.n). Don't write backwards-compat shims, migration
 
 Revisit this rule when tagging v1.0.
 
+# Client / server boundary — keep `drift` thin
+
+When designing a new feature, default to putting the logic on **lakitu** (server, on the circuit). Reach for `drift` (workstation client) only for the parts that *fundamentally* have to live on the user's box: rendering UI, reading workstation-local state (config files, ports.yaml, ~/.ssh/config), opening interactive sessions, and binding workstation-side ports.
+
+Why: lakitu already speaks devpod, owns `DEVPOD_HOME`, knows each kart's container user / image / mounts, has access to the chest, and runs as a known account on a known OS. Replicating any of that on the workstation means reimplementing it across macOS / Linux / Termux, plus negotiating the wildcard `Host drift.<c>.<k>` ssh alias (which has its own user-mapping headaches per upstream image) instead of just calling an RPC. A `lakitu` change ships in one binary; a `drift` change ships in three.
+
+The repeated tell: *"to do X, drift would need to ssh into the kart and …"*. Stop. Add a `kart.X` RPC instead. The server already knows how to reach the kart; the client just calls it. `kart.probe_ports` is the canonical example — `ss -tlnH` runs server-side, the client only renders the picker and writes ports.yaml.
+
+Counter-cases (legitimately client-side):
+- The interactive shell of `drift connect` — has to attach to the user's terminal.
+- The actual workstation listener (`ssh -L`, `-O forward`) — only the workstation can bind a workstation port.
+- ports.yaml itself — per-workstation state by design (per plan 13).
+- ssh_config writes — the user's local ssh setup.
+
+Everything else: lakitu.
+
+# Building drift binaries by hand
+
+Plain `go build ./cmd/drift` inside `nix develop` produces a binary dynamically linked against the nix-store glibc (`/nix/store/.../ld-linux-x86-64.so.2`). That works on this dev VM, but `drift update <devvm>:/path/to/binary` ships it to a different host whose loader path doesn't exist, and the kernel rejects it as `command not found` even after `chmod +x`. Goreleaser builds with `CGO_ENABLED=0` for exactly this reason; ad-hoc hand-builds need the same flag:
+
+```
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o bin-drift ./cmd/drift
+```
+
+`file bin-drift` should report `statically linked` and resolve to ~12 MiB stripped. If it says `dynamically linked, interpreter /nix/store/...`, the binary won't run anywhere except the build host. This applies to ad-hoc `drift update` source binaries; CI / release tarballs are unaffected because goreleaser already pins `CGO_ENABLED=0`.
+
 # External repo references
 
 Never reference other repositories, organisations, or user handles in anything that lands in this repo — commits, code, docs, plans, commit messages, tests, examples. Only this repo (`kurisu-agent/drift`) and its dependencies may appear. Unless the user explicitly requires it in the current turn, use generic placeholders (`example-org`, `<your-org>`, etc.) in examples and documentation.

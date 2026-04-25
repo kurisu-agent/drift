@@ -11,6 +11,7 @@ import (
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
+	"github.com/kurisu-agent/drift/internal/wire"
 )
 
 // sshProxyCmd is invoked by OpenSSH as the ProxyCommand for the wildcard
@@ -42,7 +43,41 @@ func runSSHProxy(ctx context.Context, io IO, _ *CLI, cmd sshProxyCmd, deps deps)
 		))
 	}
 
-	return execSSHProxy(ctx, io, "ssh", []string{"drift." + circuit, "devpod", "ssh", kart, "--stdio"})
+	// Ask lakitu to build the same env-prefixed argv `drift connect`
+	// would use, but in stdio-tunnel mode. Without this, a bare
+	// `devpod ssh <kart> --stdio` runs without DEVPOD_HOME and devpod
+	// fails to find lakitu's workspace tree under ~/.drift/devpod —
+	// surfacing as ssh's cryptic "Connection closed by UNKNOWN port
+	// 65535" the moment the proxy command exits.
+	//
+	// Only fall back to the legacy bare argv on an older lakitu
+	// (method_not_found) — other RPC errors (network, auth, server-
+	// side bug) are propagated so the user sees the real cause instead
+	// of a silent downgrade that fails the same way the old path did.
+	var res wire.KartConnectResult
+	rpcErr := deps.call(ctx, circuit, wire.MethodKartConnect,
+		wire.KartConnectParams{Name: kart, Stdio: true}, &res)
+	argv := []string{"drift." + circuit}
+	switch {
+	case rpcErr == nil:
+		argv = append(argv, res.Argv...)
+	case isMethodNotFound(rpcErr):
+		argv = append(argv, "devpod", "ssh", kart, "--stdio")
+	default:
+		return errfmt.Emit(io.Stderr, rpcErr)
+	}
+	return execSSHProxy(ctx, io, "ssh", argv)
+}
+
+// isMethodNotFound reports whether a deps.call error came from an
+// older lakitu that doesn't know the requested RPC. The connect
+// package handles the same compat downshift inside fetchConnectArgv;
+// the ssh-proxy mirrors the check so users of older circuits still
+// get the legacy argv while users of current circuits hitting a
+// transient error see the real cause.
+func isMethodNotFound(err error) bool {
+	var rpcErr *rpcerr.Error
+	return errors.As(err, &rpcErr) && rpcErr.Type == "method_not_found"
 }
 
 // parseKartAlias validates both names against the shared regex so invalid

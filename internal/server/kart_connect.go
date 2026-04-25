@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 
 	"github.com/kurisu-agent/drift/internal/devpod"
+	"github.com/kurisu-agent/drift/internal/kart"
+	"github.com/kurisu-agent/drift/internal/name"
 	"github.com/kurisu-agent/drift/internal/rpc"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/wire"
@@ -30,8 +32,14 @@ import (
 // An older lakitu without this method returns `method_not_found`; the
 // client then falls back to the pre-kart.connect hand-built shape.
 func (d KartDeps) kartConnectHandler(ctx context.Context, params json.RawMessage) (any, error) {
-	p, err := bindLifecycleParams(params, "kart.connect")
-	if err != nil {
+	var p wire.KartConnectParams
+	if err := rpc.BindParams(params, &p); err != nil {
+		return nil, err
+	}
+	if p.Name == "" {
+		return nil, rpcerr.UserError(rpcerr.TypeInvalidFlag, "kart.connect: name is required")
+	}
+	if err := name.Validate("kart", p.Name); err != nil {
 		return nil, err
 	}
 	if d.Devpod == nil {
@@ -51,11 +59,18 @@ func (d KartDeps) kartConnectHandler(ctx context.Context, params json.RawMessage
 			"kart %q not found", p.Name).With("kart", p.Name)
 	}
 
-	argv := buildKartConnectArgv(d.Devpod, p.Name)
+	argv := buildKartConnectArgv(d.Devpod, p.Name, p.Stdio)
 
 	// Reuse the same chest-backed session env resolution kart.session_env
 	// does so a single kart.connect gives the client everything it needs.
-	envResult, err := d.kartSessionEnvHandler(ctx, params)
+	// Re-marshal a name-only payload because session_env binds via the
+	// strict KartLifecycleParams (DisallowUnknownFields) and would reject
+	// kart.connect-specific fields like `stdio` if passed verbatim.
+	sessionParams, err := json.Marshal(KartLifecycleParams{Name: p.Name})
+	if err != nil {
+		return nil, rpcerr.Internal("kart.connect: marshal session env params: %v", err)
+	}
+	envResult, err := d.kartSessionEnvHandler(ctx, sessionParams)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +80,10 @@ func (d KartDeps) kartConnectHandler(ctx context.Context, params json.RawMessage
 		}
 	}
 
-	return wire.KartConnectResult{Argv: argv}, nil
+	return wire.KartConnectResult{
+		Argv:         argv,
+		ForwardPorts: kart.ProbeForwardPorts(p.Name),
+	}, nil
 }
 
 // buildKartConnectArgv produces the bare `env DEVPOD_HOME=... devpod ssh
@@ -82,7 +100,7 @@ func (d KartDeps) kartConnectHandler(ctx context.Context, params json.RawMessage
 // devpod dials it (mosh-server detaches, outer ssh closes, sshd unlinks
 // the socket), causing `devpod ssh` to exit fatal before the session
 // starts.
-func buildKartConnectArgv(c *devpod.Client, kart string) []string {
+func buildKartConnectArgv(c *devpod.Client, kart string, stdio bool) []string {
 	binary := devpod.DefaultBinary
 	if c != nil && c.Binary != "" {
 		binary = c.Binary
@@ -92,6 +110,9 @@ func buildKartConnectArgv(c *devpod.Client, kart string) []string {
 		argv = append(argv, "env", "DEVPOD_HOME="+c.DevpodHome)
 	}
 	argv = append(argv, binary, "ssh", kart, "--agent-forwarding=false")
+	if stdio {
+		argv = append(argv, "--stdio")
+	}
 	return argv
 }
 

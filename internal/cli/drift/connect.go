@@ -24,6 +24,7 @@ type connectCmd struct {
 	SSHArgs      []string `arg:"" optional:"" passthrough:"" help:"Extra flags forwarded to ssh (e.g. -- -i ~/.ssh/id_lab). Under mosh, wrapped into --ssh=\"ssh …\" for the bootstrap."`
 	SSH          bool     `name:"ssh" help:"Force plain SSH (skip mosh)."`
 	ForwardAgent bool     `name:"forward-agent" help:"Enable SSH agent forwarding (-A)."`
+	NoForwards   bool     `name:"no-forwards" help:"Skip the workstation-side ports reconcile for this session only."`
 }
 
 // circuitKart pairs a listEntry with the circuit it was fetched from, so
@@ -56,7 +57,7 @@ func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps
 		if err != nil {
 			return errfmt.Emit(io.Stderr, err)
 		}
-		return doConnect(ctx, io, root, deps, circuit, cmd.Name, cmd.SSH, cmd.ForwardAgent,
+		return doConnect(ctx, io, root, deps, circuit, cmd.Name, cmd.SSH, cmd.ForwardAgent, cmd.NoForwards,
 			expandCLISSHArgs(cmd.SSHArgs))
 	}
 
@@ -75,7 +76,7 @@ func runConnect(ctx context.Context, io IO, root *CLI, cmd connectCmd, deps deps
 		return doCircuitConnect(ctx, io, root, choice.Circuit, cmd.SSH, cmd.ForwardAgent,
 			expandCLISSHArgs(cmd.SSHArgs))
 	}
-	return doConnect(ctx, io, root, deps, choice.Circuit, choice.Kart, cmd.SSH, cmd.ForwardAgent,
+	return doConnect(ctx, io, root, deps, choice.Circuit, choice.Kart, cmd.SSH, cmd.ForwardAgent, cmd.NoForwards,
 		expandCLISSHArgs(cmd.SSHArgs))
 }
 
@@ -88,7 +89,7 @@ func runKartConnect(ctx context.Context, io IO, root *CLI, cmd kartConnectCmd, d
 		if err != nil {
 			return errfmt.Emit(io.Stderr, err)
 		}
-		return doConnect(ctx, io, root, deps, circuit, cmd.Name, cmd.SSH, cmd.ForwardAgent,
+		return doConnect(ctx, io, root, deps, circuit, cmd.Name, cmd.SSH, cmd.ForwardAgent, cmd.NoForwards,
 			expandCLISSHArgs(cmd.SSHArgs))
 	}
 	if !stdinIsTTY(io.Stdin) || !stdoutIsTTY(io.Stdout) || root.Output == "json" {
@@ -102,7 +103,7 @@ func runKartConnect(ctx context.Context, io IO, root *CLI, cmd kartConnectCmd, d
 	if !ok {
 		return 0
 	}
-	return doConnect(ctx, io, root, deps, pickedCircuit, pickedKart, cmd.SSH, cmd.ForwardAgent,
+	return doConnect(ctx, io, root, deps, pickedCircuit, pickedKart, cmd.SSH, cmd.ForwardAgent, cmd.NoForwards,
 		expandCLISSHArgs(cmd.SSHArgs))
 }
 
@@ -563,7 +564,7 @@ func doCircuitConnect(ctx context.Context, io IO, root *CLI, circuit string, for
 // auto-connect path of `drift new`. Both paths have already resolved the
 // circuit, so the helper takes it as a parameter instead of re-resolving.
 // sshArgs holds the already-merged (config + CLI passthrough) flag list.
-func doConnect(ctx context.Context, io IO, root *CLI, deps deps, circuit, name string, forceSSH, forwardAgent bool, sshArgs []string) int {
+func doConnect(ctx context.Context, io IO, root *CLI, deps deps, circuit, name string, forceSSH, forwardAgent, noForwards bool, sshArgs []string) int {
 	// Drift-check preamble: if the kart's tune has changed since the
 	// container was built, give the user a chance to rebuild before
 	// connecting. Non-TTY or json paths print a warning and proceed.
@@ -580,7 +581,8 @@ func doConnect(ctx context.Context, io IO, root *CLI, deps deps, circuit, name s
 		Call: deps.call,
 		// Stop the spinner right before Exec takes the TTY so it doesn't
 		// race the interactive child for cursor control.
-		OnReady: ph.Stop,
+		OnReady:    ph.Stop,
+		BeforeExec: makeBeforeExecPortsHook(io, root, circuit, name, noForwards),
 	}
 	opts := connect.Options{
 		Circuit:      circuit,
