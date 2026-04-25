@@ -15,6 +15,7 @@ import (
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/config"
 	"github.com/kurisu-agent/drift/internal/devpod"
+	"github.com/kurisu-agent/drift/internal/docker"
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/kart"
 	"github.com/kurisu-agent/drift/internal/rpc"
@@ -242,12 +243,17 @@ func registerDevpodBacked(ctx context.Context, reg *rpc.Registry, garage string,
 	pinnedBin := resolvePinnedDevpod(ctx)
 	lifeDeps := &server.Deps{GarageDir: garage}
 	dev := &devpod.Client{Binary: pinnedBin, Mirror: mirror, DevpodHome: driftDevpod}
+	// Bare docker.Client (no Mirror) — `docker ps` is read-only and runs
+	// on every kart.list / server.status, so quiet by default.
+	dock := &docker.Client{}
 	kartDeps := server.KartDeps{
 		Devpod:    dev,
+		Docker:    dock,
 		GarageDir: garage,
 		OpenChest: lifeDeps.OpenChestForLifecycle,
 	}
 	server.RegisterKart(reg, kartDeps)
+	server.RegisterServerStatus(reg, kartDeps)
 	server.RegisterKartLifecycle(reg, kartDeps)
 	server.RegisterKartConnect(reg, kartDeps)
 	server.RegisterKartMigrate(reg, server.KartMigrateDeps{KartDeps: kartDeps})
@@ -280,7 +286,8 @@ func methodNeedsDevpod(method string) bool {
 		wire.MethodKartDelete, wire.MethodKartList,
 		wire.MethodKartInfo, wire.MethodKartEnable, wire.MethodKartDisable,
 		wire.MethodKartLogs, wire.MethodKartSessionEnv,
-		wire.MethodKartMigrateList, wire.MethodKartConnect:
+		wire.MethodKartMigrateList, wire.MethodKartConnect,
+		wire.MethodServerStatus:
 		return true
 	}
 	return false
