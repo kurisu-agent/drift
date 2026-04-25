@@ -85,6 +85,41 @@ var scenarios = []scenario{
 			o.LogsFollowDefault = &f
 		},
 	},
+	{
+		name:        "palette-open",
+		tab:         "cross-cut",
+		description: "command palette open over the status tab, with a query pre-typed so the highlighted match is visible",
+		apply: func(o *dashboard.Options, _, _ *int) {
+			o.Overlay = "palette"
+			o.OverlayPayload = "kart"
+		},
+	},
+	{
+		name:        "help-modal",
+		tab:         "cross-cut",
+		description: "help modal open over the status tab; key+description grid with the brand-accent border",
+		apply: func(o *dashboard.Options, _, _ *int) {
+			o.Overlay = "help"
+		},
+	},
+	{
+		name:        "toast-success",
+		tab:         "cross-cut",
+		description: "success toast bottom-right; success border, success-tinted glyph, default-text message",
+		apply: func(o *dashboard.Options, _, _ *int) {
+			o.Overlay = "toast-success"
+			o.OverlayPayload = "kart restart queued"
+		},
+	},
+	{
+		name:        "toast-error",
+		tab:         "cross-cut",
+		description: "error toast bottom-right; error border, error-tinted glyph, default-text message",
+		apply: func(o *dashboard.Options, _, _ *int) {
+			o.Overlay = "toast-error"
+			o.OverlayPayload = "kart restart failed: lakitu auth refused"
+		},
+	},
 }
 
 // withPortConflict wraps a DataSource and injects an extra port row

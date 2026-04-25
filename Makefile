@@ -117,6 +117,10 @@ eval-screens:
 	render logs default; \
 	render logs follow-on; \
 	render logs filter-active; \
+	render cross-cut palette-open; \
+	render cross-cut help-modal; \
+	render cross-cut toast-success; \
+	render cross-cut toast-error; \
 	render cross-cut narrow-80c 80 30
 
 # eval-loop is convenience: capture + print the rubric path so an

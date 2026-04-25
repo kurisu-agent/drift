@@ -74,6 +74,13 @@ type Options struct {
 	// runs default to follow=true; the eval-screens loop uses this
 	// to capture the paused-vs-follow scenarios.
 	LogsFollowDefault *bool
+
+	// Overlay seeds one of the cross-cut overlays (palette / help /
+	// toast-success / toast-error) for the eval-screens loop. Live
+	// runs leave this empty; ':' '?' and the toast-emit hooks are
+	// the keyboard / RPC entry points.
+	Overlay        string
+	OverlayPayload string
 }
 
 // DataSource is the small surface every panel calls into. Implementations
@@ -115,6 +122,23 @@ type model struct {
 
 	tab    Tab
 	panels [tabCount]Panel
+
+	// Cross-cut overlay state. Only one modal (palette or help) is
+	// open at a time; toasts are non-modal and may stack.
+	paletteOpen  bool
+	paletteQuery string
+	helpOpen     bool
+	toast        *activeToast
+}
+
+// activeToast is one transient confirmation rendered bottom-right.
+// kind drives the chrome (success / warn / error); message is the
+// inline body. TTL handling for live runs is left for the keyboard /
+// RPC entry path; the eval-screens loop uses this struct to capture
+// a still frame.
+type activeToast struct {
+	kind    string
+	message string
 }
 
 func newModel(o Options) *model {
@@ -124,6 +148,23 @@ func newModel(o Options) *model {
 	hp := help.New()
 	hp.Styles = helpStylesFor(o.Theme)
 	m := &model{o: o, t: o.Theme, tab: o.InitialTab, help: hp}
+	switch o.Overlay {
+	case "palette":
+		m.paletteOpen = true
+		m.paletteQuery = o.OverlayPayload
+	case "help":
+		m.helpOpen = true
+	case "toast-success":
+		m.toast = &activeToast{kind: "success", message: o.OverlayPayload}
+		if m.toast.message == "" {
+			m.toast.message = "kart restart queued"
+		}
+	case "toast-error":
+		m.toast = &activeToast{kind: "error", message: o.OverlayPayload}
+		if m.toast.message == "" {
+			m.toast.message = "kart restart failed: lakitu auth refused"
+		}
+	}
 	m.panels[TabStatus] = newStatusPanel(o)
 	m.panels[TabKarts] = newKartsPanel(o)
 	m.panels[TabCircuits] = newCircuitsPanel(o)
@@ -158,9 +199,28 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 	case tea.KeyPressMsg:
+		// Overlay-handling first: while a modal is open, esc closes
+		// it and routes nothing else to the panel.
+		if m.paletteOpen || m.helpOpen {
+			if key.Matches(msg, ui.Keys.Escape) {
+				m.paletteOpen = false
+				m.helpOpen = false
+				m.paletteQuery = ""
+				return m, nil
+			}
+		}
 		switch {
 		case key.Matches(msg, ui.Keys.Quit, ui.Keys.ForceQuit):
 			return m, tea.Quit
+		case key.Matches(msg, ui.Keys.Help):
+			m.helpOpen = !m.helpOpen
+			m.paletteOpen = false
+			return m, nil
+		case key.Matches(msg, ui.Keys.Palette):
+			m.paletteOpen = !m.paletteOpen
+			m.helpOpen = false
+			m.paletteQuery = ""
+			return m, nil
 		case key.Matches(msg, ui.Keys.Tab):
 			m.tab = (m.tab + 1) % tabCount
 			return m, nil
@@ -215,7 +275,82 @@ func (m *model) View() tea.View {
 	inner := lipgloss.JoinVertical(lipgloss.Left, bar, body, footer)
 
 	outer := outerBorderStyle(m.t).Render(inner)
+	outer = m.composeOverlays(outer)
 	return ui.AltScreenView(outer)
+}
+
+// composeOverlays stamps any active palette / help modal / toast onto
+// the rendered frame. The frame is a string of newline-separated
+// rows; overlay blocks are spliced in at known cell coordinates.
+// Order matters: palette and help are mutually exclusive (only one
+// modal at a time); toasts are non-modal and overlay on top.
+func (m *model) composeOverlays(frame string) string {
+	switch {
+	case m.paletteOpen:
+		over := renderPalette(m.t, m.paletteQuery, m.width)
+		x, y := centerOffset(frame, over)
+		frame = overlayOnto(frame, over, x, y)
+	case m.helpOpen:
+		over := renderHelpModal(m.t, m.width)
+		x, y := centerOffset(frame, over)
+		frame = overlayOnto(frame, over, x, y)
+	}
+	if m.toast != nil {
+		over := renderToast(m.t, m.toast.kind, m.toast.message)
+		x, y := bottomRightOffset(frame, over)
+		frame = overlayOnto(frame, over, x, y)
+	}
+	return frame
+}
+
+// centerOffset returns the (x, y) cell coordinates that center the
+// overlay over the frame. Negative results clamp to 0.
+func centerOffset(frame, overlay string) (int, int) {
+	frameLines := strings.Split(frame, "\n")
+	overLines := strings.Split(overlay, "\n")
+	frameH := len(frameLines)
+	frameW := 0
+	for _, l := range frameLines {
+		if w := lipgloss.Width(l); w > frameW {
+			frameW = w
+		}
+	}
+	overW := lipgloss.Width(overLines[0])
+	overH := len(overLines)
+	x := (frameW - overW) / 2
+	y := (frameH - overH) / 2
+	if x < 0 {
+		x = 0
+	}
+	if y < 0 {
+		y = 0
+	}
+	return x, y
+}
+
+// bottomRightOffset anchors a toast against the bottom-right of the
+// frame, leaving room for the outer border + footer + padding.
+func bottomRightOffset(frame, overlay string) (int, int) {
+	frameLines := strings.Split(frame, "\n")
+	overLines := strings.Split(overlay, "\n")
+	frameH := len(frameLines)
+	frameW := 0
+	for _, l := range frameLines {
+		if w := lipgloss.Width(l); w > frameW {
+			frameW = w
+		}
+	}
+	overW := lipgloss.Width(overLines[0])
+	overH := len(overLines)
+	x := frameW - overW - 2
+	y := frameH - overH - 3 // outer border row + footer row + padding
+	if x < 0 {
+		x = 0
+	}
+	if y < 0 {
+		y = 0
+	}
+	return x, y
 }
 
 // outerBorderStyle is the rounded chrome that wraps the whole dashboard.
