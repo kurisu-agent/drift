@@ -300,6 +300,31 @@ Keep:
 
 `go.sum` will churn. `make ci` covers `go mod tidy` regression.
 
+### Demo mode + README GIF
+
+The README ships an animated GIF of the dashboard rendered against canned fixture data, regenerated automatically and validated in CI so the asset can't silently drift from the real UI.
+
+**Demo mode.** A hidden flag — `drift dashboard --demo` (or `DRIFT_DEMO=1`) — swaps the live RPC and config sources for a fixture loader. The fixture set lives in `internal/demo/fixtures/` and is *the same data the integration tests consume*: a small Go package (`internal/demo/fixtures.go`) exposes constructors that both the demo dashboard and integration tests import. One source of truth for "what does drift's world look like for testing." Editing a fixture (adding a circuit, a kart, an activity entry) changes both the integration test inputs and what the GIF shows — they can't disagree.
+
+The demo path is otherwise indistinguishable from the live path: same theme, same tab routing, same key bindings, same teatest hooks. Only the data source is swapped. This means demo-mode bugs are real bugs.
+
+**vhs tape.** A `docs/dashboard.tape` script drives the demo dashboard — opens the tab tour, scrolls the activity table, expands a kart row, jumps tabs, quits. Owned by the project; reviewed like code. `make readme-gif` runs `vhs docs/dashboard.tape` and writes `docs/dashboard.gif`, which the README references via `![dashboard](docs/dashboard.gif)`.
+
+**Validation in CI.** Two-layer:
+
+1. **Smoke** — the CI matrix runs `make readme-gif` and asserts it exits cleanly. Catches "the demo crashes" / "the tape script references a removed binding" / "vhs can't find a font" — all the build-level breakage.
+2. **Frame equality** — a teatest test (`internal/cli/ui/dashboard/dashboard_demo_test.go`) replays the *same key sequence* the vhs tape uses against the same fixtures, captures rendered frames at every checkpoint, and golden-files them under `testdata/demo/`. This catches "the dashboard's output changed" without depending on vhs's non-deterministic GIF encoding. The teatest run is the actual regression gate; the vhs run is the docs build.
+
+**GIF freshness.** The committed `docs/dashboard.gif` is treated as a binary docs asset, not a regression target. Devs regenerate it by hand (`make readme-gif`) when the UI changes meaningfully; PR reviewers can spot a stale GIF via the teatest goldens that *did* update. We don't gate CI on byte-equality of the GIF itself — vhs encoding has timing jitter and that fight isn't worth winning. If the goldens changed and the GIF didn't get regenerated, the worst case is a slightly outdated README, fixable in a one-line follow-up.
+
+**Tooling additions:**
+
+- `vhs` — installed in the dev shell (`flake.nix`) and the CI image.
+- `make readme-gif` target — wraps the vhs invocation; checks for `vhs` on PATH; produces `docs/dashboard.gif`.
+- `internal/demo/` package — fixture loader shared with `integration/`.
+
+The make target and the demo flag are small additions to the giant PR. The vhs tape and the first GIF land alongside.
+
 ### Testing
 
 The bubbletea framework unlocks a class of tests we don't have today. The lever is `charm.land/x/teatest`, which drives a `tea.Program` programmatically: scripted keystrokes in, captured frames out, golden-file diffs as assertions.
@@ -350,14 +375,22 @@ internal/cli/ui/
     nocolor.go              NO_COLOR assertion helper
 internal/cli/ui/dashboard/
   dashboard_test.go         full-program teatest scenarios
+  dashboard_demo_test.go    replays the docs/dashboard.tape key sequence (regression gate for the GIF)
   testdata/
     happy-path.golden
     karts-filter-restart.golden
     chest-expand.golden
+    demo/                   golden frames for the README GIF replay
     ...
   panels/
     karts_test.go           component-level
     chest_test.go           ...
+internal/demo/
+  fixtures.go               shared test/demo data (also imported by integration/)
+  fixtures_test.go
+docs/
+  dashboard.tape            vhs script driving --demo
+  dashboard.gif             rendered output (binary asset, regenerated via `make readme-gif`)
 ```
 
 ## Delivery
@@ -372,7 +405,8 @@ What goes in the single PR, in implementation order (each step's diff stays revi
 4. **Logs.** Wire `github.com/charmbracelet/log` through `drift logs`. Migrate the JSONL/plain-line decode path off `slogfmt.Emit` onto the new logger. Delete `internal/slogfmt` once the last caller is gone.
 5. **Bubbletea infra.** `ui/tea.go` (program helpers, signal/ctx wiring), shared `viewport`. Reimplement `drift menu` on `bubbles/list`.
 6. **Dashboard.** `drift dashboard` with all eight tabs (status, karts, circuits, chest, characters, tunes, ports, logs) and lifecycle actions on the karts tab wired through confirmation modals. Chest/characters/tunes are read-only and share a `ResourcePanel[T]` generic. The logs tab uses the charmbracelet/log path landed in step 4. Ports tab embeds the same model plan 13's standalone `drift ports` TUI uses — coordinate the merge order with plan 13 so the import isn't a phantom; if plan 13 lands first, this PR consumes it; if not, this PR ships the ports panel against a stub interface that plan 13 implements. Banner and Tmplr-Rounded const live in `internal/cli/ui/dashboard/banner.go`. Bare `drift` is rewired to open the dashboard.
-7. **Tests + cleanup.** `teatest` golden frames for the dashboard happy paths, `NO_COLOR` regression test, `DetectMode` matrix tests, dependency tidy. `make ci && make integration` green before merge.
+7. **Demo mode + README GIF.** Add `internal/demo/fixtures.go`, the `--demo` flag on `drift dashboard`, the `docs/dashboard.tape` vhs script, and the `make readme-gif` target. Land the first `docs/dashboard.gif` and reference it in the README. Add the teatest demo-replay test that mirrors the tape's key sequence (the actual regression gate).
+8. **Tests + cleanup.** `teatest` golden frames for the dashboard happy paths, `NO_COLOR` regression test, `DetectMode` matrix tests, dependency tidy. `make ci && make integration` green before merge.
 
 Things deliberately deferred out of even the giant PR (would balloon the scope without paying for itself): `glamour`-rendered `drift help <topic>` (separate, optional), mouse-driven interaction in the dashboard. These are listed in non-goals or open questions; they can land as small follow-ups whenever someone wants them.
 
