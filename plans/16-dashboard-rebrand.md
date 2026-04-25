@@ -126,90 +126,37 @@ Per-page sections add panel-specific checks (e.g. status panel: stats block alig
 
 The snapshot tests (`internal/cli/ui/dashboard/snapshot_test.go`) catch byte-level regressions; rebaseline with `go test ./internal/cli/ui/dashboard/... -update` after intentional UI changes. The rubric catches visual regressions snapshots cannot see.
 
-## Per-tab redesign targets
+## Per-tab targets
 
-Each subsection lists rubric-checked applications of the brand guidelines. Sketches are shape-only; the implementation follows lipgloss / bubbles idioms when they conflict with the sketch.
+Each panel gets a short brief: what it should communicate and what the rubric checks. Implementation choices stay with whoever's working the panel; if the rubric passes and the brand guidelines hold, the panel's done. Don't read these as recipes.
 
 ### status
 
-The flagship tab. Banner + stats block in the top row; activity table below. Apply:
-
-- Banner block: existing harmonica entrance; refine gradient stops to use `gradient-rainbow` exactly. Lockup alignment: top of "drift {version}" aligns with row 1 of the wordmark; bottom tagline aligns with row 3.
-- Stats block: right-aligned, three lines, format `N / M label` with N bold in `theme.Text.Primary`, M in `theme.Text.Muted`, label in `theme.Text.Subtle`. Inline icons before label: `IconCircuit` / `IconKart` / `IconPort`.
-- Activity table: TIME column right-aligned in `theme.Text.Subtle`; ACTION column with inline status icon + label; KART column showing `<circuit>.<kart>` with `IconBullet` between or `—` for global; DETAIL in `theme.Text.Muted`. Row spacing 0.
-- Refresh: 10s ticker for stats; activity is event-driven.
+Flagship tab. Banner and at-a-glance stats up top, recent activity below. The eye should land on the wordmark first, then on the stats block, then on the most recent activity row. Refresh is cheap (stats on a slow ticker; activity event-driven).
 
 ### karts
 
-Cross-circuit kart table. Apply:
-
-- Status pill column (`theme.Pill`): `running` mint bg / `stopped` muted / `stale` amber / `error` coral. Pill is leftmost column.
-- Name column: `<circuit>.<kart>` with circuit half in `theme.Text.Subtle`, kart half in `theme.Text.Primary`.
-- Image column: `theme.Text.Muted`, monospaced.
-- Last-active column: relative time in `theme.Text.Subtle`.
-- Selected row: left bar `theme.Border.Focus`, no bg change.
-- Filter (`/`): inline footer prompt; non-matching rows dim via `StyleLineFunc`, do not collapse (per research doc, wander pattern).
-- Empty state: centered, `theme.Text.Muted`, single sentence.
+Cross-circuit kart table. State is the most important column; whichever way it's rendered (pill, inline icon, colored cell), running/stopped/stale/error should be scannable in one pass. Filter is `/` and dims non-matches rather than collapsing them. Empty state is one short sentence.
 
 ### circuits
 
-Circuit-level admin. Apply:
+Circuit-level admin. Each row carries the per-circuit color tint somewhere visible. Default circuit is marked. Reachability is obvious. Add / delete / set-default / rename are reachable from the panel.
 
-- Per-circuit color tint visible in a left-bar gutter on each row, drawn from circuit `color` config.
-- Default-circuit row prefixed with `IconStar` in `theme.Accent.Primary`.
-- Reachability column with `IconRunning` / `IconUnreachable` and label.
-- `space` to set default, `enter` to drill into per-circuit detail, `a` to add (inline), `d` to delete (confirm modal).
+### chest, characters, tunes
 
-### chest
-
-Read-only env-refs. Apply:
-
-- Inline note at panel top: "authoring stays in lakitu chest …" in `theme.Text.Subtle` italic.
-- Table: name (primary), backend (muted), last-used (subtle), used-by-karts (muted with count badge).
-- Row expand on `enter`: backend resolver detail block plus cross-link to kart references in `theme.Text.Muted`.
-
-### characters
-
-Same shape as chest. Apply:
-
-- Inline note: "authoring stays in lakitu character edit".
-- Table: name, git name, git email, PAT ref, kart count.
-- Row expand: container username, dotfiles, kart references.
-
-### tunes
-
-Same shape as chest. Apply:
-
-- Inline note: "authoring stays in lakitu tune edit".
-- Table: name, base image, feature count, used-by-karts.
-- Row expand: full devcontainer fragment in a viewport, syntax-styled (lipgloss multi-line render, no glamour for now).
+Three read-only resource panels sharing one shape. Each makes clear that authoring lives in `lakitu` over ssh, not here. Row expand on `enter` shows the resource's detail (resolver / git identity / devcontainer fragment respectively).
 
 ### ports
 
-Active forwards + remaps. Apply:
-
-- Direction column with `IconConnect` arrow direction explicit (`:3000` dim → `:3000` primary).
-- Conflict state in coral with `IconError` prefix when host port collides.
-- Add (`a`) / delete (`d`) inline form at footer.
-- (Data wiring stays out of plan 16; the panel renders demo fixtures only.)
+Active forwards plus remaps. Direction of forwarding is unambiguous. Host-port conflicts are visually obvious. Add / remove reachable inline. Real data wiring stays out of plan 16; demo fixtures only.
 
 ### logs
 
-Kart picker on top, scrollable viewport below. Apply:
+Kart picker plus scrolling viewport. Timestamps and levels are visible without crowding the message. Follow mode has a clear on/off indicator. Filter dims non-matches inline. Real data wiring deferred; fixture content only.
 
-- Kart picker: compact one-line list with selected row highlighted via left bar.
-- Viewport: `bubbles/v2/viewport` with `LeftGutterFunc` rendering timestamp `15:04:05` in `theme.Text.Subtle` followed by level pill.
-- Level badge column: `INFO` / `WARN` / `ERROR` rendered as small pills in `theme.Status.*` bg.
-- Follow indicator: `IconRunning` in `theme.Accent.Primary` next to "follow" in the panel title when on; otherwise dim.
-- Filter (`/`): inline; non-matching lines dim via `StyleLineFunc`.
-- (Real data wiring deferred; panel renders fixture log content only.)
+### Cross-cut: command palette, help modal, toasts
 
-### Cross-cut: command palette and help modal
-
-Both are dialogs from the dialog stack. Apply:
-
-- Command palette (`:` global): textinput at top in primary, filterable list below grouped by category (System / Karts / Ports / Tunes / Skills). Per-row icon + label + dim shortcut hint. Press enter to dispatch.
-- Help modal (`?`): two-column layout, left = global keys, right = active-tab keys. Same dialog chrome.
+`:` opens a fuzzy command palette over the current tab. `?` opens a help modal. Toasts appear bottom-right for transient confirmations and errors. All three are dialogs / overlays, share chrome, and behave consistently across tabs.
 
 ## Long-running agent flow
 
@@ -227,30 +174,13 @@ The agent should not block panels on each other. The brand guidelines are the co
 
 ## Architecture notes
 
-### Theme construction
+Sketches, not prescriptions. Organize the code however reads best when you're in it.
 
-`internal/cli/ui/theme.go` grows into a small package: `theme/tokens.go` (palette), `theme/groupings.go` (semantic), `theme/components.go` (per-component sub-structs). One `New(isDark bool, profile colorprofile.Profile, circuitColor *color.Color)` constructor materializes the whole tree. Caller pattern:
-
-```go
-t := theme.New(bg.IsDark, prof, currentCircuit.Color)
-panel := t.Panel.Border.Render(...)
-```
-
-### Icon registry rewrite
-
-`internal/cli/ui/icons.go` switches all `rune` constants to Nerd Font code points. The `Icon()` helper drops its `DRIFT_NO_NERDFONT` branch. Hair-space wrapping (`Icon(IconRunning) + " " + label`) becomes the convention; consider a small `IconLabel(IconRunning, "running")` helper that handles the spacing once.
-
-### Dialog stack
-
-`internal/cli/ui/dashboard/dialog/` (new package). `Overlay` struct holds a `[]Dialog` stack; `Update(msg)` routes only to front; `View` renders with `lipgloss.Place` centering. One file per dialog: `confirm.go`, `command_palette.go`, `help_modal.go`.
-
-### Toast system
-
-`internal/cli/ui/dashboard/toast.go` (new). `Toast{Level, Message, Context, BornAt}`. Active toasts live on the dashboard model; `View` overlays them bottom-right via lipgloss layer composition. TTL handled by `tea.Tick`.
-
-### Per-circuit color
-
-`internal/lakitu/circuit.go` (or wherever circuit config is read) gains an optional `Color string` field. The dashboard model holds `currentCircuitColor *color.Color`; the theme accepts it and overrides `Border.Focus` when set.
+- **Theme.** Materialize the theme once at startup (background color + profile + optional circuit color in, fully-resolved style tree out). One file or a small package, whichever feels right.
+- **Icons.** `internal/cli/ui/icons.go` swaps to Nerd Font code points; the `DRIFT_NO_NERDFONT` branch goes away. A small helper that pairs an icon with a label and gets the spacing right is probably worth having.
+- **Dialogs.** Some kind of dialog stack so the command palette, help modal, and confirms compose cleanly. The Crush "one file per dialog" pattern from the research doc reads well at this scale, but it's not load-bearing.
+- **Toasts.** Live on the dashboard model, overlay bottom-right, TTL via `tea.Tick`.
+- **Per-circuit color.** Optional hex on the circuit config (workstation-side); the dashboard threads it into the theme when one circuit is in focus.
 
 ## Testing
 
