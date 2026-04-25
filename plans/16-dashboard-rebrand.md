@@ -43,7 +43,9 @@ Don't redefine what the framework gives us. Within the Charm v2 stack's defaults
 
 **Tab strip.** Adopt `bubbletea/examples/tabs/main.go` welded-border pattern verbatim. Don't customize it.
 
-**Footer.** `bubbles/help` short mode by default, full on `?`. Don't restyle the separator or key glyphs; framework defaults are fine. Disabled bindings via `key.SetEnabled(false)` so `help` filters them.
+**Navigation.** Arrows are the spine. `left` / `right` cycle tabs (alongside `tab` / `shift+tab`); `1`-`8` jump directly. `up` / `down` navigate within the focused panel (rows in a list/table, lines in a viewport). `enter` activates or expands the focused item; `esc` backs out (closes a dialog, exits filter, leaves an expanded row). `/` opens filter, `?` opens help, `:` opens the command palette, `q` / `ctrl+c` quit. Vi-style `j` / `k` / `h` / `l` work as aliases for the arrows where it doesn't conflict with a panel's own letter binding. Bindings come from the shared `key.Binding` registry; per-panel additions extend it, never re-bind a global. Disabled bindings via `key.SetEnabled(false)` so `bubbles/help` filters them automatically.
+
+**Footer.** `bubbles/help` short mode by default, full on `?`. Don't restyle the separator or key glyphs; framework defaults are fine.
 
 **Status indication.** Inline icon + colored label for ambient status (activity rows, stats); status pill (`Bold(true).Padding(0,1)` with status-color bg) only when scanning a column of states matters (karts table status column, ports conflict column).
 
