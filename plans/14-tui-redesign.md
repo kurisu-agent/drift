@@ -13,13 +13,12 @@ This plan unifies the presentation layer on the Charm v2 ecosystem (`charm.land/
 3. **Adaptive theming.** One palette, computed once at startup from `lipgloss.HasDarkBackground` + `LightDark`, with explicit overrides for Termux (often light, often 256-color, sometimes 16-color) and dumb terminals. `colorprofile` downsamples; `NO_COLOR` strips entirely.
 4. **Self-documenting key bindings.** Every interactive surface declares its keys as `bubbles/key.Binding` with help text and renders its footer via `bubbles/help`. No hand-typed `[q] quit  [/] filter` strings.
 5. **A `drift dashboard` TUI.** A new long-lived bubbletea program that gives a tabbed live view of every circuit, kart, and port forward in one place. Replaces the "open three terminals to run `drift status`, `drift karts`, `drift ports list` and tail logs" workflow.
-6. **Backwards-compatible CLI surface.** No subcommand renames, no flag breakage. `--output json` keeps its exact current shape (it's already a stable contract for scripts). Visual changes are unconditional under TTY; opt-out is `--no-tui` / `DRIFT_NO_TUI=1` for the bubbletea path specifically (still colorized output, just no live model loop).
+6. **Standardize the CLI surface where it helps.** Subcommands, flags, and output shapes are not frozen — drift is pre-1.0, and the existing CLAUDE.md backwards-compatibility rule explicitly applies here. If renaming a subcommand or restructuring its flags makes the command read more like the framework's idioms (or like the rest of the redesigned surface), do it.
 
 ## Non-goals
 
-- **Replacing `--output json`.** JSON stays byte-identical. This plan touches the *human* surface only.
+- **Removing `--output json`.** Every command that emits JSON today keeps emitting JSON, and the flag stays on the CLI surface — scripted callers always have a deterministic, ANSI-free path. Per the standardization goal above, the *shape* of the JSON can change when it improves consistency (renamed fields, new fields, restructured nesting); call those out in release notes. What's non-negotiable is that JSON output exists and is parseable.
 - **A driftd / long-lived background process.** The dashboard is a foreground program the user runs and quits. State for live views comes from existing RPC + `~/.config/drift/ports.yaml` (plan 13). No new daemons.
-- **Replacing `internal/slogfmt`.** `charmbracelet/log` would be prettier but the migration cost doesn't pencil; slogfmt stays. Logs rendered inside bubbletea views go through the same slog handler.
 - **Markdown help everywhere.** `glamour` enters only for the long-form `drift help <topic>` surface (later, optional). Short `--help` stays plain so it's grep-friendly.
 - **Mouse-driven interaction.** Keyboard-first across the board. Mouse may be enabled in the dashboard for scrolling but not load-bearing.
 - **Windows-native polish.** Drift targets Linux/macOS/Termux. WSL is fine; native Windows console quirks are not in scope.
@@ -151,6 +150,19 @@ For multi-phase orchestrations (`drift new` does clone → up → dotfiles → f
 
 Composite flows (`drift migrate`, `drift init`) build their own `huh.Form` with multiple groups — these are kept thin, since the hard work is in the data plumbing, not the form rendering.
 
+### Logs (`charmbracelet/log`)
+
+`internal/slogfmt` is replaced by `github.com/charmbracelet/log`. The two solve the same problem (structured-record rendering for the human-facing surface) but charmbracelet/log is theme-aware, lipgloss-styled, light/dark adaptive, and ships a slog handler — it slots into the rest of the redesigned surface where the bespoke slogfmt does not.
+
+What changes:
+
+- `drift logs <name>` (one-shot tail) renders through `charmbracelet/log` instead of `slogfmt.Emit`. JSONL records from the server are decoded once, then either fed to the logger via `slog.Handler` or rendered directly with the logger's text formatter — whichever is simpler given the existing JSONL → record decode path. Plain (non-JSON) lines from the server are wrapped in an `Info` record with the line as the message field, mirroring today's behavior.
+- The dashboard's logs tab uses the same logger, with output piped into a `bubbles/viewport`. Filter (`/`), level (`L`), and follow (`f`) interactions stay; the pretty rendering is now the logger's job, not a separate code path.
+- Level parsing migrates from `slogfmt.ParseLevel` to a thin shim over `slog.Level` (both libraries speak slog levels; only the parser entry point changes).
+- `internal/slogfmt` is deleted once the last caller migrates. Its tests are rewritten against the new logger or dropped if their concern (level filtering, level parsing) is now charmbracelet/log's job.
+
+The migration is in scope for the same single PR as the rest of the presentation overhaul. It's small (the slogfmt API is narrow — `Record`, `Emit`, `ParseLevel`, `DecodeRecord`) and delivers an immediate consistency win: the same theme that drives spinners, tables, prompts, and dashboard panels now also drives log output. Server-side logs (lakitu) stay on whatever they emit — drift only owns the rendering.
+
 ### The `drift dashboard` TUI
 
 A top-level subcommand: `drift dashboard [-c <circuit>] [--tab <name>]`. **Bare `drift` (no args) on a TTY opens the dashboard.** `drift menu` stays as an explicit subcommand for the launcher use case (pick a command, run it, exit) — the two are different jobs and both keep their place.
@@ -246,17 +258,17 @@ Every existing surface gets a defined target. Unchanged commands omitted.
 | `drift new` (bare) | TUI wizard | Today bare `drift new` errors asking for `--clone` or `--starter`. With a TTY, drop into a `huh.Form` wizard instead. Steps, in order: (1) name — `ui.Input` with live validation against existing karts on the chosen circuit; (2) source — `ui.Select` between `clone an existing repo` / `start from a starter` / `local path`, then a follow-up `ui.Input` with paste-friendly URL field and recent-clone history; (3) circuit — `ui.Select` over configured circuits, default preselected, hidden when only one circuit exists; (4) tune — `ui.Select` over circuit-side tunes (RPC-fetched, with a spinner during fetch), with descriptions; (5) character — `ui.Select` over characters; (6) optional advanced (`a` to expand) — devcontainer override, dotfiles URL, mounts, autostart toggle, features JSON; (7) review — read-only summary + `ui.Confirm`. On confirm, drops into the same Color spinner+phases path the flagged invocation uses; the wizard's role ends at `kart.new`. Cancellation at any step exits cleanly with no side effects. Non-TTY bare invocation keeps today's error (the wizard is opt-in via TTY presence, not a flag). |
 | `drift kart start/stop/restart/recreate/rebuild` | Color (spinner + phases) | Same shape; rebuild gets the multi-phase tracker. |
 | `drift kart delete` | Prompt + Color | Confirmation via `ui.Confirm`; spinner during deletion. |
-| `drift list` / `drift karts` | Plain or Color | `ui.Table` decides; no model loop. JSON unchanged. |
+| `drift list` / `drift karts` | Plain or Color | `ui.Table` decides; no model loop. JSON output preserved. |
 | `drift status` | Plain or Color | Same. The *live* version is the dashboard's status tab. |
 | `drift kart info` | Plain or Color | Key-value block via `ui.KeyValue` (new helper, two-column dim/accent rendering). The dashboard's karts-tab row-expand renders through the same helper. |
-| `drift logs` | Plain or Color | Plain unchanged; under TUI the logs tab in the dashboard supersedes interactive use. |
+| `drift logs` | Plain or Color | Renders through `charmbracelet/log` (replacing `internal/slogfmt`). JSONL records → logger; plain text lines wrapped as `Info`. Under TUI the logs tab in the dashboard supersedes interactive use; same logger, output piped into a viewport. |
 | `drift update` | Color (progress bar) | The hand-rolled `\r`-rewrite progress writer at `update.go:297` is replaced by `bubbles/progress` with a gradient fill, tied to a `ui.PhaseTracker` for the surrounding stages: check release → select asset → download → verify checksum → extract → atomic replace. Per-file extraction prints stay dim under the bar; in `ModePlain` the bar collapses to periodic byte-count lines so CI logs stay readable. `drift update <source>` (scp/url/local self-replace) shares the same tracker, with the source-resolution step as its first phase. |
-| `drift kart enable` / `disable` | Plain or Color | Single success line via `ui.Status` so the glyph + theme matches every other lifecycle command. JSON unchanged. |
+| `drift kart enable` / `disable` | Plain or Color | Single success line via `ui.Status` so the glyph + theme matches every other lifecycle command. JSON output preserved. |
 | `drift run` | TUI picker (no name) → exec | When invoked without a name on a TTY, the runs.yaml picker uses `ui.picker` (same shape as `drift connect`'s); with a name, drops straight into exec. The exec'd command keeps stdout — no model loop wraps it. |
 | `drift ai` | TUI picker (no circuit) → exec | Circuit picker via `ui.picker`; then execs into Claude Code on the chosen circuit. Same pattern as `drift run` / `drift connect`. |
 | `drift skill` | TUI picker + prompt → exec | No name → `ui.picker` over skills; name without prompt → `ui.Input` for the prompt; then executes on the circuit. The two-stage flow becomes one `huh.Form` with two groups so back-navigation works. |
 | `drift circuit set name` | Color (spinner) | Server-side rename is a single RPC; wrap in `ui.Spinner` since the rewrite of server config + local alias takes a moment, and surface the before/after names in the success line. |
-| `drift help` (short) / `drift version` | Plain or Color | Stay grep-friendly. `drift help --full` keeps its current Kong-derived catalog; only the column rendering moves to `ui.Table`. `drift version` is plain text or JSON unchanged. |
+| `drift help` (short) / `drift version` | Plain or Color | Stay grep-friendly. `drift help --full` keeps its current Kong-derived catalog; only the column rendering moves to `ui.Table`. `drift version` keeps its plain-text and JSON outputs. |
 | `drift help` / `drift help <topic>` | Plain or Color | Short help stays grep-friendly; `<topic>` mode renders markdown via `glamour` (style `auto` on TTY, `notty` otherwise). Optional follow-up. |
 | `drift ports` | TUI (plan 13) | Standalone TUI; same model embedded into dashboard's ports tab. |
 | Errors (everywhere) | All modes | `errfmt.Emit` keeps its job; the new `ui.Error(err)` wraps it so the rendered block uses theme colors and aligns with success lines. Inside a TUI, errors render into a status bar / toast and are also re-emitted to stderr on quit so they're not lost. |
@@ -270,6 +282,7 @@ Add (v2 import paths):
 - `charm.land/lipgloss/v2`
 - `charm.land/huh/v2` (replaces `github.com/charmbracelet/huh` v1)
 - `charm.land/colorprofile`
+- `github.com/charmbracelet/log` (kept the GitHub path — replaces `internal/slogfmt`)
 - (optional, later phase) `charm.land/glamour/v2`
 - (test) `charm.land/x/teatest`
 
@@ -279,6 +292,7 @@ Remove:
 - `github.com/charmbracelet/lipgloss` v1 (replaced by v2)
 - `github.com/charmbracelet/bubbletea` v1, `bubbles` v0 (replaced by v2; both are currently indirect deps so the upgrade is clean)
 - `github.com/charmbracelet/huh` v1 (replaced by v2)
+- `internal/slogfmt` (replaced by `charmbracelet/log`)
 
 Keep:
 
@@ -355,11 +369,12 @@ What goes in the single PR, in implementation order (each step's diff stays revi
 1. **Foundation.** Add `internal/cli/ui` (`Mode`, `Theme`, `Surface`, `Table`, `Header`, `Status`, `KeyValue`, `keys`). Bump `lipgloss` and `huh` to v2. Migrate every `internal/cli/style` caller. Delete `internal/cli/style`.
 2. **Spinner / progress.** Add `ui.Spinner`, `ui.Progress`, `ui.PhaseTracker`. Migrate every `internal/cli/progress` caller (`drift new`, `drift kart start/stop/restart/recreate/rebuild`). Delete `internal/cli/progress`. Drop `briandowns/spinner`.
 3. **Prompts.** Add `ui.Confirm`, `ui.Select`, `ui.Input`, themed `ui.picker`. Migrate `drift connect`, `drift kart delete`, `drift circuit add/rm/set`, `drift migrate`, `drift init`.
-4. **Bubbletea infra.** `ui/tea.go` (program helpers, signal/ctx wiring), shared `viewport`. Reimplement `drift menu` on `bubbles/list`.
-5. **Dashboard.** `drift dashboard` with all eight tabs (status, karts, circuits, chest, characters, tunes, ports, logs) and lifecycle actions on the karts tab wired through confirmation modals. Chest/characters/tunes are read-only and share a `ResourcePanel[T]` generic. Ports tab embeds the same model plan 13's standalone `drift ports` TUI uses — coordinate the merge order with plan 13 so the import isn't a phantom; if plan 13 lands first, this PR consumes it; if not, this PR ships the ports panel against a stub interface that plan 13 implements. Banner and Tmplr-Rounded const live in `internal/cli/ui/dashboard/banner.go`. Bare `drift` is rewired to open the dashboard.
-6. **Tests + cleanup.** `teatest` golden frames for the dashboard happy paths, `NO_COLOR` regression test, `DetectMode` matrix tests, dependency tidy. `make ci && make integration` green before merge.
+4. **Logs.** Wire `github.com/charmbracelet/log` through `drift logs`. Migrate the JSONL/plain-line decode path off `slogfmt.Emit` onto the new logger. Delete `internal/slogfmt` once the last caller is gone.
+5. **Bubbletea infra.** `ui/tea.go` (program helpers, signal/ctx wiring), shared `viewport`. Reimplement `drift menu` on `bubbles/list`.
+6. **Dashboard.** `drift dashboard` with all eight tabs (status, karts, circuits, chest, characters, tunes, ports, logs) and lifecycle actions on the karts tab wired through confirmation modals. Chest/characters/tunes are read-only and share a `ResourcePanel[T]` generic. The logs tab uses the charmbracelet/log path landed in step 4. Ports tab embeds the same model plan 13's standalone `drift ports` TUI uses — coordinate the merge order with plan 13 so the import isn't a phantom; if plan 13 lands first, this PR consumes it; if not, this PR ships the ports panel against a stub interface that plan 13 implements. Banner and Tmplr-Rounded const live in `internal/cli/ui/dashboard/banner.go`. Bare `drift` is rewired to open the dashboard.
+7. **Tests + cleanup.** `teatest` golden frames for the dashboard happy paths, `NO_COLOR` regression test, `DetectMode` matrix tests, dependency tidy. `make ci && make integration` green before merge.
 
-Things deliberately deferred out of even the giant PR (would balloon the scope without paying for itself): `glamour`-rendered `drift help <topic>` (separate, optional), mouse-driven interaction in the dashboard, replacing `internal/slogfmt` with `charmbracelet/log`. These are listed in non-goals or open questions; they can land as small follow-ups whenever someone wants them.
+Things deliberately deferred out of even the giant PR (would balloon the scope without paying for itself): `glamour`-rendered `drift help <topic>` (separate, optional), mouse-driven interaction in the dashboard. These are listed in non-goals or open questions; they can land as small follow-ups whenever someone wants them.
 
 Risk of one PR: a bad merge ordering with plan 13 (ports). Mitigation: define the `Panel` interface in this PR, have plan 13's `drift ports` TUI implement it from day one, and review the two PRs together if they're both in flight.
 
