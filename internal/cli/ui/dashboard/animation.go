@@ -1,11 +1,13 @@
 package dashboard
 
 import (
+	"image/color"
 	"os"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/harmonica"
 )
 
@@ -13,7 +15,6 @@ import (
 // animation is running. Status panel consumes it; root model forwards.
 type animFrameMsg time.Time
 
-//nolint:unused // kept for the parked entrance animation; see status_panel.Init.
 func animFrameCmd() tea.Cmd {
 	return tea.Tick(time.Second/60, func(t time.Time) tea.Msg { return animFrameMsg(t) })
 }
@@ -30,8 +31,6 @@ type element struct {
 
 // settled reports whether the spring has effectively reached its
 // target. Both position and velocity must be near-zero in delta terms.
-//
-//nolint:unused // kept for the parked entrance animation.
 func (e element) settled() bool {
 	const eps = 0.5
 	dx := e.target - e.pos
@@ -141,8 +140,6 @@ func (e *entrance) settleNow() {
 // tick advances every spring whose delay has elapsed. Returns true
 // when at least one element is still moving — caller schedules another
 // frame in that case.
-//
-//nolint:unused // kept for the parked entrance animation.
 func (e *entrance) tick() bool {
 	if e.done {
 		return false
@@ -202,47 +199,62 @@ func padLeft(s string, n int) string {
 	return strings.Join(lines, "\n")
 }
 
-// renderBannerSliding returns a slotWidth-wide block where each line of
-// `banner` is positioned with its left edge at column `x` (relative to
-// the slot's left edge). Negative x clips the wordmark from the left
-// (it's emerging from off-screen); positive x pads with leading spaces
-// (the spring has overshot col 0 during the bounce). The output is
-// always exactly slotWidth columns per line so the surrounding layout
-// doesn't reflow as the banner moves.
-func renderBannerSliding(banner string, x, slotWidth int) string {
-	lines := strings.Split(banner, "\n")
+// renderBannerSliding returns a slotWidth-wide block where the
+// wordmark is positioned with its left edge at column `x` (relative
+// to the slot's left edge). Negative x clips from the left (emerging
+// from off-screen); positive x pads with leading spaces (the spring
+// has overshot col 0 during the bounce).
+//
+// Slicing happens on the PLAIN wordmark — the rainbow gradient is
+// applied per visible cell after slicing, so SGR escapes never get
+// truncated. The gradient stays anchored to original column indices
+// so the rainbow travels with the letterforms during the slide.
+func renderBannerSliding(plain string, gradient []color.Color, x, slotWidth int) string {
+	if slotWidth <= 0 {
+		return ""
+	}
+	lines := strings.Split(plain, "\n")
 	out := make([]string, len(lines))
 	for i, line := range lines {
-		runes := []rune(line)
-		out[i] = sliceLineAtX(runes, x, slotWidth)
+		out[i] = sliceWordmarkLine([]rune(line), gradient, x, slotWidth)
 	}
 	return strings.Join(out, "\n")
 }
 
-func sliceLineAtX(runes []rune, x, slotWidth int) string {
-	if slotWidth <= 0 {
-		return ""
-	}
+func sliceWordmarkLine(runes []rune, gradient []color.Color, x, slotWidth int) string {
 	if x >= slotWidth {
 		return strings.Repeat(" ", slotWidth)
 	}
 	leadingPad := 0
-	visible := runes
+	startCol := 0
 	if x < 0 {
-		skip := -x
-		if skip >= len(visible) {
+		startCol = -x
+		if startCol >= len(runes) {
 			return strings.Repeat(" ", slotWidth)
 		}
-		visible = visible[skip:]
 	} else {
 		leadingPad = x
 	}
-	if leadingPad+len(visible) > slotWidth {
-		visible = visible[:slotWidth-leadingPad]
+	visible := runes[startCol:]
+	avail := slotWidth - leadingPad
+	if len(visible) > avail {
+		visible = visible[:avail]
 	}
-	trailing := slotWidth - leadingPad - len(visible)
-	if trailing < 0 {
-		trailing = 0
+	var b strings.Builder
+	if leadingPad > 0 {
+		b.WriteString(strings.Repeat(" ", leadingPad))
 	}
-	return strings.Repeat(" ", leadingPad) + string(visible) + strings.Repeat(" ", trailing)
+	for j, r := range visible {
+		origCol := startCol + j
+		if gradient != nil && origCol < len(gradient) {
+			b.WriteString(lipgloss.NewStyle().Foreground(gradient[origCol]).Render(string(r)))
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	used := leadingPad + len(visible)
+	if used < slotWidth {
+		b.WriteString(strings.Repeat(" ", slotWidth-used))
+	}
+	return b.String()
 }

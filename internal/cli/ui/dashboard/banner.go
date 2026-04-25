@@ -2,7 +2,6 @@ package dashboard
 
 import (
 	"image/color"
-	"strings"
 
 	"charm.land/lipgloss/v2"
 	"github.com/kurisu-agent/drift/internal/cli/ui"
@@ -21,14 +20,13 @@ const wordmark = ` ╮  •╭ ` + "\n" +
 // entrance animation to compute the off-screen start position.
 const bannerWidth = 7
 
-// renderWordmark applies a horizontal rainbow gradient to the wordmark
-// glyphs. The gradient is computed once per render pass via
-// lipgloss.Blend1D over the wordmark's column width. When the theme is
-// disabled (NO_COLOR / non-TTY) the wordmark renders plain so terminals
-// without color don't print SGR escapes.
-func renderWordmark(t *ui.Theme) string {
+// wordmarkGradient returns one color.Color per banner column. nil means
+// the theme is disabled (NO_COLOR / non-TTY) and the wordmark should
+// render plain. Computed once per call via lipgloss.Blend1D so the
+// rainbow is consistent across slices and animation frames.
+func wordmarkGradient(t *ui.Theme) []color.Color {
 	if t == nil || !t.Enabled {
-		return wordmark
+		return nil
 	}
 	stops := []color.Color{
 		lipgloss.Color("#ff5f5f"),
@@ -38,20 +36,5 @@ func renderWordmark(t *ui.Theme) string {
 		lipgloss.Color("#5fafff"),
 		lipgloss.Color("#af5fff"),
 	}
-	colors := lipgloss.Blend1D(bannerWidth, stops...)
-	lines := strings.Split(wordmark, "\n")
-	out := make([]string, len(lines))
-	for i, line := range lines {
-		var b strings.Builder
-		runes := []rune(line)
-		for c, r := range runes {
-			if c >= len(colors) {
-				b.WriteRune(r)
-				continue
-			}
-			b.WriteString(lipgloss.NewStyle().Foreground(colors[c]).Render(string(r)))
-		}
-		out[i] = b.String()
-	}
-	return strings.Join(out, "\n")
+	return lipgloss.Blend1D(bannerWidth, stops...)
 }

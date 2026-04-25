@@ -40,12 +40,10 @@ func (p *statusPanel) Title() string            { return "status" }
 func (p *statusPanel) ShortHelp() []key.Binding { return nil }
 
 func (p *statusPanel) Init() tea.Cmd {
-	// Entrance animation is intentionally disabled — the spring code
-	// in animation.go is kept for a future revisit, but the rendered
-	// output today is the settled frame from frame 1. Re-enable by
-	// returning tea.Batch(p.refreshCmd(), animFrameCmd()) and removing
-	// the unconditional settleNow() in the WindowSizeMsg branch.
-	return p.refreshCmd()
+	// Kick off the data fetch and the entrance frame loop in parallel.
+	// The entrance object itself is built lazily on the first
+	// WindowSizeMsg — its spring targets are width-relative.
+	return tea.Batch(p.refreshCmd(), animFrameCmd())
 }
 
 func (p *statusPanel) refreshCmd() tea.Cmd {
@@ -74,15 +72,16 @@ func (p *statusPanel) Update(msg tea.Msg) (Panel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		p.width = m.Width
 		if p.entr == nil {
-			// Always settle — animation is disabled until the spring
-			// design is revisited. Constructing the entrance keeps the
-			// renderer's settleNow path working for snapshots / PNGs.
-			p.entr = newEntrance(m.Width, true)
+			motionOff := p.t == nil || !p.t.Enabled || p.o.MotionDisabled
+			p.entr = newEntrance(m.Width, motionOff)
 		}
 	case animFrameMsg:
-		// Animation is off; ignore. Kept so a future re-enable doesn't
-		// have to re-thread the message routing.
-		return p, nil
+		if p.entr == nil {
+			return p, nil
+		}
+		if p.entr.tick() {
+			return p, animFrameCmd()
+		}
 	case tickMsg:
 		return p, p.refreshCmd()
 	case tea.KeyPressMsg:
@@ -121,7 +120,7 @@ func (p *statusPanel) View(width, height int) string {
 // surrounding layout — the wordmark is clipped or padded inside the
 // slot via renderBannerSliding.
 func (p *statusPanel) headerRow(width int) string {
-	banner := renderWordmark(p.t)
+	gradient := wordmarkGradient(p.t)
 	lockup := p.lockup()
 	stats := p.statsBlock()
 
@@ -135,7 +134,7 @@ func (p *statusPanel) headerRow(width int) string {
 		sx = int(p.entr.stats.pos + 0.5)
 	}
 
-	bannerCol := renderBannerSliding(banner, bx, bannerWidth)
+	bannerCol := renderBannerSliding(wordmark, gradient, bx, bannerWidth)
 	lockupLines := strings.Split(lockup, "\n")
 	if len(lockupLines) >= 1 {
 		lockupLines[0] = padLeftLine(lockupLines[0], maxInt(0, l1off))
