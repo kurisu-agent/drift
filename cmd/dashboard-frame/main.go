@@ -25,12 +25,19 @@ import (
 )
 
 func main() {
-	tab := flag.String("tab", "status", "initial tab (status|karts|circuits|chest|characters|tunes|ports|logs)")
+	tab := flag.String("tab", "status", "initial tab (status|karts|circuits|chest|characters|tunes|ports|logs|cross-cut)")
+	scenarioName := flag.String("scenario", "default", "scenario name (see scenarios.go)")
 	width := flag.Int("w", 120, "frame width in columns")
 	height := flag.Int("h", 30, "frame height in rows")
 	noMotion := flag.Bool("no-motion", false, "skip the entrance animation; render the settled frame directly")
 	at := flag.Duration("at", -1, "render at simulated time `at` from entrance start (e.g. 100ms); negative = settled, 0 = first frame")
 	flag.Parse()
+
+	sc, err := findScenario(*scenarioName)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 
 	t, err := parseTab(*tab)
 	if err != nil {
@@ -54,6 +61,7 @@ func main() {
 		DataSource:     demo.New(),
 		MotionDisabled: *noMotion,
 	}
+	sc.apply(&opts, width, height)
 	var frame string
 	if *at >= 0 && !*noMotion {
 		frame = dashboard.RenderFrameAt(opts, *width, *height, *at)
@@ -68,7 +76,11 @@ func main() {
 
 func parseTab(s string) (dashboard.Tab, error) {
 	switch s {
-	case "status":
+	case "status", "cross-cut":
+		// cross-cut is a pseudo-tab used for chrome scenarios (palette,
+		// help modal, toasts, narrow widths). It always lands on the
+		// status tab so the welded strip and outer border are visible
+		// while the scenario function layers its overlay on top.
 		return dashboard.TabStatus, nil
 	case "karts":
 		return dashboard.TabKarts, nil

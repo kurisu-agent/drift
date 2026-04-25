@@ -1,30 +1,30 @@
-  [1;4;4ms[m[1;4;4mt[m[1;4;4ma[m[1;4;4mt[m[1;4;4mu[m[1;4;4ms[m  ·  karts  ·  circuits  ·  chest  ·  characters  ·  tunes  ·  ports  ·  logs                                   
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- ╮  •╭   [1mdrift 0.4.3[m                                                                                    [1m3 / 3[m  circuits 
-╭┤╭╮╮┼┼devpods for drifters                                                                            [1m7 / 9[m  karts     
-╰┴╯ ╰╯╰                                                                                                    [1m4[m  ports     
-[1mtime      [m[1maction          [m[1mkart                    [m[1mdetail                                  [m                              
-3m ago    drift new       alpha.plan-14           from example-org/template                                             
-12m ago   kart restart    alpha.api                                                                                     
-1h ago    port add        alpha.web               :3000 -> :3000                                                        
-2h ago    drift status    —                                                                                             
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-tab next tab • r refresh • ? help • q quit                                                                              
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│   status   ·   karts   ·   circuits   ·   chest   ·   characters   ·   tunes   ·   ports   ·   logs                  │
+│           ────────────────────────────────────────────────────────────────────────────────────────────────────────── │
+│  ╮  •╭   [1mdrift 0.4.3[m                                                                                [1m3 / 3[m  circuits  │
+│ ╭┤╭╮╮┼┼devpods for drifters                                                                        [1m7 / 9[m  karts      │
+│ ╰┴╯ ╰╯╰                                                                                                [1m4[m  ports      │
+│ [1mtime      [m[1maction          [m[1mkart                    [m[1mdetail                                  [m                           │
+│ 3m ago    drift new       alpha.plan-14           from example-org/template                                          │
+│ 12m ago   kart restart    alpha.api                                                                                  │
+│ 1h ago    port add        alpha.web               :3000 -> :3000                                                     │
+│ 2h ago    drift status    —                                                                                          │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ tab next tab • r refresh • ? help • q quit                                                                           │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

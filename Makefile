@@ -68,12 +68,11 @@ install-hooks:
 	@git config core.hooksPath .githooks
 	@echo "pre-commit hook enabled (core.hooksPath = .githooks)"
 	@echo "  applies to every worktree of this clone"
-.PHONY: eval-frames
+.PHONY: eval-frames eval-screens eval-loop
 
 # eval-frames renders one PNG per dashboard tab against the demo
-# fixtures. Use this loop while iterating on TUI polish — generate
-# stills, ask Claude to read docs/eval/*.png, fix the issues it
-# flags, regenerate. Per the plan's visual-eval-loop section.
+# fixtures (legacy single-scenario loop). Use eval-screens for the
+# plan-16 multi-scenario matrix.
 eval-frames:
 	@mkdir -p docs/eval
 	@CGO_ENABLED=0 go build -o /tmp/dashboard-frame ./cmd/dashboard-frame
@@ -85,3 +84,40 @@ eval-frames:
 	            >/dev/null; \
 	    echo "  -> docs/eval/$$tab.png"; \
 	done
+
+# eval-screens is the plan-16 multi-scenario capture target. Output is
+# docs/eval/<tab>-<scenario>.png. The list below mirrors plan 16
+# lines 76-87; new scenarios land here as the underlying panel features
+# (filter, expand, palette, ...) wire up. After capture, read the
+# rubric + PNGs and grind toward rubric-clean per panel.
+eval-screens:
+	@mkdir -p docs/eval
+	@CGO_ENABLED=0 go build -o /tmp/dashboard-frame ./cmd/dashboard-frame
+	@set -e; \
+	render() { \
+	    tab=$$1; scenario=$$2; w=$${3:-120}; h=$${4:-30}; \
+	    out=docs/eval/$$tab-$$scenario.png; \
+	    /tmp/dashboard-frame -tab $$tab -scenario $$scenario -w $$w -h $$h \
+	        | freeze /dev/stdin --output $$out \
+	            --language ansi --background "#0a0a0a" \
+	            --padding 24 --window=false --font.size 14 \
+	            >/dev/null; \
+	    echo "  -> $$out"; \
+	}; \
+	render status default; \
+	render karts default; \
+	render circuits default; \
+	render chest default; \
+	render characters default; \
+	render tunes default; \
+	render ports default; \
+	render logs default; \
+	render cross-cut narrow-80c 80 30
+
+# eval-loop is convenience: capture + print the rubric path so an
+# agent can `Read docs/eval/rubric.md` plus `Read docs/eval/*.png` in
+# one go. Pure ergonomics around the plan-16 loop.
+eval-loop: eval-screens
+	@echo
+	@echo "rubric: docs/eval/rubric.md"
+	@echo "frames: docs/eval/*.png"

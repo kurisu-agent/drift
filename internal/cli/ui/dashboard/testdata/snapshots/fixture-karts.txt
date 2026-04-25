@@ -1,30 +1,30 @@
-  status  ·  [1;4;4mk[m[1;4;4ma[m[1;4;4mr[m[1;4;4mt[m[1;4;4ms[m  ·  circuits  ·  chest  ·  characters  ·  tunes  ·  ports  ·  logs                                   
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-[1mcircuit     [m[1mname                [m[1mstatus    [m[1mtune        [m[1msource    [m[1mautostart[m                                               
-alpha       api                 running   go-stack    clone     yes                                                     
-alpha       web                 running   ts-stack    clone     —                                                       
-alpha       db                  stopped   py-stack    starter   —                                                       
-beta        experiments         running   py-stack    clone     —                                                       
-beta        scratch             stale     —           —         —                                                       
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-↑/k up • ↓/j down • tab next tab • r refresh • ? help • q quit                                                          
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│   status   ·   karts   ·   circuits   ·   chest   ·   characters   ·   tunes   ·   ports   ·   logs                  │
+│ ─────────────         ────────────────────────────────────────────────────────────────────────────────────────────── │
+│ [1mcircuit     [m[1mname                [m[1mstatus    [m[1mtune        [m[1msource    [m[1mautostart[m                                            │
+│ alpha       api                 running   go-stack    clone     yes                                                  │
+│ alpha       web                 running   ts-stack    clone     —                                                    │
+│ alpha       db                  stopped   py-stack    starter   —                                                    │
+│ beta        experiments         running   py-stack    clone     —                                                    │
+│ beta        scratch             stale     —           —         —                                                    │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ ↑/k up • ↓/j down • tab next tab • r refresh • ? help • q quit                                                       │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

@@ -174,53 +174,102 @@ func (m *model) View() tea.View {
 	if m.width == 0 {
 		m.width, m.height = 100, 30
 	}
-	bar := m.renderTabBar()
-	footer := m.renderFooter()
-	bodyHeight := m.height - lipgloss.Height(bar) - lipgloss.Height(footer)
-	if bodyHeight < 1 {
-		bodyHeight = 1
+	// Outer rounded border eats 2 cols + 2 rows; horizontal padding 1
+	// each side eats another 2 cols. The inner width feeding the tab
+	// strip and the active panel is the remainder.
+	innerW := m.width - 4
+	if innerW < 1 {
+		innerW = 1
 	}
-	body := m.panels[m.tab].View(m.width, bodyHeight)
-	body = lipgloss.NewStyle().Width(m.width).Height(bodyHeight).Render(body)
-	frame := lipgloss.JoinVertical(lipgloss.Left, bar, body, footer)
-	return ui.AltScreenView(frame)
+
+	bar := m.renderTabBar(innerW)
+	footer := m.renderFooter(innerW)
+	bodyH := m.height - 2 - lipgloss.Height(bar) - lipgloss.Height(footer)
+	if bodyH < 1 {
+		bodyH = 1
+	}
+
+	body := m.panels[m.tab].View(innerW, bodyH)
+	body = lipgloss.NewStyle().Width(innerW).Height(bodyH).Render(body)
+
+	inner := lipgloss.JoinVertical(lipgloss.Left, bar, body, footer)
+
+	outer := outerBorderStyle(m.t).Render(inner)
+	return ui.AltScreenView(outer)
 }
 
-// renderTabBar lays out the eight tab labels as a single row, with the
-// active tab styled accent + underlined and the rest dim. A horizontal
-// rule below separates the bar from the body.
-func (m *model) renderTabBar() string {
-	dim := dimFor(m.t)
-	bold := boldFor(m.t)
-	active := bold.Underline(true).Padding(0, 2)
-	if m.t != nil && m.t.Enabled {
-		active = m.t.AccentStyle.Bold(true).Underline(true).Padding(0, 2)
+// outerBorderStyle is the rounded chrome that wraps the whole dashboard.
+// theme.Border.Subtle is the brand-guideline weight; padding 0/1 keeps
+// content off the rule.
+func outerBorderStyle(t *ui.Theme) lipgloss.Style {
+	st := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		Padding(0, 1)
+	if t != nil && t.Enabled {
+		st = st.BorderForeground(t.Border.Subtle.GetForeground())
 	}
-	inactive := dim.Padding(0, 2)
+	return st
+}
 
-	separator := dim.Render("·")
+// renderTabBar lays out the eight tab labels as a single row inside the
+// outer chrome. Per plan-16 brand guidelines, active vs inactive is
+// communicated by color only (theme.Border.Focus vs theme.Text.Muted) —
+// no bg, no underline, no padding swap. The horizontal rule beneath has
+// a gap under the active tab so the active label welds into the body
+// region instead of sitting under a closed line.
+func (m *model) renderTabBar(width int) string {
+	accent, muted, subtle := m.tabStyles()
+
+	cellPad := strings.Repeat(" ", 2)
+	sep := " · "
+	sepW := lipgloss.Width(sep)
+
 	parts := make([]string, 0, 2*tabCount-1)
+	cursor := 0
+	activeStart, activeWidth := 0, 0
 	for i := Tab(0); i < tabCount; i++ {
-		st := inactive
-		if i == m.tab {
-			st = active
+		label := cellPad + i.String() + cellPad
+		cellW := lipgloss.Width(label)
+		switch {
+		case i == m.tab:
+			parts = append(parts, accent.Render(label))
+			activeStart = cursor
+			activeWidth = cellW
+		default:
+			parts = append(parts, muted.Render(label))
 		}
-		parts = append(parts, st.Render(i.String()))
+		cursor += cellW
 		if i < tabCount-1 {
-			parts = append(parts, separator)
+			parts = append(parts, subtle.Render(sep))
+			cursor += sepW
 		}
 	}
 	row := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
-	rule := dim.Render(strings.Repeat("─", m.width))
+
+	runes := []rune(strings.Repeat("─", width))
+	for i := activeStart; i < activeStart+activeWidth && i < len(runes); i++ {
+		runes[i] = ' '
+	}
+	rule := subtle.Render(string(runes))
 	return lipgloss.JoinVertical(lipgloss.Left, row, rule)
+}
+
+// tabStyles returns the three foregrounds the tab strip composes
+// against (active accent, inactive muted, subtle separator/rule).
+// Falls back to identity styles when the theme is disabled.
+func (m *model) tabStyles() (accent, muted, subtle lipgloss.Style) {
+	if m.t == nil || !m.t.Enabled {
+		return lipgloss.NewStyle(), lipgloss.NewStyle(), lipgloss.NewStyle()
+	}
+	return m.t.Border.Focus, m.t.MutedStyle, m.t.Border.Subtle
 }
 
 // renderFooter delegates to bubbles/v2/help so footer chrome stays in
 // sync with the actual key bindings. Active panel contributes its own
 // bindings ahead of the global ones.
-func (m *model) renderFooter() string {
+func (m *model) renderFooter(width int) string {
 	hk := keyMapFor(m.panels[m.tab])
-	m.help.SetWidth(m.width)
+	m.help.SetWidth(width)
 	return m.help.View(hk)
 }
 
