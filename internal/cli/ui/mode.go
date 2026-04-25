@@ -91,9 +91,3 @@ func isTTY(w io.Writer) bool {
 func isFileTTY(f *os.File) bool {
 	return isatty.IsTerminal(f.Fd()) || isatty.IsCygwinTerminal(f.Fd())
 }
-
-// NerdFont reports whether the terminal can render Nerd Font glyphs.
-// We never auto-detect; callers opt out via DRIFT_NO_NERDFONT=1.
-func NerdFont() bool {
-	return os.Getenv("DRIFT_NO_NERDFONT") == ""
-}

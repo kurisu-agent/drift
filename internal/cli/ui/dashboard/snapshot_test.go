@@ -151,7 +151,6 @@ func (fixtureDS) Ports(_ context.Context) ([]PortRow, error)          { return n
 // after intentional UI changes, then commit the diff.
 func TestSnapshots(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
-	t.Setenv("DRIFT_NO_NERDFONT", "1")
 
 	dir := filepath.Join("testdata", "snapshots")
 	if *update {

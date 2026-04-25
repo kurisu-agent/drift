@@ -53,15 +53,5 @@ func TestNoColorTheme(t *testing.T) {
 	}
 }
 
-func TestNerdFontOptOut(t *testing.T) {
-	t.Setenv("DRIFT_NO_NERDFONT", "1")
-	if NerdFont() {
-		t.Fatalf("DRIFT_NO_NERDFONT=1: NerdFont() should be false")
-	}
-	if Icon(IconSuccess) != "ok" {
-		t.Fatalf("ascii fallback for IconSuccess want %q got %q", "ok", Icon(IconSuccess))
-	}
-}
-
 // Ensure os package is referenced even if test runner skips this file.
 var _ = os.Stdout

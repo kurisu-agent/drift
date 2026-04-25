@@ -9,9 +9,8 @@ import (
 // single command invocation. New code should accept a *Surface; the
 // legacy callers using *Theme directly continue to compile via NewTheme.
 type Surface struct {
-	Mode     Mode
-	Theme    *Theme
-	NerdFont bool
+	Mode  Mode
+	Theme *Theme
 
 	Stdout io.Writer
 	Stderr io.Writer
@@ -41,12 +40,11 @@ func NewSurface(o SurfaceOptions) *Surface {
 	mode := DetectMode(o.Stdout, o.Stderr, o.Flags)
 	jsonMode := mode == ModeJSON
 	return &Surface{
-		Mode:     mode,
-		Theme:    NewTheme(o.Stdout, jsonMode),
-		NerdFont: NerdFont(),
-		Stdout:   o.Stdout,
-		Stderr:   o.Stderr,
-		Stdin:    o.Stdin,
+		Mode:   mode,
+		Theme:  NewTheme(o.Stdout, jsonMode),
+		Stdout: o.Stdout,
+		Stderr: o.Stderr,
+		Stdin:  o.Stdin,
 	}
 }
 
