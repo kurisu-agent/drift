@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/kurisu-agent/drift/internal/cli/ui"
 )
 
@@ -21,13 +22,16 @@ type circuitsPanel struct {
 }
 
 func newCircuitsPanel(o Options) Panel {
+	// Leading "·" column reserves two cells for the per-circuit color
+	// swatch + a star marking the default circuit. Width 4 fits the
+	// swatch + space + star without crowding the name column.
 	cols := []table.Column{
+		{Title: "·", Width: 4},
 		{Title: "name", Width: 14},
 		{Title: "host", Width: 28},
-		{Title: "default", Width: 8},
 		{Title: "lakitu", Width: 10},
 		{Title: "latency", Width: 10},
-		{Title: "state", Width: 12},
+		{Title: "state", Width: 14},
 	}
 	tbl := table.New(table.WithColumns(cols), table.WithFocused(true))
 	tbl.SetStyles(tableStyles(o.Theme))
@@ -97,27 +101,57 @@ func (p *circuitsPanel) View(width, height int) string {
 func toCircuitTableRows(rs []CircuitRow, t *ui.Theme) []table.Row {
 	out := make([]table.Row, len(rs))
 	for i, r := range rs {
-		state := "unreachable"
-		if r.Reachable {
-			state = "reachable"
-		}
-		def := "—"
-		if r.Default {
-			def = "*"
-		}
 		latency := "—"
 		if r.LatencyMS > 0 {
 			latency = fmt.Sprintf("%dms", r.LatencyMS)
 		}
-		styledState := state
-		if t != nil && t.Enabled {
-			if r.Reachable {
-				styledState = t.SuccessStyle.Render(state)
-			} else {
-				styledState = t.ErrorStyle.Render(state)
-			}
+		out[i] = table.Row{
+			circuitMarker(r, t),
+			r.Name,
+			r.Host,
+			dashIfEmpty(r.Lakitu),
+			latency,
+			circuitState(r, t),
 		}
-		out[i] = table.Row{r.Name, r.Host, def, dashIfEmpty(r.Lakitu), latency, styledState}
 	}
 	return out
+}
+
+// circuitMarker renders the leading "swatch + default-star" cell. The
+// swatch is a single block in the per-circuit Color (or a muted block
+// when none is set); the star marks the default circuit. Both fit in
+// 3 cells; the column reserves 4 for breathing room.
+func circuitMarker(r CircuitRow, t *ui.Theme) string {
+	const block = "▮"
+	swatch := block
+	star := " "
+	if r.Default {
+		star = ui.IconStar
+	}
+	if t == nil || !t.Enabled {
+		return swatch + " " + star
+	}
+	swatchStyle := lipgloss.NewStyle().Foreground(t.Border.Subtle.GetForeground())
+	if r.Color != "" {
+		swatchStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(r.Color))
+	}
+	starStyle := lipgloss.NewStyle().Foreground(t.AccentColor)
+	return swatchStyle.Render(swatch) + " " + starStyle.Render(star)
+}
+
+// circuitState renders the reachable/unreachable column as a status
+// pill so the column reads at a glance. Reachable → success.Pill,
+// unreachable → error.Pill.
+func circuitState(r CircuitRow, t *ui.Theme) string {
+	state := "unreachable"
+	if r.Reachable {
+		state = "reachable"
+	}
+	if t == nil || !t.Enabled {
+		return state
+	}
+	if r.Reachable {
+		return t.Status.Success.Pill.Render(state)
+	}
+	return t.Status.Error.Pill.Render(state)
 }

@@ -1,9 +1,9 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │   status   ·   karts   ·   circuits   ·   chest   ·   characters   ·   tunes   ·   ports   ·   logs                  │
 │ ─────────────────────────            ─────────────────────────────────────────────────────────────────────────────── │
-│ [1mname          [m[1mhost                        [m[1mdefault [m[1mlakitu    [m[1mlatency   [m[1mstate       [m                                   │
-│ alpha         alpha.example.org           *       0.4.3     18ms      reachable                                      │
-│ beta          beta.example.org            —       0.4.3     42ms      reachable                                      │
+│ [1m·   [m[1mname          [m[1mhost                        [m[1mlakitu    [m[1mlatency   [m[1mstate         [m                                     │
+│ ▮  alpha         alpha.example.org           0.4.3     18ms      reachable                                          │
+│ ▮   beta          beta.example.org            0.4.3     42ms      reachable                                          │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │

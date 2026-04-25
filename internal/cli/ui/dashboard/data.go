@@ -42,6 +42,12 @@ type CircuitRow struct {
 	Lakitu    string // server version
 	LatencyMS int64
 	Reachable bool
+	// Color is the optional per-circuit accent (hex like "#6B50FF") set
+	// in the workstation's circuits config. The circuits panel renders
+	// it as a small swatch next to the name; when the dashboard is
+	// anchored to a single circuit, the brand accent derives from this
+	// (theme.WithAccent). Empty = no tint.
+	Color string
 }
 
 // ResourceRow is the shared shape for chest, characters, and tunes —

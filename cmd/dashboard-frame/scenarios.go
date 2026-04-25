@@ -45,6 +45,18 @@ var scenarios = []scenario{
 			o.InitialFilter = "alpha"
 		},
 	},
+	{
+		name:        "with-color-tint",
+		tab:         "circuits",
+		description: "dashboard anchored to a single circuit; outer chrome re-tints to the per-circuit accent (alpha = #6B50FF here, but the override wires through theme.WithAccent)",
+		apply: func(o *dashboard.Options, _, _ *int) {
+			// Anchor to alpha and use a contrasting tint so the
+			// override is visibly different from the default Charple
+			// brand accent.
+			o.CircuitFilter = "alpha"
+			o.AccentOverride = "#FF388B" // charmtone.Cherry
+		},
+	},
 }
 
 // findScenario resolves a scenario by name, falling back to default

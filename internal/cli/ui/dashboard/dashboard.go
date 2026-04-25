@@ -63,6 +63,12 @@ type Options struct {
 	// pre-driven key sequence harness. Live runs leave this empty;
 	// the eval-screens loop sets it for filter-* scenarios.
 	InitialFilter string
+
+	// AccentOverride re-tints the dashboard's brand accent at startup
+	// (focus border, active tab, header, etc.). Hex like "#6B50FF".
+	// Live use case: dashboard anchored to one circuit re-tints to
+	// that circuit's Color. Empty leaves the default Charple accent.
+	AccentOverride string
 }
 
 // DataSource is the small surface every panel calls into. Implementations
@@ -107,6 +113,9 @@ type model struct {
 }
 
 func newModel(o Options) *model {
+	if o.AccentOverride != "" && o.Theme != nil {
+		o.Theme = o.Theme.WithAccent(lipgloss.Color(o.AccentOverride))
+	}
 	hp := help.New()
 	hp.Styles = helpStylesFor(o.Theme)
 	m := &model{o: o, t: o.Theme, tab: o.InitialTab, help: hp}

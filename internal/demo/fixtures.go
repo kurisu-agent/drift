@@ -50,9 +50,9 @@ func (DataSource) Karts(_ context.Context, circuit string) ([]dashboard.KartRow,
 
 func (DataSource) Circuits(_ context.Context) ([]dashboard.CircuitRow, error) {
 	return []dashboard.CircuitRow{
-		{Name: "alpha", Host: "alpha.example.org", Default: true, Lakitu: "0.4.3", LatencyMS: 18, Reachable: true},
-		{Name: "beta", Host: "beta.example.org", Lakitu: "0.4.3", LatencyMS: 42, Reachable: true},
-		{Name: "gamma", Host: "gamma.example.org", Lakitu: "0.4.3", LatencyMS: 67, Reachable: true},
+		{Name: "alpha", Host: "alpha.example.org", Default: true, Lakitu: "0.4.3", LatencyMS: 18, Reachable: true, Color: "#6B50FF"},
+		{Name: "beta", Host: "beta.example.org", Lakitu: "0.4.3", LatencyMS: 42, Reachable: true, Color: "#0ADCD9"},
+		{Name: "gamma", Host: "gamma.example.org", Lakitu: "0.4.3", LatencyMS: 67, Reachable: true, Color: "#FF388B"},
 	}, nil
 }
 

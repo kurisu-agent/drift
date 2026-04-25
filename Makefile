@@ -108,6 +108,7 @@ eval-screens:
 	render karts default; \
 	render karts filter-active; \
 	render circuits default; \
+	render circuits with-color-tint; \
 	render chest default; \
 	render characters default; \
 	render tunes default; \
