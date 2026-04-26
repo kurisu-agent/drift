@@ -277,4 +277,3 @@ func stopBrowse(ctx context.Context, deps deps, circuit string, noStop bool) err
 	return deps.call(ctx, circuit, wire.MethodCircuitBrowseStop,
 		wire.CircuitBrowseStopParams{}, &res)
 }
-

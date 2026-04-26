@@ -94,7 +94,7 @@ func TestLastNonEmptyLines(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		tc := tc
+
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := lastNonEmptyLines(tc.in, tc.n)
