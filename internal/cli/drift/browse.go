@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
-	driftexec "github.com/kurisu-agent/drift/internal/exec"
 	"github.com/kurisu-agent/drift/internal/rpcerr"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
@@ -58,13 +57,21 @@ func runBrowse(ctx context.Context, ioPipes IO, root *CLI, cmd browseCmd, deps d
 
 	// Hold the tunnel until the user Ctrl-Cs. ssh -N keeps the connection
 	// open without spawning a remote shell; -L plumbs the workstation port
-	// to the circuit's loopback filebrowser. Using the drift-managed
-	// `drift.<circuit>` alias means the tunnel inherits the same
-	// ControlMaster / ProxyCommand the rest of drift uses to reach lakitu.
+	// to the circuit's loopback filebrowser.
+	//
+	// `ControlPath=none` deliberately bypasses any ControlMaster the user
+	// has configured for `drift.<circuit>`. With multiplexing enabled,
+	// ssh hands the -L off to the existing master and exits immediately
+	// — we need to stay in the foreground so the user's Ctrl-C reaches
+	// us and we can tear down filebrowser. `ExitOnForwardFailure=yes`
+	// turns a silently-skipped local bind (port already in use) into a
+	// hard ssh exit, which our diagnostic can catch.
 	tunnelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	tunnel := osexec.CommandContext(tunnelCtx, "ssh",
 		"-N",
+		"-o", "ControlPath=none",
+		"-o", "ExitOnForwardFailure=yes",
 		"-L", fmt.Sprintf("%d:127.0.0.1:%d", localPort, startRes.Port),
 		"drift."+circuit,
 	)
@@ -91,12 +98,13 @@ func runBrowse(ctx context.Context, ioPipes IO, root *CLI, cmd browseCmd, deps d
 	// print "browsing http://..." first the user sees a URL flash and
 	// the process exit with no explanation. Wait for either a successful
 	// dial of localPort, an early ssh exit, or a brief timeout.
-	switch err := awaitTunnelReady(tunnelCtx, localPort, tunnelDone, tunnelReadyTimeout); {
-	case errors.Is(err, errTunnelExited):
+	sshExit, status := awaitTunnelReady(tunnelCtx, localPort, tunnelDone, tunnelReadyTimeout)
+	switch {
+	case errors.Is(status, errTunnelExited):
 		_ = stopBrowse(ctx, deps, circuit, cmd.NoStop)
 		return errfmt.Emit(ioPipes.Stderr,
-			tunnelSetupError(circuit, localPort, startRes.Port, time.Since(startedAt), sshStderr.String()))
-	case err != nil:
+			tunnelSetupError(circuit, localPort, startRes.Port, time.Since(startedAt), sshStderr.String(), sshExit))
+	case status != nil:
 		// Dial timed out but ssh is still alive — probably a slow
 		// circuit, not a hard failure. Carry on; the user can still
 		// hit Ctrl-C. Print a soft warning so the lag isn't mysterious.
@@ -113,24 +121,34 @@ func runBrowse(ctx context.Context, ioPipes IO, root *CLI, cmd browseCmd, deps d
 
 	// Block until either the tunnel dies on its own or the user signals.
 	// Either way we cancel ssh and call circuit.browse_stop unless
-	// --no-stop. Selecting on tunnelDone catches "ssh failed mid-session"
-	// (e.g. circuit went away) without leaving filebrowser orphaned on
-	// the circuit.
-	var tunnelErr error
+	// --no-stop. Track whether we cancelled so we can tell "user Ctrl-C'd
+	// → ssh's non-zero exit is expected" apart from "ssh died on its own
+	// → that's the actual failure". The earlier `isSignalKill(*ExitError)`
+	// shortcut matched any exit code and ate real failures silently.
+	var (
+		tunnelErr       error
+		userInterrupted bool
+	)
 	select {
 	case <-sig:
+		userInterrupted = true
 		cancel()
 		<-tunnelDone
 	case tunnelErr = <-tunnelDone:
 	}
 
 	stopErr := stopBrowse(ctx, deps, circuit, cmd.NoStop)
-
-	if tunnelErr != nil && !isSignalKill(tunnelErr) {
-		fmt.Fprintf(ioPipes.Stderr, "warning: ssh tunnel: %v\n", tunnelErr)
-	}
 	if stopErr != nil {
 		fmt.Fprintf(ioPipes.Stderr, "warning: stop filebrowser: %v\n", stopErr)
+	}
+
+	if !userInterrupted {
+		// ssh exited mid-session with no Ctrl-C from us. Surface the
+		// diagnostic regardless of whether tunnel.Wait() returned an
+		// error — `ssh -N` should never exit on its own, so even a clean
+		// exit (tunnelErr == nil) is a real failure worth showing.
+		return errfmt.Emit(ioPipes.Stderr,
+			tunnelSetupError(circuit, localPort, startRes.Port, time.Since(startedAt), sshStderr.String(), tunnelErr))
 	}
 	return 0
 }
@@ -143,56 +161,68 @@ var errTunnelExited = errors.New("ssh tunnel exited before becoming ready")
 
 // awaitTunnelReady blocks until one of three things happens: a dial of
 // localPort succeeds (tunnel is up), the ssh process exits early
-// (returns errTunnelExited), or the timeout elapses (returns
-// context.DeadlineExceeded). Polling beats a single dial because ssh's
-// local bind and the remote channel come up a few ms apart — the first
-// dial often races the bind.
-func awaitTunnelReady(ctx context.Context, localPort int, tunnelDone <-chan error, timeout time.Duration) error {
+// (returns errTunnelExited and the underlying exit error), or the
+// timeout elapses (returns context.DeadlineExceeded). Polling beats a
+// single dial because ssh's local bind and the remote channel come up
+// a few ms apart — the first dial often races the bind.
+//
+// The first return value is whatever `tunnel.Wait()` produced when the
+// process exited early; nil for the dial-success and timeout paths.
+// We capture it here (rather than re-reading the channel later) so the
+// caller's diagnostic can include the actual ssh exit status.
+func awaitTunnelReady(ctx context.Context, localPort int, tunnelDone <-chan error, timeout time.Duration) (error, error) {
 	deadline := time.Now().Add(timeout)
 	tick := time.NewTicker(75 * time.Millisecond)
 	defer tick.Stop()
 	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(localPort))
 	for {
 		select {
-		case <-tunnelDone:
-			return errTunnelExited
+		case sshErr := <-tunnelDone:
+			return sshErr, errTunnelExited
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		default:
 		}
 		conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
 		if err == nil {
 			_ = conn.Close()
-			return nil
+			return nil, nil
 		}
 		if time.Now().After(deadline) {
-			return context.DeadlineExceeded
+			return nil, context.DeadlineExceeded
 		}
 		select {
-		case <-tunnelDone:
-			return errTunnelExited
+		case sshErr := <-tunnelDone:
+			return sshErr, errTunnelExited
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		case <-tick.C:
 		}
 	}
 }
 
-// tunnelSetupError renders the actionable diagnostic for an immediate
+// tunnelSetupError renders the actionable diagnostic for an unexpected
 // ssh exit. The captured stderr (often a one-line "Permission denied"
 // or "Could not resolve hostname") is the most useful piece — the
-// hint list covers the common silent-exit causes. Wrapped in an
-// *rpcerr.Error so errfmt renders it with the same key:value layout
-// as RPC failures.
-func tunnelSetupError(circuit string, localPort, remotePort int, elapsed time.Duration, sshStderr string) error {
+// hint list covers the common silent-exit causes. sshExit is whatever
+// `tunnel.Wait()` returned; it can be nil (`ssh -N` shouldn't ever
+// exit cleanly, so even nil here is a real failure mode worth showing).
+// Wrapped in an *rpcerr.Error so errfmt renders it with the same
+// key:value layout as RPC failures.
+func tunnelSetupError(circuit string, localPort, remotePort int, elapsed time.Duration, sshStderr string, sshExit error) error {
 	hints := []string{
 		fmt.Sprintf("workstation port %d may already be in use (try --local-port)", localPort),
 		fmt.Sprintf("`ssh drift.%s true` should succeed (alias missing or auth failed?)", circuit),
 		fmt.Sprintf("filebrowser may not be listening on the circuit at :%d (rebuild lakitu on the circuit)", remotePort),
 	}
+	exitDesc := "exited cleanly (unusual for ssh -N — likely backgrounded itself)"
+	if sshExit != nil {
+		exitDesc = sshExit.Error()
+	}
 	e := rpcerr.Internal("ssh tunnel to drift.%s collapsed after %s", circuit, elapsed.Round(time.Millisecond)).
 		With("local_port", localPort).
 		With("remote_port", remotePort).
+		With("ssh_exit", exitDesc).
 		With("hints", hints)
 	if trimmed := lastNonEmptyLines(sshStderr, 8); trimmed != "" {
 		e = e.With("ssh_stderr", trimmed)
@@ -248,18 +278,3 @@ func stopBrowse(ctx context.Context, deps deps, circuit string, noStop bool) err
 		wire.CircuitBrowseStopParams{}, &res)
 }
 
-// isSignalKill reports whether the error is the expected "we cancelled
-// ssh" outcome. Both context cancellation and SIGTERM-on-exit show up
-// as exit-code !=0; the user doesn't need to see a warning about a
-// process they themselves killed.
-func isSignalKill(err error) bool {
-	if errors.Is(err, context.Canceled) {
-		return true
-	}
-	var ee *osexec.ExitError
-	if errors.As(err, &ee) {
-		return true
-	}
-	var de *driftexec.Error
-	return errors.As(err, &de)
-}

@@ -18,15 +18,20 @@ func TestAwaitTunnelReady_dialSucceeds(t *testing.T) {
 	port := ln.Addr().(*net.TCPAddr).Port
 
 	done := make(chan error, 1) // never fires
-	if err := awaitTunnelReady(context.Background(), port, done, time.Second); err != nil {
-		t.Fatalf("expected ready, got %v", err)
+	sshExit, status := awaitTunnelReady(context.Background(), port, done, time.Second)
+	if status != nil {
+		t.Fatalf("expected ready, got status=%v", status)
+	}
+	if sshExit != nil {
+		t.Errorf("sshExit = %v, want nil on dial-success path", sshExit)
 	}
 }
 
 func TestAwaitTunnelReady_processExits(t *testing.T) {
 	t.Parallel()
 	done := make(chan error, 1)
-	done <- errors.New("ssh exited 255")
+	wantExit := errors.New("ssh exited 255")
+	done <- wantExit
 	// Use a definitely-closed port (a listener we close immediately) so
 	// the dial keeps failing and the function falls through to the
 	// tunnelDone branch.
@@ -34,9 +39,12 @@ func TestAwaitTunnelReady_processExits(t *testing.T) {
 	port := ln.Addr().(*net.TCPAddr).Port
 	_ = ln.Close()
 
-	err := awaitTunnelReady(context.Background(), port, done, time.Second)
-	if !errors.Is(err, errTunnelExited) {
-		t.Fatalf("err = %v, want errTunnelExited", err)
+	sshExit, status := awaitTunnelReady(context.Background(), port, done, time.Second)
+	if !errors.Is(status, errTunnelExited) {
+		t.Fatalf("status = %v, want errTunnelExited", status)
+	}
+	if !errors.Is(sshExit, wantExit) {
+		t.Errorf("sshExit = %v, want %v passed through from tunnelDone", sshExit, wantExit)
 	}
 }
 
@@ -47,9 +55,12 @@ func TestAwaitTunnelReady_timeout(t *testing.T) {
 	port := ln.Addr().(*net.TCPAddr).Port
 	_ = ln.Close()
 
-	err := awaitTunnelReady(context.Background(), port, done, 200*time.Millisecond)
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("err = %v, want DeadlineExceeded", err)
+	sshExit, status := awaitTunnelReady(context.Background(), port, done, 200*time.Millisecond)
+	if !errors.Is(status, context.DeadlineExceeded) {
+		t.Fatalf("status = %v, want DeadlineExceeded", status)
+	}
+	if sshExit != nil {
+		t.Errorf("sshExit = %v, want nil on timeout path", sshExit)
 	}
 }
 
