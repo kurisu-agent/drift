@@ -1,0 +1,13 @@
+# kart.start with an empty name fails with code:2 invalid_flag before any
+# devpod subprocess spawns. Proves the Register wiring landed and that
+# bindLifecycleParams' empty-name guard is applied uniformly.
+
+stdin start.json
+lakitu rpc
+! stderr .
+stdout '"error":'
+stdout '"code":2'
+stdout '"type":"invalid_flag"'
+
+-- start.json --
+{"jsonrpc":"2.0","method":"kart.start","params":{"name":""},"id":1}

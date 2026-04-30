@@ -1,0 +1,81 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (must already exist)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  # Gate: refuse to ship a release whose flake.lock is stale relative
+  # to what `nix flake update` would produce right now. This is paired
+  # with the dispatch-only flake-update.yml workflow — the discipline
+  # is "fire flake-update, merge the PR, then tag." A tag that arrives
+  # with a stale lock fails this job and goreleaser never runs.
+  #
+  # The check is strict: any drift in upstream registries between the
+  # last `flake-update` run and the tag push registers as stale. That
+  # window is short in practice; if it gets in the way we can soften
+  # to a "lock newer than N days" tolerance.
+  lock-fresh:
+    name: lock fresh
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v14
+
+      - name: Verify flake.lock is fresh
+        run: |
+          cp flake.lock flake.lock.before
+          nix flake update
+          if ! cmp -s flake.lock flake.lock.before; then
+            echo "::error::flake.lock would change — run 'gh workflow run flake-update.yml' on main, merge the PR it opens, then re-tag."
+            diff flake.lock.before flake.lock || true
+            exit 1
+          fi
+
+  # No pre-release test gate here — ci.yml's main-push job (unit + lint
+  # + vulncheck + integration) is the gate, and drift tags are only cut
+  # from main. Re-running the same suite on the tagged commit would be
+  # duplicate work with near-zero catch rate in the happy path. If a
+  # commit ever gets tagged that skipped ci.yml (off-main tag, direct
+  # push of a patched tag), the release still ships from an untested
+  # SHA — so discipline is: only tag commits that have a green ci.yml
+  # run against them.
+  release:
+    name: goreleaser
+    needs: lock-fresh
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # goreleaser-action bundles its own Go matrix handling, so we skip
+      # Nix here — no devShell needed, no cachix step needed. Keep this
+      # job minimal to shorten tag→release latency.
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

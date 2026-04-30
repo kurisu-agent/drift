@@ -1,0 +1,21 @@
+# kart.info for an unknown kart on a freshly initialized (or unused)
+# garage returns kart_not_found (code 3). This proves:
+#   - kart.info is registered (no method_not_found)
+#   - param binding works (name required)
+#   - the handler merges garage + devpod and correctly diagnoses "absent
+#     from both sides" as not_found rather than stale.
+#
+# The test assumes devpod, if present on PATH, reports an empty workspace
+# list for a fresh $HOME — true in CI and in the devcontainer sandbox.
+
+stdin info.json
+lakitu rpc
+! stderr .
+stdout '"error":'
+! stdout 'method_not_found'
+stdout '"code":3'
+stdout '"type":"kart_not_found"'
+stdout '"kart":"ghost"'
+
+-- info.json --
+{"jsonrpc":"2.0","method":"kart.info","params":{"name":"ghost"},"id":1}

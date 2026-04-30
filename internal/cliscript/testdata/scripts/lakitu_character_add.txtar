@@ -1,0 +1,48 @@
+# `lakitu character new` writes a character yaml under the garage and the
+# list/show/rm flow round-trips.
+
+lakitu init
+! stderr .
+
+# Happy path: add a minimal character.
+lakitu character new alice --git-name=Alice --git-email=alice@example.com
+! stderr .
+stdout '"name": "alice"'
+stdout '"git_name": "Alice"'
+
+# The file landed in the expected place.
+exists $HOME/.drift/garage/characters/alice.yaml
+grep 'git_name: Alice' $HOME/.drift/garage/characters/alice.yaml
+grep 'git_email: alice@example.com' $HOME/.drift/garage/characters/alice.yaml
+
+# list returns it.
+lakitu character list
+! stderr .
+stdout '"name": "alice"'
+
+# show returns the same payload.
+lakitu character show alice
+! stderr .
+stdout '"git_email": "alice@example.com"'
+
+# Re-adding collides with code:4.
+! lakitu character new alice --git-name=Alice --git-email=alice@example.com
+stderr 'name_collision'
+
+# Reserved name rejected with code:2.
+! lakitu character new default --git-name=Bad --git-email=bad@example.com
+stderr 'invalid_name'
+
+# Literal PAT tokens rejected.
+! lakitu character new bob --git-name=Bob --git-email=bob@example.com --pat-secret=ghp_abc123
+stderr 'invalid_flag'
+
+# Chest reference accepted.
+lakitu character new bob --git-name=Bob --git-email=bob@example.com --pat-secret=chest:github
+! stderr .
+stdout '"pat_secret": "chest:github"'
+
+# Removal succeeds for a character no kart references.
+lakitu character rm bob
+! stderr .
+! exists $HOME/.drift/garage/characters/bob.yaml

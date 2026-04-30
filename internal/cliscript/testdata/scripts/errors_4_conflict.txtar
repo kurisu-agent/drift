@@ -1,0 +1,16 @@
+# Golden test for the human CLI stderr format on code 4 (conflict).
+# Register a character, then register it again. character.add's duplicate
+# check produces name_collision (code 4), routed through errfmt.Emit.
+
+lakitu init
+! stderr .
+
+lakitu character new kurisu --git-name 'Kurisu Makise' --git-email kurisu@example.com
+! stderr .
+
+# Second add of the same name → code 4, name_collision.
+! lakitu character new kurisu --git-name 'Kurisu Makise' --git-email kurisu@example.com
+stderr '^error: character "kurisu" already exists'
+stderr '^  type: name_collision'
+stderr '^  name: kurisu'
+! stdout .

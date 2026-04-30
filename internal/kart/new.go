@@ -1,0 +1,426 @@
+package kart
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"sort"
+	"time"
+
+	"github.com/kurisu-agent/drift/internal/config"
+	"github.com/kurisu-agent/drift/internal/devpod"
+	driftexec "github.com/kurisu-agent/drift/internal/exec"
+	"github.com/kurisu-agent/drift/internal/model"
+	"github.com/kurisu-agent/drift/internal/name"
+	"github.com/kurisu-agent/drift/internal/rpcerr"
+	yaml "gopkg.in/yaml.v3"
+)
+
+type NewDeps struct {
+	GarageDir string
+	Devpod    *devpod.Client
+	Resolver  *Resolver
+	// Starter: nil falls back to a default runner backed by internal/exec.
+	Starter *Starter
+	// Fetcher downloads --devcontainer URLs. nil means net/http.
+	Fetcher DevcontainerFetcher
+	// Now: nil means time.Now().UTC(). Tests pin this for stable fixtures.
+	Now func() time.Time
+	// Verbose, if non-nil, receives `[kart] <phase>` markers around each
+	// expensive step (resolve / starter strip / devcontainer normalize /
+	// devpod up / finalise). nil keeps the existing silent path.
+	Verbose io.Writer
+}
+
+// New drives kart.new end-to-end. On any error after the kart dir is
+// written, a `status: error` marker is stamped so a retry surfaces
+// stale_kart rather than colliding on a corpse. Scratch tmpdirs are removed
+// on every exit path.
+func New(ctx context.Context, d NewDeps, f Flags) (*Result, error) {
+	if d.Resolver == nil {
+		return nil, rpcerr.Internal("kart.new: resolver not configured")
+	}
+	if d.Devpod == nil {
+		return nil, rpcerr.Internal("kart.new: devpod client not configured")
+	}
+	if d.GarageDir == "" {
+		return nil, rpcerr.Internal("kart.new: garage dir not configured")
+	}
+
+	if err := name.Validate("kart", f.Name); err != nil {
+		return nil, err
+	}
+
+	kartDir := config.KartDir(d.GarageDir, f.Name)
+	if _, err := os.Stat(kartDir); err == nil {
+		// Distinguish a real collision (devpod knows the workspace too) from
+		// a stale corpse (garage-only, from a crashed `drift new`).
+		workspaces, lerr := d.Devpod.List(ctx)
+		if lerr != nil {
+			return nil, rpcerr.Internal("kart.new: devpod list: %v", lerr).Wrap(lerr)
+		}
+		inDevpod := false
+		for _, w := range workspaces {
+			if w.ID == f.Name {
+				inDevpod = true
+				break
+			}
+		}
+		if inDevpod {
+			return nil, rpcerr.Conflict(rpcerr.TypeNameCollision,
+				"kart %q already exists", f.Name).With("name", f.Name)
+		}
+		return nil, rpcerr.Conflict(rpcerr.TypeStaleKart,
+			"kart %q is stale (garage state without devpod workspace)", f.Name).
+			With("kart", f.Name).
+			With("suggestion",
+				fmt.Sprintf("drift kart delete %s to clean up, then drift new %s", f.Name, f.Name))
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, rpcerr.Internal("kart.new: stat %s: %v", kartDir, err).Wrap(err)
+	}
+
+	d.phase("resolving inputs")
+	resolved, err := d.Resolver.Resolve(f)
+	if err != nil {
+		return nil, err
+	}
+
+	// All tmpfiles (starter clone, devcontainer download) live under one
+	// scratch so a single RemoveAll cleans up.
+	scratch, err := os.MkdirTemp("", "drift-kart-"+f.Name+"-")
+	if err != nil {
+		return nil, rpcerr.Internal("kart.new: tmpdir: %v", err).Wrap(err)
+	}
+	defer func() { _ = os.RemoveAll(scratch) }()
+
+	if ctx.Err() != nil {
+		return nil, ctxErr(ctx)
+	}
+
+	var source string
+	switch resolved.SourceMode {
+	case model.SourceModeStarter:
+		d.phase("stripping starter %q", resolved.SourceURL)
+		starterDir := filepath.Join(scratch, "starter")
+		starter := d.Starter
+		if starter == nil {
+			starter = NewStarter()
+		}
+		if err := starter.Strip(ctx, resolved.SourceURL, starterDir, resolved.Character); err != nil {
+			return nil, rpcerr.New(rpcerr.CodeDevpod, rpcerr.TypeDevpodUpFailed,
+				"kart.new: starter: %v", err).Wrap(err)
+		}
+		source = starterDir
+	case model.SourceModeClone:
+		source = resolved.SourceURL
+		// devpod's source parser splits `--source` on `@` and treats the
+		// suffix as a branch ref, so a PAT-authenticated URL like
+		// https://x-access-token:TOKEN@github.com/foo/bar gets butchered
+		// into URL=https://x-access-token:TOKEN / branch=github.com/...
+		// Sidestep that by pre-cloning server-side when a PAT is in play
+		// and handing devpod the local path. Public repos and karts
+		// without a resolved PAT continue to flow the URL straight to
+		// devpod (no extra round trip when no auth is needed).
+		//
+		// The pre-clone target lives under the kart's persistent garage
+		// dir (not scratch) because devpod treats local-folder sources
+		// as the source-of-truth and references the path verbatim from
+		// workspace.json on every subsequent up/start. A scratch path
+		// would vanish at the end of kart.new and break drift connect
+		// on the very next call.
+		if resolved.Character != nil && resolved.Character.PAT != "" {
+			if _, ok := injectGithubPATIntoCloneURL(resolved.SourceURL, resolved.Character.PAT); ok {
+				d.phase("pre-cloning %q with kart pat", resolved.SourceURL)
+				if err := os.MkdirAll(kartDir, 0o700); err != nil {
+					return nil, rpcerr.Internal("kart.new: mkdir kart dir: %v", err).Wrap(err)
+				}
+				cloneDir := filepath.Join(kartDir, "source")
+				cloner := d.Starter
+				if cloner == nil {
+					cloner = NewStarter()
+				}
+				if err := cloner.Clone(ctx, resolved.SourceURL, cloneDir, resolved.Character); err != nil {
+					// Pre-clone runs before kartErrCleanup is in scope,
+					// so mop up the kart dir we just created here.
+					_ = os.RemoveAll(kartDir)
+					return nil, rpcerr.New(rpcerr.CodeDevpod, rpcerr.TypeDevpodUpFailed,
+						"kart.new: pre-clone: %v", err).Wrap(err)
+				}
+				source = cloneDir
+			}
+		}
+	case model.SourceModeNone:
+		// devpod's argv requires a positional "source"; with no flag and a
+		// bare workspace name it falls through to its clone-URL parser and
+		// tries to git-clone https://<name>. Hand it an empty local-folder
+		// source instead so the workspace is created with no git remote.
+		// Lives under kartDir (not scratch) because devpod records the
+		// path in workspace.json and reuses it on every later up/start —
+		// see the SourceModeClone pre-clone comment for the same trap.
+		if err := os.MkdirAll(kartDir, 0o700); err != nil {
+			return nil, rpcerr.Internal("kart.new: mkdir kart dir: %v", err).Wrap(err)
+		}
+		emptyDir := filepath.Join(kartDir, "source")
+		if err := os.MkdirAll(emptyDir, 0o700); err != nil {
+			_ = os.RemoveAll(kartDir)
+			return nil, rpcerr.Internal("kart.new: mkdir empty source: %v", err).Wrap(err)
+		}
+		source = emptyDir
+	}
+
+	if resolved.Devcontainer != "" {
+		d.phase("normalizing devcontainer %q", resolved.Devcontainer)
+	}
+	if len(resolved.Mounts) > 0 {
+		d.phase("splicing %d mount(s) into devcontainer overlay", len(resolved.Mounts))
+	}
+	dcDir := filepath.Join(scratch, "devcontainer")
+	dcPath, _, err := NormalizeDevcontainerWithOverlay(
+		ctx, resolved.Devcontainer, dcDir,
+		Overlay{
+			Mounts:            resolved.Mounts,
+			PostCreateCommand: resolved.PostCreateCommand,
+			RunArgs:           DefaultKartRunArgs,
+		},
+		d.Fetcher,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Write kart config BEFORE devpod up so an interrupt mid-up produces
+	// stale-kart state (garage entry without a running workspace).
+	if err := writeKartConfig(d.GarageDir, resolved, d.now()); err != nil {
+		return nil, rpcerr.Internal("kart.new: write config: %v", err).Wrap(err)
+	}
+	if resolved.Autostart {
+		if err := writeAutostartMarker(d.GarageDir, resolved.Name); err != nil {
+			return nil, rpcerr.Internal("kart.new: autostart marker: %v", err).Wrap(err)
+		}
+	}
+
+	// From here every error path runs kartErrCleanup, which tries to roll
+	// back the devpod workspace + garage dir so a retry starts from a
+	// clean slate. If cleanup itself fails mid-rollback (filesystem
+	// busy, etc.) we stamp a `status: error` marker so the next
+	// `drift new <same-name>` returns stale_kart rather than colliding
+	// on a corpse we couldn't remove.
+	kartErrCleanup := func(cause error) error {
+		// Detach from ctx so cleanup still runs when the caller's ctx was
+		// already cancelled (e.g. SIGINT triggered this error path).
+		bg, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_ = d.Devpod.Delete(bg, resolved.Name)
+		if err := os.RemoveAll(kartDir); err != nil {
+			_ = writeErrorMarker(d.GarageDir, resolved.Name, cause)
+		}
+		return cause
+	}
+
+	up := devpod.UpOpts{
+		Name:                  resolved.Name,
+		Source:                source,
+		Provider:              "docker",
+		IDE:                   "none",
+		AdditionalFeatures:    resolved.Features,
+		ExtraDevcontainerPath: dcPath,
+		Dotfiles:              resolved.Dotfiles,
+		WorkspaceEnv:          envKVPairs(resolved.Env.Workspace),
+		// Build env rides on the dotfiles install script that devpod
+		// kicks off from --dotfiles, scoped to that one process.
+		DotfilesScriptEnv: envKVPairs(resolved.Env.Build),
+		ConfigureSSH:      false,
+	}
+	d.phase("devpod up")
+	if _, err := d.Devpod.Up(ctx, up); err != nil {
+		re := rpcerr.New(rpcerr.CodeDevpod,
+			rpcerr.TypeDevpodUpFailed, "kart.new: devpod up: %v", err).Wrap(err).
+			With("kart", resolved.Name)
+		if tail := driftexec.StderrTail(err); tail != "" {
+			re = re.With(rpcerr.DataKeyDevpodStderr, tail)
+		}
+		// devpod up writes the in-container failure detail to stdout, not
+		// stderr — capturing both is what makes silent `devpod_up_failed`
+		// errors actually debuggable.
+		if tail := driftexec.StdoutTail(err); tail != "" {
+			re = re.With(rpcerr.DataKeyDevpodStdout, tail)
+		}
+		return nil, kartErrCleanup(re)
+	}
+
+	// Post-up finalisers coalesce into a single `devpod ssh --command`.
+	// Each ssh handshake adds ~200-400ms over wireguard to a remote
+	// circuit; three separate hops was close to a second of dead time.
+	script := newContainerScript("kart.new")
+	script.Append(symlinkFragment(homeMountSymlinks(resolved.Mounts)))
+	copyFrag, cerr := copyFragment(resolved.Mounts)
+	if cerr != nil {
+		return nil, kartErrCleanup(wrapDevpodPhase("copy tune files", resolved.Name, cerr))
+	}
+	script.Append(copyFrag)
+	seedFrag, cerr := seedFragments(ctx, d.Devpod, resolved)
+	if cerr != nil {
+		return nil, kartErrCleanup(rpcerr.Internal("kart.new: render seeds: %v", cerr).Wrap(cerr))
+	}
+	script.Append(seedFrag)
+	// SSH login alias: adds a same-UID `/etc/passwd` entry named
+	// DriftSSHAlias pointing at the primary user's home. Once installed,
+	// workstation ssh can use a stable `User drifter` against any kart
+	// regardless of the upstream image's user (node/vscode/ubuntu/…),
+	// which is what makes plan 13's wildcard `Host drift.<c>.*` and the
+	// ports-reconcile master actually work in production.
+	script.Append(sshLoginAliasFragment(DriftSSHAlias))
+	// gh-auth: per-kart runtime auth bound to the resolved character.
+	// Carries the PAT through stdin so it never lands in argv. No-op
+	// when the character has no PAT.
+	script.Append(ghAuthFragment(resolved.Character))
+	if !script.Empty() {
+		d.phase("finalising kart (symlinks, copies, seeds, auth)")
+		if err := script.Run(ctx, d.Devpod, resolved.Name); err != nil {
+			return nil, kartErrCleanup(wrapDevpodPhase("finalise kart", resolved.Name, err))
+		}
+	}
+
+	return &Result{
+		Name:      resolved.Name,
+		Source:    KartSource{Mode: string(resolved.SourceMode), URL: resolved.SourceURL},
+		Tune:      resolved.TuneName,
+		Character: resolved.CharacterName,
+		Autostart: resolved.Autostart,
+		CreatedAt: d.now().Format(time.RFC3339),
+	}, nil
+}
+
+// Result shape mirrors kart.info so clients can update their local cache
+// from either response.
+type Result struct {
+	Name      string     `json:"name"`
+	Source    KartSource `json:"source"`
+	Tune      string     `json:"tune,omitempty"`
+	Character string     `json:"character,omitempty"`
+	Autostart bool       `json:"autostart"`
+	CreatedAt string     `json:"created_at,omitempty"`
+	Warning   string     `json:"warning,omitempty"`
+}
+
+// KartSource is an alias for model.KartSource — shared with
+// internal/server so kart.new's Result and server's kart.info response
+// carry identical JSON.
+type KartSource = model.KartSource
+
+func writeKartConfig(garageDir string, r *Resolved, now time.Time) error {
+	if err := os.MkdirAll(config.KartDir(garageDir, r.Name), 0o700); err != nil {
+		return err
+	}
+	cfg := model.KartConfig{
+		Repo:       r.SourceURL,
+		Tune:       r.TuneName,
+		Character:  r.CharacterName,
+		PATSlug:    r.PATSlug,
+		SourceMode: string(r.SourceMode),
+		CreatedAt:  now.Format(time.RFC3339),
+		// Autostart rides on the config now (cluster 25). The sentinel file
+		// is still written by writeAutostartMarker for back-compat with
+		// readers that predate the field — drop once everyone migrates.
+		Autostart: r.Autostart,
+		Icon:      r.Icon,
+		Color:     r.Color,
+	}
+	// Persist the chest:<name> refs — never the resolved values. Lets
+	// start/restart re-resolve from chest without the user re-declaring,
+	// and `kart info` can render what's wired without exposing secrets.
+	// TuneEnv is a value with `omitempty`; yaml.v3 omits the whole `env:`
+	// key when every block is nil, so an empty EnvRefs round-trips cleanly.
+	if !r.EnvRefs.IsEmpty() {
+		cfg.Env = r.EnvRefs
+	}
+	if len(r.Mounts) > 0 {
+		cfg.MountDirs = append([]model.Mount(nil), r.Mounts...)
+	}
+	if !r.MigratedFrom.IsZero() {
+		mf := r.MigratedFrom
+		cfg.MigratedFrom = &mf
+	}
+	buf, err := yaml.Marshal(&cfg)
+	if err != nil {
+		return err
+	}
+	return config.WriteFileAtomic(config.KartConfigPath(garageDir, r.Name), buf, 0o644)
+}
+
+// writeAutostartMarker writes the legacy sentinel file so readers that
+// predate the `autostart` field on KartConfig still flag the kart for
+// boot-time start. The field on config.yaml is authoritative; this
+// sentinel is belt-and-braces for one release and can be dropped once
+// every on-disk config carries the field.
+func writeAutostartMarker(garageDir, kartName string) error {
+	return config.WriteFileAtomic(config.KartAutostartPath(garageDir, kartName), nil, 0o644)
+}
+
+// writeErrorMarker stamps the `status` file with "error" so the next
+// drift-new sees the kart as stale and exits stale_kart (code:4).
+func writeErrorMarker(garageDir, kartName string, cause error) error {
+	msg := "error"
+	if cause != nil {
+		msg = "error: " + cause.Error()
+	}
+	return config.WriteFileAtomic(config.KartStatusPath(garageDir, kartName), []byte(msg), 0o644)
+}
+
+func (d NewDeps) now() time.Time {
+	if d.Now != nil {
+		return d.Now()
+	}
+	return time.Now().UTC()
+}
+
+// phase emits a one-line `[kart] <msg>` marker to Verbose. nil = quiet.
+// Callers always run before the expensive step so the user sees what's
+// about to start, not what just finished.
+func (d NewDeps) phase(format string, args ...any) {
+	if d.Verbose == nil {
+		return
+	}
+	fmt.Fprintf(d.Verbose, "[kart] "+format+"\n", args...)
+}
+
+// envKVPairs renders a resolved env map as sorted KEY=VALUE strings.
+// Sorted so devpod argv is stable across runs (tests and log diffs).
+// wrapDevpodPhase wraps a post-`devpod up` helper failure in the
+// standard rpcerr shape so the three finalisation steps share one
+// error-reporting convention.
+func wrapDevpodPhase(phase, kart string, err error) error {
+	return rpcerr.New(rpcerr.CodeDevpod, rpcerr.TypeDevpodUpFailed,
+		"kart.new: %s: %v", phase, err).Wrap(err).With("kart", kart)
+}
+
+func envKVPairs(m map[string]string) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, k+"="+m[k])
+	}
+	return out
+}
+
+func ctxErr(ctx context.Context) error {
+	err := ctx.Err()
+	if errors.Is(err, context.Canceled) {
+		return rpcerr.UserError(rpcerr.TypeInvalidFlag, "kart.new: interrupted").Wrap(err)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return rpcerr.UserError(rpcerr.TypeInvalidFlag, "kart.new: deadline exceeded").Wrap(err)
+	}
+	return rpcerr.Internal("kart.new: %v", err).Wrap(err)
+}

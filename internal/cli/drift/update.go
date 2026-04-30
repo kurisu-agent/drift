@@ -1,0 +1,515 @@
+package drift
+
+import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	osexec "os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
+
+	"github.com/kurisu-agent/drift/internal/cli/errfmt"
+	"github.com/kurisu-agent/drift/internal/config"
+	driftexec "github.com/kurisu-agent/drift/internal/exec"
+	"github.com/kurisu-agent/drift/internal/version"
+)
+
+// maxUpdateTarEntry caps the in-memory buffer for a single tar entry
+// during self-update. drift binaries are ~10 MB; 200 MiB is a generous
+// ceiling that still refuses obviously-hostile payloads.
+const maxUpdateTarEntry = 200 << 20
+
+type updateCmd struct {
+	// Source is an optional positional arg. When set, drift self-replaces
+	// from the given source instead of the latest GitHub release. Accepted
+	// forms:
+	//   - `user@host:path` or `host:path` — pulled via scp.
+	//   - `http://…` / `https://…` — direct download (raw binary, not a tarball).
+	//   - `/abs/path` or `./rel/path` or `~/path` — copied from the local disk.
+	// Handy for iterating on drift from a feature branch: build on a
+	// sandbox host, `drift update host:path/to/drift` from your workstation.
+	Source  string `arg:"" optional:"" name:"source" help:"Dev override: pull the drift binary from an scp path, URL, or local file instead of fetching the latest GitHub release."`
+	Check   bool   `help:"Check for an update without downloading."`
+	Repo    string `name:"repo" hidden:"" default:"kurisu-agent/drift"`
+	APIBase string `name:"api-base" hidden:"" default:"https://api.github.com"`
+}
+
+type ghRelease struct {
+	TagName string    `json:"tag_name"`
+	HTMLURL string    `json:"html_url"`
+	Assets  []ghAsset `json:"assets"`
+}
+
+type ghAsset struct {
+	Name               string `json:"name"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+	Size               int64  `json:"size"`
+}
+
+func runUpdate(ctx context.Context, ioStreams IO, cmd updateCmd) int {
+	if cmd.Source != "" {
+		return runUpdateFromSource(ctx, ioStreams, cmd.Source)
+	}
+	cur := version.Get().Version
+	fmt.Fprintln(ioStreams.Stderr, "→ checking latest release")
+	latest, err := fetchLatestRelease(ctx, cmd.APIBase, cmd.Repo)
+	if err != nil {
+		return errfmt.Emit(ioStreams.Stderr, fmt.Errorf("check failed: %w", err))
+	}
+	latestClean := strings.TrimPrefix(latest.TagName, "v")
+	curClean := strings.TrimPrefix(cur, "v")
+	fmt.Fprintf(ioStreams.Stdout, "current: %s\nlatest:  %s\n", orDevel(curClean), latestClean)
+
+	if curClean == latestClean && cur != "devel" && cur != "" {
+		fmt.Fprintln(ioStreams.Stdout, "up to date")
+		return 0
+	}
+	if cmd.Check {
+		fmt.Fprintf(ioStreams.Stdout, "update available: %s\n", latest.HTMLURL)
+		return 0
+	}
+	if cur == "devel" || cur == "" {
+		return errfmt.Emit(ioStreams.Stderr, errors.New("refusing to self-update a development build; rebuild from source or install a tagged release"))
+	}
+
+	asset, err := pickAsset(latest.Assets, runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return errfmt.Emit(ioStreams.Stderr, err)
+	}
+	fmt.Fprintf(ioStreams.Stderr, "→ selected asset %s (%s)\n", asset.Name, humanBytes(asset.Size))
+	exe, err := resolveSelfPath()
+	if err != nil {
+		return errfmt.Emit(ioStreams.Stderr, err)
+	}
+	fmt.Fprintf(ioStreams.Stderr, "→ downloading %s\n", asset.BrowserDownloadURL)
+	if err := downloadAndReplace(ctx, asset.BrowserDownloadURL, exe, ioStreams.Stderr); err != nil {
+		return errfmt.Emit(ioStreams.Stderr, err)
+	}
+	fmt.Fprintf(ioStreams.Stdout, "updated to %s\n", latestClean)
+	return 0
+}
+
+// resolveSelfPath returns the path to the running drift binary. On
+// Termux/Android, termux-exec runs every $PREFIX-data-partition binary
+// through the Android dynamic linker (/apex/com.android.runtime/bin/linker64
+// on A10+, /system/bin/linker{,64} on older releases) to dodge the W^X
+// SELinux restriction. That means /proc/self/exe — and thus
+// os.Executable() — resolves to the linker rather than drift, so a naive
+// self-update would try to replace the linker on the read-only /apex
+// overlay. When we detect that, fall back to argv[0] (PATH-resolved): the
+// linker hands drift its own original path back as argv[0] on entry.
+func resolveSelfPath() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(exe)
+	if err != nil {
+		return "", err
+	}
+	if !isAndroidLinker(resolved) {
+		return resolved, nil
+	}
+	return resolveViaArgv0(os.Args, osexec.LookPath)
+}
+
+func isAndroidLinker(path string) bool {
+	base := filepath.Base(path)
+	if base != "linker" && base != "linker64" {
+		return false
+	}
+	return strings.HasPrefix(path, "/apex/") || strings.HasPrefix(path, "/system/")
+}
+
+func resolveViaArgv0(argv []string, lookPath func(string) (string, error)) (string, error) {
+	if len(argv) == 0 || argv[0] == "" {
+		return "", errors.New("self-update: os.Executable reported the Android linker and argv[0] is empty")
+	}
+	p, err := lookPath(argv[0])
+	if err != nil {
+		return "", fmt.Errorf("self-update: locate drift via argv[0]=%q: %w", argv[0], err)
+	}
+	if !filepath.IsAbs(p) {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return "", err
+		}
+		p = abs
+	}
+	if real, err := filepath.EvalSymlinks(p); err == nil {
+		return real, nil
+	}
+	return p, nil
+}
+
+func orDevel(s string) string {
+	if s == "" {
+		return "devel"
+	}
+	return s
+}
+
+func fetchLatestRelease(ctx context.Context, apiBase, repo string) (*ghRelease, error) {
+	url := fmt.Sprintf("%s/repos/%s/releases/latest", strings.TrimRight(apiBase, "/"), repo)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github api returned %s", resp.Status)
+	}
+	var rel ghRelease
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+		return nil, fmt.Errorf("decode release: %w", err)
+	}
+	if rel.TagName == "" {
+		return nil, errors.New("github api returned a release with no tag_name")
+	}
+	return &rel, nil
+}
+
+// pickAsset matches the trailing _<os>_<arch>.tar.gz suffix rather than
+// the version, so the logic survives version bumps.
+func pickAsset(assets []ghAsset, goos, goarch string) (*ghAsset, error) {
+	suffix := fmt.Sprintf("_%s_%s.tar.gz", goos, goarch)
+	for i := range assets {
+		if strings.HasPrefix(assets[i].Name, "drift_") && strings.HasSuffix(assets[i].Name, suffix) {
+			return &assets[i], nil
+		}
+	}
+	return nil, fmt.Errorf("no release asset for %s/%s", goos, goarch)
+}
+
+// downloadAndReplace uses rename(2) over the running executable — safe
+// on Linux (incl. Android): the kernel keeps the old inode live for the
+// current process. progress writes a periodic `\r downloading X / Y`
+// line so a stalled download is visibly localized rather than looking
+// like a silent hang.
+func downloadAndReplace(ctx context.Context, url, dst string, progress io.Writer) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download %s: %s", url, resp.Status)
+	}
+	// Buffer the whole download before extracting. Wrapping the raw
+	// response in gzip/tar readers directly would cause progressReader
+	// to keep ticking during extraction — those ticks race the
+	// "→ extracting" and "→ writing" lines and render as a second
+	// progress line glued onto them.
+	body := io.Reader(resp.Body)
+	if progress != nil {
+		body = newProgressReader(resp.Body, resp.ContentLength, progress)
+	}
+	buf, err := io.ReadAll(body)
+	if err != nil {
+		return fmt.Errorf("download: %w", err)
+	}
+	gz, err := gzip.NewReader(bytes.NewReader(buf))
+	if err != nil {
+		return fmt.Errorf("gzip: %w", err)
+	}
+	defer func() { _ = gz.Close() }()
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			return errors.New("tarball did not contain a drift binary")
+		}
+		if err != nil {
+			return fmt.Errorf("tar: %w", err)
+		}
+		if hdr.Typeflag != tar.TypeReg || filepath.Base(hdr.Name) != "drift" {
+			continue
+		}
+		fmt.Fprintf(progress, "→ extracting %s (%s)\n", hdr.Name, humanBytes(hdr.Size))
+		data, err := io.ReadAll(io.LimitReader(tr, maxUpdateTarEntry+1))
+		if err != nil {
+			return fmt.Errorf("tar: read drift entry: %w", err)
+		}
+		if int64(len(data)) > maxUpdateTarEntry {
+			return fmt.Errorf("tar: drift entry exceeds %d byte limit", maxUpdateTarEntry)
+		}
+		fmt.Fprintf(progress, "→ writing %s\n", dst)
+		return config.WriteFileAtomic(dst, data, 0o755)
+	}
+}
+
+// progressReader wraps r and writes a one-line `\r downloading X / Y` to
+// out at most every redrawInterval. Total <= 0 means Content-Length was
+// missing; the line then drops the `/ Y` half. A final newline is
+// emitted on EOF so the next stderr line lands cleanly.
+type progressReader struct {
+	r       io.Reader
+	total   int64
+	read    int64
+	out     io.Writer
+	last    time.Time
+	started time.Time
+}
+
+const redrawInterval = 250 * time.Millisecond
+
+func newProgressReader(r io.Reader, total int64, out io.Writer) *progressReader {
+	return &progressReader{r: r, total: total, out: out, started: time.Now()}
+}
+
+func (pr *progressReader) Read(p []byte) (int, error) {
+	n, err := pr.r.Read(p)
+	pr.read += int64(n)
+	now := time.Now()
+	atEOF := errors.Is(err, io.EOF)
+	if atEOF || now.Sub(pr.last) >= redrawInterval {
+		pr.last = now
+		pr.draw(atEOF)
+	}
+	return n, err
+}
+
+func (pr *progressReader) draw(final bool) {
+	elapsed := time.Since(pr.started)
+	rate := ""
+	if elapsed > 0 {
+		rate = fmt.Sprintf(" @ %s/s", humanBytes(int64(float64(pr.read)/elapsed.Seconds())))
+	}
+	if pr.total > 0 {
+		pct := float64(pr.read) / float64(pr.total) * 100
+		fmt.Fprintf(pr.out, "\r  %s / %s (%5.1f%%)%s", humanBytes(pr.read), humanBytes(pr.total), pct, rate)
+	} else {
+		fmt.Fprintf(pr.out, "\r  %s%s", humanBytes(pr.read), rate)
+	}
+	if final {
+		fmt.Fprintln(pr.out)
+	}
+}
+
+// runUpdateFromSource self-replaces from an scp target / URL / local
+// path instead of the GitHub release channel. Source is treated as a
+// raw binary — no tarball unwrap — so the host side is just a
+// `go build -o drift ./cmd/drift` output, nothing more. No version
+// check (dev builds are the expected caller here) and no `--check`
+// support: if you passed a source, you want that source installed.
+func runUpdateFromSource(ctx context.Context, ioStreams IO, source string) int {
+	exe, err := resolveSelfPath()
+	if err != nil {
+		return errfmt.Emit(ioStreams.Stderr, err)
+	}
+	prev := version.Get().Format("drift")
+	fmt.Fprintf(ioStreams.Stderr, "→ pulling drift from %s\n", source)
+	data, err := readBinarySource(ctx, source, ioStreams.Stderr)
+	if err != nil {
+		return errfmt.Emit(ioStreams.Stderr, err)
+	}
+	if len(data) < 1024 {
+		return errfmt.Emit(ioStreams.Stderr,
+			fmt.Errorf("source %s is %d bytes — too small to be a drift binary; refusing to install", source, len(data)))
+	}
+	fmt.Fprintf(ioStreams.Stderr, "→ writing %s (%s)\n", exe, humanBytes(int64(len(data))))
+	if err := config.WriteFileAtomic(exe, data, 0o755); err != nil {
+		return errfmt.Emit(ioStreams.Stderr, err)
+	}
+	fmt.Fprintf(ioStreams.Stdout, "replaced %s from %s\n", exe, source)
+	if newVer := readSelfVersion(ctx, exe); newVer != "" {
+		fmt.Fprintf(ioStreams.Stdout, "  was: %s\n  now: %s\n", prev, newVer)
+	}
+	return 0
+}
+
+// readSelfVersion runs `<exe> --version` on the freshly-installed binary
+// and returns its trimmed first line. Returns "" on any failure — the
+// install itself succeeded, so a failed version probe is a soft miss
+// rather than an error path.
+func readSelfVersion(ctx context.Context, exe string) string {
+	res, err := driftexec.Run(ctx, driftexec.Cmd{
+		Name: exe,
+		Args: []string{"--version"},
+	})
+	if err != nil {
+		return ""
+	}
+	out := strings.TrimSpace(string(res.Stdout))
+	if i := strings.IndexByte(out, '\n'); i >= 0 {
+		out = out[:i]
+	}
+	return out
+}
+
+func readBinarySource(ctx context.Context, source string, progress io.Writer) ([]byte, error) {
+	switch {
+	case strings.HasPrefix(source, "http://"), strings.HasPrefix(source, "https://"):
+		return downloadRaw(ctx, source, progress)
+	case looksLikeSCPTarget(source):
+		return fetchViaSCP(ctx, source, progress)
+	default:
+		path, err := expandLocalPath(source)
+		if err != nil {
+			return nil, err
+		}
+		return os.ReadFile(path)
+	}
+}
+
+// looksLikeSCPTarget returns true for `host:path` or `user@host:path`
+// shapes — the `host` portion has to be something an ssh client would
+// accept, so we reject anything that looks like a filesystem path (has
+// a `/` before the first `:`) or a URL scheme.
+func looksLikeSCPTarget(s string) bool {
+	if strings.HasPrefix(s, "/") || strings.HasPrefix(s, "./") || strings.HasPrefix(s, "../") || strings.HasPrefix(s, "~") {
+		return false
+	}
+	idx := strings.Index(s, ":")
+	if idx <= 0 || idx == len(s)-1 {
+		return false
+	}
+	host := s[:idx]
+	// `://` means URL, not scp.
+	if strings.HasPrefix(s[idx:], "://") {
+		return false
+	}
+	// A plausible scp target's `host` segment has no slashes or spaces.
+	return !strings.ContainsAny(host, "/ ")
+}
+
+func fetchViaSCP(ctx context.Context, source string, progress io.Writer) ([]byte, error) {
+	tmp, err := os.CreateTemp("", "drift-update-scp-*")
+	if err != nil {
+		return nil, err
+	}
+	_ = tmp.Close()
+	defer func() { _ = os.Remove(tmp.Name()) }()
+
+	effective := rewriteDriftCircuitHost(source, loadClientForUpdate())
+	args := []string{"-q"}
+	if cfg := driftSSHConfigPathForUpdate(); cfg != "" {
+		args = append(args, "-F", cfg)
+	}
+	args = append(args, effective, tmp.Name())
+	if effective != source {
+		fmt.Fprintf(progress, "→ resolved %s via drift ssh_config → %s\n", source, effective)
+	}
+	cmd := osexec.CommandContext(ctx, "scp", args...)
+	cmd.Stdout = progress
+	cmd.Stderr = progress
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("scp %s: %w", effective, err)
+	}
+	return os.ReadFile(tmp.Name())
+}
+
+// rewriteDriftCircuitHost turns `circuit:path` into `drift.circuit:path`
+// when `circuit` matches a known drift circuit alias. Leaves anything
+// with a `@` user-prefix or existing `drift.` prefix alone. Other
+// shapes (IP addresses, real hostnames, user@host) pass through and
+// ssh_config lookup handles them as usual.
+func rewriteDriftCircuitHost(source string, cfg *config.Client) string {
+	if cfg == nil || len(cfg.Circuits) == 0 {
+		return source
+	}
+	idx := strings.Index(source, ":")
+	if idx <= 0 {
+		return source
+	}
+	host := source[:idx]
+	if strings.Contains(host, "@") || strings.HasPrefix(host, "drift.") {
+		return source
+	}
+	if _, ok := cfg.Circuits[host]; !ok {
+		return source
+	}
+	return "drift." + source
+}
+
+func loadClientForUpdate() *config.Client {
+	path, err := config.ClientConfigPath()
+	if err != nil {
+		return nil
+	}
+	cfg, err := config.LoadClient(path)
+	if err != nil {
+		return nil
+	}
+	return cfg
+}
+
+func driftSSHConfigPathForUpdate() string {
+	dir, err := config.ClientConfigDir()
+	if err != nil {
+		return ""
+	}
+	p := filepath.Join(dir, "ssh_config")
+	if _, err := os.Stat(p); err != nil {
+		return ""
+	}
+	return p
+}
+
+func downloadRaw(ctx context.Context, url string, progress io.Writer) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("download %s: %s", url, resp.Status)
+	}
+	body := io.Reader(resp.Body)
+	if progress != nil {
+		body = newProgressReader(resp.Body, resp.ContentLength, progress)
+	}
+	return io.ReadAll(body)
+}
+
+func expandLocalPath(p string) (string, error) {
+	if strings.HasPrefix(p, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, p[2:]), nil
+	}
+	if p == "~" {
+		return os.UserHomeDir()
+	}
+	return p, nil
+}
+
+// humanBytes renders sizes in IEC units (KiB/MiB/GiB) since CDN downloads
+// of single binaries land squarely in MiB territory. Decimal SI would
+// just make the math feel slightly wrong.
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for n2 := n / unit; n2 >= unit; n2 /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
+}

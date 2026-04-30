@@ -1,0 +1,25 @@
+# `lakitu init` bootstraps ~/.drift/garage on a fresh HOME.
+
+# Sanity: garage doesn't exist yet.
+! exists $HOME/.drift/garage
+
+lakitu init
+stdout 'initialized garage at'
+stdout '\+ config.yaml'
+stdout '\+ karts'
+stdout '\+ tunes'
+stdout '\+ characters'
+stdout '\+ chest'
+! stderr .
+
+# Every documented subdir + the default config.yaml must exist.
+exists $HOME/.drift/garage/
+exists $HOME/.drift/garage/tunes/
+exists $HOME/.drift/garage/characters/
+exists $HOME/.drift/garage/chest/
+exists $HOME/.drift/garage/karts/
+exists $HOME/.drift/garage/config.yaml
+
+# Config should carry the documented defaults.
+grep 'default_tune: nixenv' $HOME/.drift/garage/config.yaml
+grep 'backend: yamlfile' $HOME/.drift/garage/config.yaml

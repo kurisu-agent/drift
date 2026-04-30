@@ -1,0 +1,101 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Several cliscript tests invoke `lakitu init`, which emits warnings
+      # to stderr when devpod isn't on PATH — those warnings then trip the
+      # `! stderr .` assertions. Install the pinned devpod from the flake
+      # so CI exercises the same binary lakitu was built against.
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v14
+
+      # Cachix pulls from our shared binary cache and uploads any
+      # derivations built during the run. Same config release.yml uses;
+      # drops the FlakeHub-nag from magic-nix-cache-action.
+      - name: Set up Nix cache
+        uses: cachix/cachix-action@v15
+        with:
+          name: kurisu
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
+      - name: Build pinned devpod via flake
+        run: |
+          nix build .#devpod --print-build-logs
+          echo "$PWD/result/bin" >> "$GITHUB_PATH"
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test (race)
+        run: go test -race ./...
+
+      # Lint + vulncheck run from `nix develop` so they pick the same
+      # toolchain-matched binaries flake.nix pins — golangci-lint-action
+      # otherwise lags the Go version we target.
+      - name: Lint
+        run: nix develop --command golangci-lint run ./...
+
+      - name: Vulncheck
+        run: nix develop --command govulncheck ./...
+
+  integration:
+    name: integration
+    # Integration is ~2 min (real devpod + docker). Runs on every PR
+    # and every main push. Previously PR-gated off, which let #4 break
+    # the suite post-merge (TestMain in a non-test file compiled clean
+    # but never ran, and fast CI had no docker path to surface the
+    # regression). Pair this with "require branches up to date before
+    # merging" in branch protection so a green PR actually reflects the
+    # post-merge state. release.yml keeps its own tag-trigger gate.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v14
+
+      # Cachix pulls from our shared binary cache and uploads any
+      # derivations built during the run. Same config release.yml uses;
+      # drops the FlakeHub-nag from magic-nix-cache-action.
+      - name: Set up Nix cache
+        uses: cachix/cachix-action@v15
+        with:
+          name: kurisu
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
+      # `nix develop` provides the exact toolchain pinned in flake.nix
+      # (go, make, git, pinned devpod) so the real-devpod integration
+      # tests exercise the same binary lakitu was built against.
+      - name: Integration tests
+        run: nix develop --command make integration

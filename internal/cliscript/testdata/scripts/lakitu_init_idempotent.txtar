@@ -1,0 +1,23 @@
+# `lakitu init` is idempotent — second run reports "already initialized",
+# doesn't touch user-edited config, and never errors.
+
+lakitu init
+stdout 'initialized garage at'
+
+# User edits the config after the first init.
+cp edited.yaml $HOME/.drift/garage/config.yaml
+
+lakitu init
+stdout 'garage already initialized'
+! stderr .
+
+# User edit must survive the re-run.
+grep 'default_tune: python' $HOME/.drift/garage/config.yaml
+grep 'default_character: kurisu' $HOME/.drift/garage/config.yaml
+
+-- edited.yaml --
+default_tune: python
+default_character: kurisu
+nix_cache_url: ""
+chest:
+    backend: yamlfile

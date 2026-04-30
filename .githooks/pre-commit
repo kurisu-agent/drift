@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Pre-commit lint hook with auto-fix.
+#
+# Runs gofmt + the FULL golangci-lint rule set on the staged Go
+# packages. We used to pass --fast-only here for speed, but it skipped
+# deeper linters (errorlint, etc.) that CI enforces — so PRs would fail
+# on the first remote run and cost a 4-minute round trip to diagnose.
+# Trading a few extra seconds per commit for catching those locally is
+# the better deal.
+#
+# Both tools run inside a single nix develop invocation so the hook
+# works from any shell — active dev shell or not — without each tool
+# needing its own PATH setup. One nix develop spawn amortizes startup
+# over both tools.
+#
+# Auto-fix is on: gofmt -w and golangci-lint --fix rewrite in place,
+# then any touched files are re-staged. If issues remain after --fix,
+# the hook fails and prints what to look at.
+#
+# Install: `make install-hooks` (sets core.hooksPath = .githooks).
+# Requires nix on PATH — drift's dev toolchain lives in the flake, so
+# any real contributor already has it.
+
+set -eu
+
+staged=$(git diff --cached --name-only --diff-filter=ACM -- '*.go' || true)
+if [ -z "$staged" ]; then
+  exit 0
+fi
+
+# Collapse both lists to single-line space-separated so they survive
+# being embedded in the `bash -c "…"` string below. Raw $staged has
+# newlines from git's output; embedding it verbatim turns filenames
+# after the first into standalone commands inside the subshell (bash:
+# line 2: <file>: Permission denied).
+staged_args=$(echo "$staged" | tr '\n' ' ')
+pkgs_args=$(echo "$staged" | xargs -n1 dirname | sort -u | sed 's|^|./|' | tr '\n' ' ')
+
+# One nix develop spawn for both tools. drift's Go paths never contain
+# whitespace (snake_case under internal/), so flat expansion is safe.
+# Note: no --fast-only — we want parity with CI's `golangci-lint run`.
+if ! nix develop --command bash -c "
+  set -eu
+  gofmt -w -- $staged_args
+  golangci-lint run --fix $pkgs_args
+"; then
+  echo >&2
+  echo "pre-commit: lint issues remain after auto-fix — address them and re-commit." >&2
+  exit 1
+fi
+
+# Re-stage whatever the formatters rewrote.
+git add -- $staged

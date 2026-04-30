@@ -1,0 +1,16 @@
+# kart.logs on a missing kart returns code:3 kart_not_found. This exercises
+# the same "absent from both devpod and garage" branch that kart_info and
+# kart_delete rely on, but through kart.logs' own registration path so a
+# typo in the wire method constant or RegisterKartLifecycle surfaces.
+
+stdin logs.json
+lakitu rpc
+! stderr .
+stdout '"error":'
+! stdout 'method_not_found'
+stdout '"code":3'
+stdout '"type":"kart_not_found"'
+stdout '"kart":"ghost"'
+
+-- logs.json --
+{"jsonrpc":"2.0","method":"kart.logs","params":{"name":"ghost"},"id":1}

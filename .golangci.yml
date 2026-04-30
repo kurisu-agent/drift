@@ -1,0 +1,78 @@
+version: "2"
+
+run:
+  # Lint integration-tagged files too. Without this the pre-commit hook's
+  # per-package golangci-lint run on ./integration/ fails with "build
+  # constraints exclude all Go files" since every file there carries
+  # //go:build integration.
+  build-tags:
+    - integration
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - copyloopvar
+    - errcheck
+    - errorlint
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - nolintlint
+    - revive
+    - staticcheck
+    - unused
+  settings:
+    errcheck:
+      check-type-assertions: true
+      exclude-functions:
+        - (io.Writer).Write
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+    gosec:
+      # G204: drift's purpose is to exec user commands on remote circuits.
+      # G304: drift reads paths supplied by config/flags by design.
+      excludes:
+        - G204
+        - G304
+    misspell:
+      # `substituters` is the actual Nix terminology — the literal key in
+      # nix.conf and the standard term across the Nix ecosystem. misspell
+      # flags it as a typo of "substitutes"; allow it project-wide so plan
+      # 17 (circuit-local Nix cache) and any future Nix-touching code can
+      # use the right word.
+      ignore-rules:
+        - substituters
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+  exclusions:
+    rules:
+      # Tests routinely use 0755/0644 perms and unchecked type assertions on
+      # controlled fixture data — neither is a real hazard.
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+      # The integration harness is test scaffolding — build-tagged out of
+      # the production binary, runs against docker-in-docker fixtures, and
+      # writes deliberately-permissive fixture perms / taints arg paths /
+      # asserts on exec.ExitError the way os/exec does. Treat it like
+      # _test.go files plus the shim's gosec relaxation.
+      - path: integration/
+        linters:
+          - gosec
+          - errcheck
+          - errorlint
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

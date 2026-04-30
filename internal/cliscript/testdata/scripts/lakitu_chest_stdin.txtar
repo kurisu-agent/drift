@@ -1,0 +1,57 @@
+# `lakitu chest new <name>` reads the secret value from stdin (never a
+# flag). The MVP yamlfile backend writes ~/.drift/garage/chest/secrets.yaml
+# at mode 0600; multi-line secrets (SSH keys, PEM-encoded tokens) ride on
+# YAML block scalars and round-trip without custom escaping.
+
+lakitu init
+! stderr .
+
+stdin secret.txt
+lakitu chest new github-pat
+! stderr .
+stdout '"name": "github-pat"'
+
+# The backing file landed in the expected spot.
+exists $HOME/.drift/garage/chest/secrets.yaml
+
+# List shows it, values never returned.
+lakitu chest list
+stdout '"github-pat"'
+! stdout 'ghp_'
+
+# Get returns the value we piped in.
+lakitu chest get github-pat
+stdout '"value": "ghp_live_token_abc"'
+
+# Multi-line value round-trip — the whole reason the backend is YAML.
+# stdin text is terminated by a single trailing newline which runChestSet
+# strips; the interior newlines survive.
+stdin ssh_key.txt
+lakitu chest new ssh-ed25519
+! stderr .
+
+lakitu chest get ssh-ed25519
+stdout 'BEGIN OPENSSH PRIVATE KEY'
+stdout 'END OPENSSH PRIVATE KEY'
+
+# Remove wipes it.
+lakitu chest rm github-pat
+! stderr .
+
+# List is smaller.
+lakitu chest list
+! stdout 'github-pat'
+stdout 'ssh-ed25519'
+
+# Invalid name rejected.
+stdin secret.txt
+! lakitu chest new Bad-Name
+stderr 'invalid_name'
+
+-- secret.txt --
+ghp_live_token_abc
+-- ssh_key.txt --
+-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gt
+ZWQyNTUxOQAAACBGQUtFLUZBS0UtRkFLRS1GQUtFLUZBS0UtRkFLRS1GQUtFLUZBS0UK
+-----END OPENSSH PRIVATE KEY-----

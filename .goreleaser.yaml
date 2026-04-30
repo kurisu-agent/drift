@@ -1,0 +1,100 @@
+# GoReleaser v2 config for drift + lakitu.
+#
+# Reproducible builds: -trimpath, CGO_ENABLED=0, mod_timestamp pinned to the
+# commit timestamp, ldflags inject version/commit/date into internal/version.
+#
+# drift ships for macOS + Linux, amd64 + arm64. lakitu is Linux-only (runs on
+# the circuit / devcontainer host).
+version: 2
+
+project_name: drift
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: drift
+    main: ./cmd/drift
+    binary: drift
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/kurisu-agent/drift/internal/version.Version={{.Version}}
+      - -X github.com/kurisu-agent/drift/internal/version.Commit={{.Commit}}
+      - -X github.com/kurisu-agent/drift/internal/version.Date={{.CommitDate}}
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    goos:
+      - linux
+      - darwin
+      - android
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: android
+        goarch: amd64
+
+  - id: lakitu
+    main: ./cmd/lakitu
+    binary: lakitu
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/kurisu-agent/drift/internal/version.Version={{.Version}}
+      - -X github.com/kurisu-agent/drift/internal/version.Commit={{.Commit}}
+      - -X github.com/kurisu-agent/drift/internal/version.Date={{.CommitDate}}
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: drift
+    ids:
+      - drift
+    name_template: >-
+      drift_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    formats:
+      - tar.gz
+    files:
+      - LICENSE*
+      - README*
+
+  - id: lakitu
+    ids:
+      - lakitu
+    name_template: >-
+      lakitu_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    formats:
+      - tar.gz
+    files:
+      - LICENSE*
+      - README*
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: '{{ incpatch .Version }}-snapshot+{{ .ShortCommit }}'
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+
+release:
+  draft: false
+  prerelease: auto

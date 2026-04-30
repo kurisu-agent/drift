@@ -1,0 +1,43 @@
+# kart.new rejects invalid names and mutually-exclusive source flags before
+# ever touching devpod. This test exercises the failure paths that don't need
+# devpod on $PATH.
+
+lakitu init
+! stderr .
+
+# Invalid name → code 2 / invalid_name.
+stdin invalid.json
+lakitu rpc
+! stderr .
+stdout '"code":2'
+stdout '"type":"invalid_name"'
+
+# Reserved name "default" → invalid_name.
+stdin reserved.json
+lakitu rpc
+! stderr .
+stdout '"code":2'
+stdout '"type":"invalid_name"'
+
+# --clone + --starter together → mutually_exclusive_flags.
+stdin both.json
+lakitu rpc
+! stderr .
+stdout '"code":2'
+stdout '"type":"mutually_exclusive_flags"'
+
+# Missing name → invalid_flag.
+stdin missing.json
+lakitu rpc
+! stderr .
+stdout '"code":2'
+stdout '"type":"invalid_flag"'
+
+-- invalid.json --
+{"jsonrpc":"2.0","method":"kart.new","params":{"name":"Bad Name"},"id":1}
+-- reserved.json --
+{"jsonrpc":"2.0","method":"kart.new","params":{"name":"default"},"id":1}
+-- both.json --
+{"jsonrpc":"2.0","method":"kart.new","params":{"name":"myproj","clone":"https://example.com/a.git","starter":"https://example.com/b.git"},"id":1}
+-- missing.json --
+{"jsonrpc":"2.0","method":"kart.new","params":{},"id":1}
