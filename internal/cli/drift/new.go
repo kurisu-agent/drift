@@ -20,7 +20,7 @@ import (
 
 // newCmd is kept 1:1 with the kart.new RPC params so they don't drift apart.
 type newCmd struct {
-	Name         string `arg:"" help:"Kart name (matches ^[a-z][a-z0-9-]{0,62}$)."`
+	Name         string `arg:"" optional:"" help:"Kart name (matches ^[a-z][a-z0-9-]{0,62}$); omit on a TTY to launch the wizard."`
 	Clone        string `name:"clone" help:"Clone an existing repo (mutually exclusive with --starter); accepts owner/repo as github HTTPS shorthand."`
 	Starter      string `name:"starter" help:"Template repo; history is discarded after clone."`
 	Tune         string `name:"tune" help:"Named preset that provides defaults for other flags."`
@@ -66,6 +66,24 @@ func runNew(ctx context.Context, io IO, root *CLI, cmd newCmd, deps deps) int {
 	_, circuit, err := resolveCircuit(root, deps)
 	if err != nil {
 		return errfmt.Emit(io.Stderr, err)
+	}
+
+	// Bare `drift new` on a TTY drops into the wizard, which fills in
+	// cmd before the rest of the flow (preflight, confirm, RPC) runs.
+	// Scripted callers (no TTY, --output json) get the existing
+	// "missing name" error from the server.
+	if cmd.Name == "" {
+		if !stdinIsTTY(io.Stdin) || root.Output == "json" {
+			return errfmt.Emit(io.Stderr, errors.New("kart name is required (run on a TTY for the interactive wizard)"))
+		}
+		aborted, wErr := runNewWizard(ctx, io, deps, circuit, &cmd)
+		if wErr != nil {
+			return errfmt.Emit(io.Stderr, wErr)
+		}
+		if aborted {
+			fmt.Fprintln(io.Stderr, "aborted")
+			return 1
+		}
 	}
 
 	// Auto-detect: when --clone targets a github repo and the user

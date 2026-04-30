@@ -206,7 +206,7 @@ func run(ctx context.Context, argv []string, io IO, deps deps) int {
 		return runKartDisable(ctx, io, &cli, cli.Kart.Disable, deps)
 
 	// Top-level verbs
-	case "new <name>":
+	case "new", "new <name>":
 		return runNew(ctx, io, &cli, cli.New, deps)
 	case "init":
 		return runInit(ctx, io, &cli, cli.Init, deps)
