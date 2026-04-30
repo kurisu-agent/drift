@@ -32,7 +32,7 @@ var menuEntries = []menuEntry{
 	{key: "circuit › connect       — interactive shell on a circuit's host", argv: []string{"circuit", "connect"}},
 
 	{key: "karts            — list karts across circuits", argv: []string{"karts"}},
-	{key: "kart › new       — create a new kart", needs: "kart name", prefix: []string{"new"}},
+	{key: "kart › new       — create a new kart (interactive wizard)", argv: []string{"new"}},
 	{key: "kart › info      — show a kart's state", needs: "kart name", prefix: []string{"kart", "info"}},
 	{key: "kart › start     — pick + start a kart", argv: []string{"kart", "start"}},
 	{key: "kart › stop      — pick + stop a kart", argv: []string{"kart", "stop"}},
