@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"github.com/kurisu-agent/drift/internal/githttp"
 )
 
 // Pin — the devpod release lakitu downloads on first run.
@@ -53,7 +55,11 @@ func PinnedVersion() string { return pinnedVersion }
 // Returns a wrapped error (never partial state) on network failure,
 // SHA mismatch, or unsupported arch. Callers decide whether to fall
 // back to $PATH or fail loud.
-func EnsurePinned(ctx context.Context, driftHome string) (string, error) {
+// token, when non-empty, is sent as Authorization: Bearer on the
+// download request — lifts GitHub's anonymous rate limit. Empty is
+// fine for occasional bootstraps; pass a value when the circuit IP
+// fetches releases often enough to hit 60/hr.
+func EnsurePinned(ctx context.Context, driftHome, token string) (string, error) {
 	if driftHome == "" {
 		return "", errors.New("devpod: EnsurePinned: driftHome is required")
 	}
@@ -79,7 +85,7 @@ func EnsurePinned(ctx context.Context, driftHome string) (string, error) {
 
 	url := fmt.Sprintf("https://github.com/%s/%s/releases/download/%s/devpod-%s-%s",
 		pinnedOwner, pinnedRepo, pinnedVersion, goos, goarch)
-	if err := downloadAndVerify(ctx, url, dest, wantHex); err != nil {
+	if err := downloadAndVerify(ctx, url, dest, wantHex, token); err != nil {
 		return "", err
 	}
 	return dest, nil
@@ -88,7 +94,7 @@ func EnsurePinned(ctx context.Context, driftHome string) (string, error) {
 // downloadAndVerify streams url to a tempfile next to dest, checksums
 // during the write (one pass, no re-read), renames on match. Concurrent
 // callers write unique tempfiles; last rename wins and is atomic.
-func downloadAndVerify(ctx context.Context, url, dest, wantHex string) error {
+func downloadAndVerify(ctx context.Context, url, dest, wantHex, token string) error {
 	tmp, err := os.CreateTemp(filepath.Dir(dest), "devpod.dl.*")
 	if err != nil {
 		return fmt.Errorf("devpod: tempfile: %w", err)
@@ -102,7 +108,7 @@ func downloadAndVerify(ctx context.Context, url, dest, wantHex string) error {
 		cleanup()
 		return fmt.Errorf("devpod: build request: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := githttp.Client(githttp.Config{Token: token}).Do(req)
 	if err != nil {
 		cleanup()
 		return fmt.Errorf("devpod: download %s: %w", url, err)

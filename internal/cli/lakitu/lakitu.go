@@ -413,11 +413,34 @@ func resolvePinnedDevpod(ctx context.Context) string {
 	if driftHome == "" {
 		return ""
 	}
-	p, err := devpod.EnsurePinned(ctx, driftHome)
+	p, err := devpod.EnsurePinned(ctx, driftHome, lakituGitHubToken())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: pinned devpod unavailable (%v); falling back to $PATH\n", err)
 	}
 	return p
+}
+
+// lakituGitHubToken resolves the configured lakitu_github_api_pat.
+// PAT errors degrade to "" so the bootstrap still tries unauthenticated
+// — a missing chest entry is loud enough on its own when the operator
+// runs `lakitu config get`. The lookup is best-effort: a circuit that
+// hasn't run `lakitu init` won't have a config file yet, and that's a
+// supported state for early callers.
+func lakituGitHubToken() string {
+	cfgPath, err := config.ServerConfigPath()
+	if err != nil {
+		return ""
+	}
+	garage, err := config.GarageDir()
+	if err != nil {
+		return ""
+	}
+	token, err := server.ResolveLakituGitHubAPIPAT(cfgPath, garage, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: github_api_pat resolution failed (%v); using unauthenticated GitHub\n", err)
+		return ""
+	}
+	return token
 }
 
 // runRPC honors the stdout invariant: only the JSON-RPC response (or
