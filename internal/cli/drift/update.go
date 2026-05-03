@@ -20,6 +20,7 @@ import (
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/config"
 	driftexec "github.com/kurisu-agent/drift/internal/exec"
+	"github.com/kurisu-agent/drift/internal/githttp"
 	"github.com/kurisu-agent/drift/internal/version"
 )
 
@@ -165,7 +166,7 @@ func fetchLatestRelease(ctx context.Context, apiBase, repo string) (*ghRelease, 
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := githttp.DefaultClient().Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +206,7 @@ func downloadAndReplace(ctx context.Context, url, dst string, progress io.Writer
 	if err != nil {
 		return err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := githttp.DefaultClient().Do(req)
 	if err != nil {
 		return err
 	}
@@ -469,7 +470,7 @@ func downloadRaw(ctx context.Context, url string, progress io.Writer) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := githttp.DefaultClient().Do(req)
 	if err != nil {
 		return nil, err
 	}

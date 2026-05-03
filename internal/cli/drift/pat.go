@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/kurisu-agent/drift/internal/cli/errfmt"
 	"github.com/kurisu-agent/drift/internal/cli/style"
+	"github.com/kurisu-agent/drift/internal/githttp"
 	"github.com/kurisu-agent/drift/internal/pat"
 	"github.com/kurisu-agent/drift/internal/wire"
 )
@@ -443,7 +444,7 @@ func probeGitHub(ctx context.Context, token string) (string, error) {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := githttp.DefaultClient().Do(req)
 	if err != nil {
 		return "", err
 	}

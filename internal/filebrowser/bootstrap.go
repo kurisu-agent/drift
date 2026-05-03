@@ -22,6 +22,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"github.com/kurisu-agent/drift/internal/githttp"
 )
 
 // Pin — the filebrowser release lakitu downloads on first run.
@@ -116,7 +118,7 @@ func downloadAndExtract(ctx context.Context, url, dest, wantHex string) error {
 		_ = archive.Close()
 		return fmt.Errorf("filebrowser: build request: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := githttp.DefaultClient().Do(req)
 	if err != nil {
 		_ = archive.Close()
 		return fmt.Errorf("filebrowser: download %s: %w", url, err)

@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"github.com/kurisu-agent/drift/internal/githttp"
 )
 
 // Pin — the devpod release lakitu downloads on first run.
@@ -102,7 +104,7 @@ func downloadAndVerify(ctx context.Context, url, dest, wantHex string) error {
 		cleanup()
 		return fmt.Errorf("devpod: build request: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := githttp.DefaultClient().Do(req)
 	if err != nil {
 		cleanup()
 		return fmt.Errorf("devpod: download %s: %w", url, err)
