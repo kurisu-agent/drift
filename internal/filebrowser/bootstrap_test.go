@@ -68,7 +68,7 @@ func TestDownloadAndExtractHappyPath(t *testing.T) {
 
 	dir := t.TempDir()
 	dest := filepath.Join(dir, "filebrowser")
-	if err := downloadAndExtract(context.Background(), srv.URL, dest, wantHex); err != nil {
+	if err := downloadAndExtract(context.Background(), srv.URL, dest, wantHex, ""); err != nil {
 		t.Fatalf("downloadAndExtract: %v", err)
 	}
 	got, err := os.ReadFile(dest)
@@ -96,7 +96,7 @@ func TestDownloadAndExtractShaMismatchLeavesNoBinary(t *testing.T) {
 
 	dir := t.TempDir()
 	dest := filepath.Join(dir, "filebrowser")
-	err := downloadAndExtract(context.Background(), srv.URL, dest, "deadbeef")
+	err := downloadAndExtract(context.Background(), srv.URL, dest, "deadbeef", "")
 	if err == nil {
 		t.Fatal("want error on SHA mismatch, got nil")
 	}
@@ -114,7 +114,7 @@ func TestDownloadAndExtractHTTPErrorLeavesNoBinary(t *testing.T) {
 
 	dir := t.TempDir()
 	dest := filepath.Join(dir, "filebrowser")
-	err := downloadAndExtract(context.Background(), srv.URL, dest, "aa")
+	err := downloadAndExtract(context.Background(), srv.URL, dest, "aa", "")
 	if err == nil {
 		t.Fatal("want error on 404, got nil")
 	}
@@ -146,7 +146,7 @@ func TestDownloadAndExtractMissingEntry(t *testing.T) {
 
 	dir := t.TempDir()
 	dest := filepath.Join(dir, "filebrowser")
-	err := downloadAndExtract(context.Background(), srv.URL, dest, wantHex)
+	err := downloadAndExtract(context.Background(), srv.URL, dest, wantHex, "")
 	if err == nil {
 		t.Fatal("want error on missing filebrowser entry, got nil")
 	}
@@ -157,7 +157,7 @@ func TestDownloadAndExtractMissingEntry(t *testing.T) {
 
 func TestEnsurePinnedRequiresDriftHome(t *testing.T) {
 	t.Parallel()
-	if _, err := EnsurePinned(context.Background(), ""); err == nil {
+	if _, err := EnsurePinned(context.Background(), "", ""); err == nil {
 		t.Error("want error on empty driftHome, got nil")
 	}
 }

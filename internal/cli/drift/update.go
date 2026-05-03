@@ -159,6 +159,16 @@ func orDevel(s string) string {
 	return s
 }
 
+// githubHTTPClient returns the http.Client used for outbound calls to
+// github.com / api.github.com from the drift CLI binary. Honours
+// $GITHUB_TOKEN to lift the anonymous rate limit, matching how the
+// upstream `gh` CLI consumes the same env var. The lakitu daemon
+// uses its own configured PAT (lakitu_github_api_pat) and does not
+// read this env var.
+func githubHTTPClient() *http.Client {
+	return githttp.Client(githttp.Config{Token: os.Getenv("GITHUB_TOKEN")})
+}
+
 func fetchLatestRelease(ctx context.Context, apiBase, repo string) (*ghRelease, error) {
 	url := fmt.Sprintf("%s/repos/%s/releases/latest", strings.TrimRight(apiBase, "/"), repo)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -166,7 +176,7 @@ func fetchLatestRelease(ctx context.Context, apiBase, repo string) (*ghRelease, 
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	resp, err := githttp.DefaultClient().Do(req)
+	resp, err := githubHTTPClient().Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +216,7 @@ func downloadAndReplace(ctx context.Context, url, dst string, progress io.Writer
 	if err != nil {
 		return err
 	}
-	resp, err := githttp.DefaultClient().Do(req)
+	resp, err := githubHTTPClient().Do(req)
 	if err != nil {
 		return err
 	}
@@ -470,7 +480,7 @@ func downloadRaw(ctx context.Context, url string, progress io.Writer) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	resp, err := githttp.DefaultClient().Do(req)
+	resp, err := githubHTTPClient().Do(req)
 	if err != nil {
 		return nil, err
 	}

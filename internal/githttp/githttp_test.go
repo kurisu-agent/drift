@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -337,6 +338,67 @@ func TestRespectsRetryAfterHttpDate(t *testing.T) {
 	}
 	if got := hits.Load(); got != 2 {
 		t.Fatalf("attempts: got %d, want 2", got)
+	}
+}
+
+func TestTokenAttachedOnGitHubHostsOnly(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name      string
+		reqHost   string
+		wantAuth  bool
+		setHeader bool // pre-set Authorization on the request
+	}{
+		{"api.github.com", "api.github.com", true, false},
+		{"github.com", "github.com", true, false},
+		{"uploads.github.com", "uploads.github.com", true, false},
+		{"objects.githubusercontent.com (CDN)", "objects.githubusercontent.com", false, false},
+		{"third-party host", "evil.example.com", false, false},
+		{"existing Authorization preserved", "api.github.com", true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var seen string
+			capturing := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				seen = r.Header.Get("Authorization")
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader("")),
+					Header:     make(http.Header),
+				}, nil
+			})
+			cfg := fastCfg(1)
+			cfg.Token = "ghp_secret"
+			tr := githttp.NewTransport(capturing, cfg)
+			req, err := http.NewRequest(http.MethodGet, "https://"+tc.reqHost+"/x", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.setHeader {
+				req.Header.Set("Authorization", "Bearer caller-supplied")
+			}
+			resp, err := tr.RoundTrip(req)
+			if err != nil {
+				t.Fatalf("RoundTrip: %v", err)
+			}
+			resp.Body.Close()
+
+			switch {
+			case tc.setHeader:
+				if seen != "Bearer caller-supplied" {
+					t.Fatalf("caller's Authorization clobbered: got %q", seen)
+				}
+			case tc.wantAuth:
+				if seen != "Bearer ghp_secret" {
+					t.Fatalf("missing Bearer header: got %q", seen)
+				}
+			default:
+				if seen != "" {
+					t.Fatalf("token leaked to %s: got %q", tc.reqHost, seen)
+				}
+			}
+		})
 	}
 }
 

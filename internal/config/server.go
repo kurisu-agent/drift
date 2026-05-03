@@ -40,6 +40,17 @@ type Server struct {
 	// has. Empty = no list dropped, hook silently no-ops. See
 	// plans/20-kart-deny-literals.md.
 	DenyLiterals string `yaml:"deny_literals,omitempty"`
+	// LakituGitHubAPIPAT, when set, MUST be a `chest:<name>` reference.
+	// The referenced chest entry holds a GitHub PAT that lakitu sends as
+	// `Authorization: Bearer …` on outbound HTTPS calls to api.github.com,
+	// github.com, and *.githubusercontent.com — currently the devpod and
+	// filebrowser binary bootstraps and the drift release-asset fetch.
+	// Authenticating these calls lifts GitHub's anonymous 60-req/hr
+	// per-IP rate limit to 5000-req/hr per token, which matters on busy
+	// circuits or when many karts boot at once. Empty = unauthenticated
+	// (works fine until the IP gets rate-limited). The PAT only needs
+	// public-repo read scope; nothing here writes to GitHub.
+	LakituGitHubAPIPAT string `yaml:"lakitu_github_api_pat,omitempty"`
 }
 
 // CircuitNameRE is the shared slug shape for circuit names, mirrored on
@@ -95,6 +106,11 @@ func (s *Server) Validate() error {
 	if s.DenyLiterals != "" {
 		if !strings.HasPrefix(s.DenyLiterals, chestRefPrefix) || len(s.DenyLiterals) == len(chestRefPrefix) {
 			return fmt.Errorf("config: deny_literals must be a chest reference of the form %q<name>; literal lists are not accepted", chestRefPrefix)
+		}
+	}
+	if s.LakituGitHubAPIPAT != "" {
+		if !strings.HasPrefix(s.LakituGitHubAPIPAT, chestRefPrefix) || len(s.LakituGitHubAPIPAT) == len(chestRefPrefix) {
+			return fmt.Errorf("config: lakitu_github_api_pat must be a chest reference of the form %q<name>; raw tokens are not accepted to keep them out of the on-disk config", chestRefPrefix)
 		}
 	}
 	return nil

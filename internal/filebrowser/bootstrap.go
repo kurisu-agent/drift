@@ -61,7 +61,9 @@ func PinnedVersion() string { return pinnedVersion }
 //
 // Returns a wrapped error (never partial state) on network failure,
 // SHA mismatch, missing archive entry, or unsupported arch.
-func EnsurePinned(ctx context.Context, driftHome string) (string, error) {
+// token mirrors devpod.EnsurePinned: optional GitHub PAT sent as
+// Authorization: Bearer to lift the anonymous rate limit.
+func EnsurePinned(ctx context.Context, driftHome, token string) (string, error) {
 	if driftHome == "" {
 		return "", errors.New("filebrowser: EnsurePinned: driftHome is required")
 	}
@@ -92,7 +94,7 @@ func EnsurePinned(ctx context.Context, driftHome string) (string, error) {
 
 	url := fmt.Sprintf("https://github.com/%s/%s/releases/download/%s/linux-%s-filebrowser.tar.gz",
 		pinnedOwner, pinnedRepo, pinnedVersion, goarch)
-	if err := downloadAndExtract(ctx, url, dest, wantHex); err != nil {
+	if err := downloadAndExtract(ctx, url, dest, wantHex, token); err != nil {
 		return "", err
 	}
 	if err := os.WriteFile(sidecar, []byte(wantHex), 0o600); err != nil {
@@ -105,7 +107,7 @@ func EnsurePinned(ctx context.Context, driftHome string) (string, error) {
 // the write (one pass), then untars the `filebrowser` entry into a
 // sibling tempfile of dest and renames atomically. Concurrent callers
 // write unique tempfiles; last rename wins.
-func downloadAndExtract(ctx context.Context, url, dest, wantHex string) error {
+func downloadAndExtract(ctx context.Context, url, dest, wantHex, token string) error {
 	archive, err := os.CreateTemp(filepath.Dir(dest), "filebrowser.tgz.*")
 	if err != nil {
 		return fmt.Errorf("filebrowser: tempfile: %w", err)
@@ -118,7 +120,7 @@ func downloadAndExtract(ctx context.Context, url, dest, wantHex string) error {
 		_ = archive.Close()
 		return fmt.Errorf("filebrowser: build request: %w", err)
 	}
-	resp, err := githttp.DefaultClient().Do(req)
+	resp, err := githttp.Client(githttp.Config{Token: token}).Do(req)
 	if err != nil {
 		_ = archive.Close()
 		return fmt.Errorf("filebrowser: download %s: %w", url, err)

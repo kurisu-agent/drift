@@ -36,7 +36,7 @@ func TestDownloadAndVerifyHappyPath(t *testing.T) {
 
 	dir := t.TempDir()
 	dest := filepath.Join(dir, "devpod")
-	if err := downloadAndVerify(context.Background(), srv.URL, dest, wantHex); err != nil {
+	if err := downloadAndVerify(context.Background(), srv.URL, dest, wantHex, ""); err != nil {
 		t.Fatalf("downloadAndVerify: %v", err)
 	}
 	got, err := os.ReadFile(dest)
@@ -64,7 +64,7 @@ func TestDownloadAndVerifyShaMismatchLeavesNoBinary(t *testing.T) {
 
 	dir := t.TempDir()
 	dest := filepath.Join(dir, "devpod")
-	err := downloadAndVerify(context.Background(), srv.URL, dest, "deadbeef")
+	err := downloadAndVerify(context.Background(), srv.URL, dest, "deadbeef", "")
 	if err == nil {
 		t.Fatal("want error on SHA mismatch, got nil")
 	}
@@ -82,7 +82,7 @@ func TestDownloadAndVerifyHTTPErrorLeavesNoBinary(t *testing.T) {
 
 	dir := t.TempDir()
 	dest := filepath.Join(dir, "devpod")
-	err := downloadAndVerify(context.Background(), srv.URL, dest, "aa")
+	err := downloadAndVerify(context.Background(), srv.URL, dest, "aa", "")
 	if err == nil {
 		t.Fatal("want error on 404, got nil")
 	}
@@ -93,7 +93,7 @@ func TestDownloadAndVerifyHTTPErrorLeavesNoBinary(t *testing.T) {
 
 func TestEnsurePinnedRequiresDriftHome(t *testing.T) {
 	t.Parallel()
-	if _, err := EnsurePinned(context.Background(), ""); err == nil {
+	if _, err := EnsurePinned(context.Background(), "", ""); err == nil {
 		t.Error("want error on empty driftHome, got nil")
 	}
 }

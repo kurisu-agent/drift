@@ -79,7 +79,19 @@ func (d *Deps) CircuitBrowseStartHandler(ctx context.Context, params json.RawMes
 		}, nil
 	}
 
-	bin, err := filebrowser.EnsurePinned(ctx, driftHome)
+	garage, gerr := d.garageDir()
+	var token string
+	if gerr == nil {
+		t, terr := ResolveLakituGitHubAPIPAT(d.serverConfigPath(), garage, d.OpenChest)
+		if terr != nil {
+			// Don't block the bootstrap on a chest miss — fall through
+			// unauthenticated. The download path will still work until
+			// the IP gets rate-limited.
+			fmt.Fprintf(os.Stderr, "warning: github_api_pat resolution failed (%v); fetching filebrowser unauthenticated\n", terr)
+		}
+		token = t
+	}
+	bin, err := filebrowser.EnsurePinned(ctx, driftHome, token)
 	if err != nil {
 		return nil, rpcerr.Internal("filebrowser bootstrap: %v", err).Wrap(err)
 	}

@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -44,6 +45,14 @@ type Config struct {
 	// Useful for surfacing "retrying… (rate limited, waiting 12s)" in
 	// CLI output.
 	OnRetry func(attempt int, wait time.Duration, reason string)
+	// Token, if set, is sent as `Authorization: Bearer <token>` on
+	// requests to GitHub-controlled hosts only (api.github.com,
+	// github.com, *.githubusercontent.com). Gating by host keeps the
+	// PAT from leaking to a third-party host if a request is later
+	// redirected off GitHub. The header is added only when the request
+	// does not already carry an Authorization header — callers like
+	// pat.probeGitHub that already supply their own token take precedence.
+	Token string
 }
 
 func (c Config) withDefaults() Config {
@@ -91,6 +100,10 @@ func NewTransport(inner http.RoundTripper, cfg Config) *Transport {
 
 // RoundTrip implements http.RoundTripper.
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if t.cfg.Token != "" && req.Header.Get("Authorization") == "" && isGitHubHost(req.URL.Host) {
+		req.Header.Set("Authorization", "Bearer "+t.cfg.Token)
+	}
+
 	// A request body that can't be replayed forces single-shot
 	// behaviour: we'd fail any retry with "http: ContentLength=N with
 	// Body length 0". GET requests with nil body are always replayable.
@@ -271,6 +284,25 @@ func backoff(cfg Config, attempt int) time.Duration {
 		return cfg.MaxDelay
 	}
 	return d
+}
+
+// isGitHubHost returns true for the hosts where attaching a GitHub PAT
+// is both necessary (for rate-limit relief) and safe. The release-asset
+// CDN at *.githubusercontent.com is intentionally excluded: those URLs
+// arrive as redirects from github.com, are pre-signed with their own
+// query-string credentials, and Go's http.Client strips the
+// Authorization header on cross-origin redirects anyway. Adding the
+// header there would be both unnecessary and a chance to leak a token
+// off a host we control.
+func isGitHubHost(host string) bool {
+	if i := strings.IndexByte(host, ':'); i >= 0 {
+		host = host[:i]
+	}
+	switch strings.ToLower(host) {
+	case "api.github.com", "github.com", "uploads.github.com", "codeload.github.com":
+		return true
+	}
+	return false
 }
 
 // jitter applies ±25% uniform jitter so retries from many concurrent
